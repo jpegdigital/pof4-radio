@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef } from "react";
+import { guarded } from "@/lib/guard-client";
 import { initialState, reducer, type SegmentView, type StationState } from "./reducer";
 import type { SpotifyDevice } from "./use-spotify-device";
 import { USER_VOLUME } from "./use-spotify-device";
@@ -44,7 +45,7 @@ export function useStation(opts: UseStationOptions) {
     const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
     void (async () => {
       try {
-        const res = await fetch("/api/station/next", {
+        const res = await guarded("/api/station/next", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ stationId: o.current.stationId, prompt: o.current.getPrompt() }),
@@ -87,7 +88,7 @@ export function useStation(opts: UseStationOptions) {
       void (async () => {
         try {
           if (!voice.voiceId) throw new Error("no voice chosen (see Voice settings)");
-          const res = await fetch(ttsUrl(l.segment.talk, voice));
+          const res = await guarded(ttsUrl(l.segment.talk, voice));
           if (!res.ok) {
             const body = (await res.json().catch(() => ({}))) as { error?: string };
             throw new Error(body.error ?? `tts ${res.status}`);

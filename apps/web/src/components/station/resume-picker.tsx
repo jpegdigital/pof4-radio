@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { guarded } from "@/lib/guard-client";
 
 /**
  * Pick up a past show. Shown only on a fresh page, before anything is on air: choosing a
@@ -17,7 +18,7 @@ export function ResumePicker({ onPick }: { onPick: (id: string) => void }) {
   const [stations, setStations] = useState<StationSummary[] | null>(null);
   useEffect(() => {
     let live = true;
-    void fetch("/api/stations", { cache: "no-store" })
+    void guarded("/api/stations", { cache: "no-store" })
       .then((r) => (r.ok ? (r.json() as Promise<StationSummary[]>) : []))
       .then((list) => {
         if (live) setStations(list);

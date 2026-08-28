@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { guarded } from "@/lib/guard-client";
 
 /**
  * The browser as the Spotify device. The Web Playback SDK only *creates* the device; playback
@@ -56,11 +57,8 @@ export interface SpotifyDevice {
 }
 
 async function fetchToken(): Promise<string> {
-  const res = await fetch("/api/spotify/token", { cache: "no-store" });
-  if (res.status === 401) {
-    location.reload(); // Guard lapsed: through Guard and back
-    throw new Error("guard");
-  }
+  const res = await guarded("/api/spotify/token", { cache: "no-store" });
+  if (res.status === 401) throw new Error("signed out of Guard — reload the page to sign in");
   if (!res.ok) throw new Error(`token ${res.status}`);
   return ((await res.json()) as { access_token: string }).access_token;
 }

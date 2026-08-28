@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { guarded, keepGuardAlive } from "@/lib/guard-client";
 import type { SegmentView } from "./reducer";
 import { ResumePicker } from "./resume-picker";
 import { useSpotifyDevice } from "./use-spotify-device";
@@ -61,7 +62,7 @@ export function Station({ enabled }: { enabled: boolean }) {
 
   // Resume a past show: load its prompt and history; Run then continues that conversation.
   const resume = async (id: string) => {
-    const res = await fetch(`/api/station/${id}`, { cache: "no-store" });
+    const res = await guarded(`/api/station/${id}`, { cache: "no-store" });
     if (!res.ok) return;
     const data = (await res.json()) as { stationId: string; prompt: string; segments: SegmentView[] };
     setStationId(data.stationId);
@@ -69,6 +70,9 @@ export function Station({ enabled }: { enabled: boolean }) {
     setHistory(data.segments);
   };
   const fresh = state.loop === "stopped" && !state.current && !state.next;
+
+  // The Guard cookie lasts 15 minutes; a show lasts hours. Keep it fresh without reloading.
+  useEffect(keepGuardAlive, []);
 
   const changeVoice = (v: VoiceSettings) => {
     setVoice(v);

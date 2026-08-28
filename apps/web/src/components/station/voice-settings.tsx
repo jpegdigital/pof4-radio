@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { guarded } from "@/lib/guard-client";
 import { ttsUrl, VOICE_MODELS, type VoiceSettings } from "./voice-store";
 
 interface Voice {
@@ -24,7 +25,7 @@ export function VoiceSettingsPanel({
 
   useEffect(() => {
     let live = true;
-    fetch("/api/tts/voices")
+    guarded("/api/tts/voices")
       .then(async (r) => {
         if (!r.ok) throw new Error(((await r.json()) as { error?: string }).error ?? `voices ${r.status}`);
         return (await r.json()) as Voice[];
