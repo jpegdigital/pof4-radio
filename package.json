@@ -17,6 +17,7 @@
     "db:plan": "op run --env-file=.env.op -- pnpm --filter @radio/db schema:plan",
     "db:apply": "op run --env-file=.env.op -- pnpm --filter @radio/db schema:apply",
     "db:sql": "op run --env-file=.env.op -- pnpm --filter @radio/db sql",
+    "db:clear": "op run --env-file=.env.op -- pnpm --filter @radio/db clear",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test": "vitest run",
