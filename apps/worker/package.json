@@ -2,14 +2,16 @@
   "name": "worker",
   "version": "0.1.0",
   "private": true,
-  "description": "Owns the queues. Will generate segments ahead of playback: Claude plans → Spotify search resolves tracks → ElevenLabs renders the commentary → bucket. Today: boots pg-boss, proves Postgres + Spotify search, waits.",
+  "description": "Owns the segment queue: the DJ (Claude with a search_spotify tool) plans intro / 3–4 tracks / outro per job and writes it to Postgres. ElevenLabs voice lands next.",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "enqueue": "tsx scripts/enqueue.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
     "@radio/db": "workspace:*",
     "@radio/spotify": "workspace:*",
     "pg-boss": "^12.27.0",

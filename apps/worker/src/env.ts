@@ -7,10 +7,12 @@ const Env = z.object({
   SPOTIFY_CLIENT_ID: z.string().min(1),
   SPOTIFY_CLIENT_SECRET: z.string().min(1),
 
-  // Not used yet (the DJ loop lands next). Deliberately NOT named ANTHROPIC_API_KEY so loading
-  // this env into a shell never hijacks Claude Code or SDK auto-auth.
-  CLAUDE_KEY: z.string().optional(),
-  CLAUDE_MODEL: z.string().default("claude-sonnet-5"),
+  // Deliberately NOT named ANTHROPIC_API_KEY so loading this env into a shell never hijacks
+  // Claude Code or SDK auto-auth. The key is passed to the client explicitly.
+  CLAUDE_KEY: z.string().min(1),
+  CLAUDE_MODEL: z.string().default("claude-opus-5"),
+
+  // Next: the voice. Optional until the ElevenLabs step lands.
   ELEVENLABS_KEY: z.string().optional(),
   ELEVENLABS_VOICE_ID: z.string().optional(),
 });
