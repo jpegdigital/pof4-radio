@@ -1,6 +1,7 @@
 /**
- * What the browser remembers: the voice and the station id. Both are per-browser conveniences
- * in localStorage — wrapped in try/catch because storage can be missing or blocked.
+ * What the browser remembers: the voice. A per-browser convenience in localStorage — wrapped in
+ * try/catch because storage can be missing or blocked. (The station is deliberately not
+ * remembered: a page load is a fresh show.)
  */
 
 export interface VoiceSettings {
@@ -31,7 +32,6 @@ export const VOICE_MODELS = [
 ] as const;
 
 const VOICE_KEY = "radio.voice";
-const STATION_KEY = "radio.stationId";
 
 export function loadVoice(): VoiceSettings {
   try {
@@ -47,23 +47,6 @@ export function saveVoice(v: VoiceSettings): void {
     localStorage.setItem(VOICE_KEY, JSON.stringify(v));
   } catch {
     // storage unavailable — the choice just won't survive a reload
-  }
-}
-
-export function loadStationId(): string | null {
-  try {
-    return localStorage.getItem(STATION_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function saveStationId(id: string | null): void {
-  try {
-    if (id) localStorage.setItem(STATION_KEY, id);
-    else localStorage.removeItem(STATION_KEY);
-  } catch {
-    // ignore
   }
 }
 

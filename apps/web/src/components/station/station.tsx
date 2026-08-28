@@ -5,14 +5,7 @@ import type { SegmentView } from "./reducer";
 import { useSpotifyDevice } from "./use-spotify-device";
 import { useStation } from "./use-station";
 import { VoiceSettingsPanel } from "./voice-settings";
-import {
-  DEFAULT_VOICE,
-  loadStationId,
-  loadVoice,
-  saveStationId,
-  saveVoice,
-  type VoiceSettings,
-} from "./voice-store";
+import { DEFAULT_VOICE, loadVoice, saveVoice, type VoiceSettings } from "./voice-store";
 
 /**
  * The station, on one page: the Spotify device, the prompt, Run/Stop, transport, what's on
@@ -52,25 +45,11 @@ export function Station({ enabled }: { enabled: boolean }) {
     dispatchRef.current = dispatch;
   }, [dispatch]);
 
-  // Rehydrate: the voice and station from this browser, the history from the server.
+  // The voice is remembered per browser. The station is not: a page load is a fresh show —
+  // Stop/Run inside the page keeps the DJ's memory, a reload starts over.
   useEffect(() => {
     const stored = loadVoice();
     queueMicrotask(() => setVoice(stored)); // after hydration, not during it
-    const id = loadStationId();
-    if (!id) return;
-    void fetch(`/api/station/${id}`)
-      .then(async (r) => {
-        if (r.status === 404) {
-          saveStationId(null);
-          return;
-        }
-        if (!r.ok) return;
-        const data = (await r.json()) as { prompt: string; segments: SegmentView[] };
-        setStationId(id);
-        setPrompt((p) => p || data.prompt);
-        setHistory(data.segments);
-      })
-      .catch(() => {});
   }, []);
 
   const changeVoice = (v: VoiceSettings) => {

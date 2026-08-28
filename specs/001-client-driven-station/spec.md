@@ -59,8 +59,8 @@ playing when stopped.
    Run, **Then** playback continues without a planning wait.
 3. **Given** the station was stopped, **When** the listener presses Run, **Then** the DJ's next talk
    still builds on the conversation so far (history is not lost by stopping).
-4. **Given** the page is reloaded, **When** the listener presses Run again with the same station,
-   **Then** the DJ's memory of past segments survives (only in-flight audio needs re-fetching).
+4. **Given** the page is reloaded, **When** the listener presses Run, **Then** it is a fresh show: a new
+   station, an opening talk, empty history. (Memory is kept across Stop/Run, not across page loads.)
 
 ---
 
@@ -149,7 +149,7 @@ choice persists across a page reload.
 - **FR-009**: The listener MUST be able to skip the talk to the first song, move to the previous/next
   song within the segment, and skip past the last song to the next segment (or to planning).
 - **FR-010**: The DJ MUST hold one ongoing conversation per station, persisted on the server, so that
-  memory survives Stop/Run and page reloads.
+  memory survives Stop/Run. A page load starts a new station (fresh show).
 - **FR-011**: The conversation MUST be kept lean: after a segment is accepted, that turn's search
   activity is reduced to the final decision; history is capped at roughly the last 20 segments.
 - **FR-012**: The conversation prefix MUST be cached so that each new segment request pays only for the

@@ -2,7 +2,7 @@ import { useEffect, useReducer, useRef } from "react";
 import { initialState, reducer, type SegmentView, type StationState } from "./reducer";
 import type { SpotifyDevice } from "./use-spotify-device";
 import { USER_VOLUME } from "./use-spotify-device";
-import { saveStationId, ttsUrl, type VoiceSettings } from "./voice-store";
+import { ttsUrl, type VoiceSettings } from "./voice-store";
 
 /**
  * The effects behind the state machine: fetching segments, prefetching talk audio, playing the
@@ -55,10 +55,7 @@ export function useStation(opts: UseStationOptions) {
           dispatch({ type: "HALT", error: "another tab is running this station" });
           return;
         }
-        if (data.stationId && data.stationId !== o.current.stationId) {
-          saveStationId(data.stationId);
-          o.current.onStation(data.stationId);
-        }
+        if (data.stationId && data.stationId !== o.current.stationId) o.current.onStation(data.stationId);
         if (!res.ok || !data.segment) {
           dispatch({ type: "SEGMENT_FAILED", error: data.error ?? `request failed (${res.status})` });
           return;
