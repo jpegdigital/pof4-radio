@@ -25,11 +25,17 @@ export function Station({ enabled }: { enabled: boolean }) {
     voiceRef.current = voice;
   }, [prompt, voice]);
 
-  const dispatchRef = useRef<(e: { type: "TRACK_LIST_ENDED" } | { type: "HALT"; error: string }) => void>(
-    () => {},
-  );
+  const dispatchRef = useRef<
+    (
+      e:
+        | { type: "TRACK_LIST_ENDED" }
+        | { type: "TRACK_CHANGED"; uri: string }
+        | { type: "HALT"; error: string },
+    ) => void
+  >(() => {});
   const device = useSpotifyDevice({
     onTrackListEnded: () => dispatchRef.current({ type: "TRACK_LIST_ENDED" }),
+    onTrackChanged: (uri) => dispatchRef.current({ type: "TRACK_CHANGED", uri }),
     onLost: (error) => dispatchRef.current({ type: "HALT", error }),
   });
 
@@ -62,6 +68,7 @@ export function Station({ enabled }: { enabled: boolean }) {
   const cur = state.current;
   const track = cur && state.phase === "tracks" ? cur.segment.tracks[state.trackIndex] : undefined;
   const songPaused = device.playback?.paused ?? false;
+  const past = history.filter((s) => s.id !== cur?.segment.id && s.id !== state.next?.segment.id);
 
   const status = (() => {
     if (state.loop === "stopped") return state.current || state.next ? "Stopped" : "Idle";
@@ -204,16 +211,22 @@ export function Station({ enabled }: { enabled: boolean }) {
         />
       )}
 
-      {/* history */}
-      {history.length > 0 && (
+      {/* next up */}
+      {state.next && (
+        <div>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Next up</h3>
+          <SegmentCard segment={state.next.segment} active={false} activeIndex={-1} />
+        </div>
+      )}
+
+      {/* history: what already aired, newest first — not what's on air or buffered */}
+      {past.length > 0 && (
         <div>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">History</h3>
           <ol className="flex flex-col gap-2">
-            {history
-              .filter((s) => s.id !== cur?.segment.id)
-              .map((s) => (
-                <SegmentCard key={s.id} segment={s} active={false} activeIndex={-1} />
-              ))}
+            {past.map((s) => (
+              <SegmentCard key={s.id} segment={s} active={false} activeIndex={-1} />
+            ))}
           </ol>
         </div>
       )}

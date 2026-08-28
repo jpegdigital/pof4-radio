@@ -81,6 +81,8 @@ export const USER_VOLUME = 0.8;
 
 export function useSpotifyDevice(handlers: {
   onTrackListEnded: () => void;
+  /** The current track changed (the SDK plays through the list on its own). */
+  onTrackChanged: (uri: string) => void;
   onLost: (message: string) => void;
 }) {
   const [status, setStatus] = useState<DeviceStatus>({ kind: "idle" });
@@ -125,7 +127,10 @@ export function useSpotifyDevice(handlers: {
         const s = raw as SdkState | null;
         if (!s) return;
         const cur = s.track_window.current_track?.uri ?? null;
-        if (cur) lastUri.current = cur;
+        if (cur && cur !== lastUri.current) {
+          lastUri.current = cur;
+          h.current.onTrackChanged(cur);
+        }
         setPlayback({ uri: cur, paused: s.paused });
         // Spotify signals "list finished" as: paused, at position 0, nothing queued next, and
         // the current track is still the last one we handed it. Ignore the first moments after

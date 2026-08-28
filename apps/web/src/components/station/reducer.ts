@@ -56,6 +56,8 @@ export type StationEvent =
   | { type: "TALK_ENDED" }
   | { type: "SKIP_TALK" }
   | { type: "TRACK_LIST_ENDED" }
+  /** Spotify moved on to another track of the block by itself (no NEXT/PREV from us). */
+  | { type: "TRACK_CHANGED"; uri: string }
   | { type: "NEXT" }
   | { type: "PREV" }
   /** Something the loop can't continue through (device gone, another tab owns the station). */
@@ -171,6 +173,12 @@ export function reducer(s: StationState, e: StationEvent): StationState {
     case "TRACK_LIST_ENDED":
       if (s.phase !== "tracks") return s;
       return advance(s);
+
+    case "TRACK_CHANGED": {
+      if (s.phase !== "tracks" || !s.current) return s;
+      const i = s.current.segment.tracks.findIndex((t) => t.uri === e.uri);
+      return i < 0 || i === s.trackIndex ? s : { ...s, trackIndex: i };
+    }
 
     case "NEXT": {
       if (s.loop !== "running") return s;

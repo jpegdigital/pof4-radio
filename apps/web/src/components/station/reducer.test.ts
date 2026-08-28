@@ -143,6 +143,15 @@ describe("transport", () => {
     expect(s.playSeq).toBe(seq + 2);
   });
 
+  it("TRACK_CHANGED follows Spotify through the block without restarting playback", () => {
+    const uri = inTracks.current!.segment.tracks[2].uri;
+    const s = reducer(inTracks, { type: "TRACK_CHANGED", uri });
+    expect(s.trackIndex).toBe(2);
+    expect(s.playSeq).toBe(inTracks.playSeq);
+    expect(reducer(s, { type: "TRACK_CHANGED", uri: "spotify:track:unknown" })).toBe(s);
+    expect(reducer({ ...s, phase: "talk" }, { type: "TRACK_CHANGED", uri })).toMatchObject({ phase: "talk" });
+  });
+
   it("NEXT past the last song advances to the next segment or planning", () => {
     const s = run([{ type: "NEXT" }, { type: "NEXT" }, { type: "NEXT" }], inTracks);
     expect(s).toMatchObject({ phase: "planning", pending: true });
