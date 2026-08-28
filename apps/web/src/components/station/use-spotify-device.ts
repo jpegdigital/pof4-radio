@@ -93,6 +93,8 @@ export function useSpotifyDevice(handlers: {
   // The list we last handed the device, for end-of-list detection.
   const list = useRef<{ last: string; startedAt: number } | null>(null);
   const lastUri = useRef<string | null>(null);
+  // pause()/resume() on a player that never loaded a list is a playback_error; gate on this.
+  const loaded = useRef(false);
 
   useEffect(() => () => player.current?.disconnect(), []);
 
@@ -113,7 +115,9 @@ export function useSpotifyDevice(handlers: {
       for (const ev of ["initialization_error", "authentication_error", "account_error", "playback_error"]) {
         p.addListener(ev, (e) => {
           const message = `${ev}: ${(e as { message: string }).message}`;
-          if (ev === "playback_error") h.current.onLost(message);
+          // playback_error is per-operation (a play() that failed surfaces through its own
+          // response) — log it, don't stop the station.
+          if (ev === "playback_error") console.warn(message);
           else setStatus({ kind: "error", message });
         });
       }
@@ -160,12 +164,17 @@ export function useSpotifyDevice(handlers: {
         },
       );
       if (!res.ok) throw new Error(`play failed: ${res.status} ${await res.text()}`);
+      loaded.current = true;
     },
     [status],
   );
 
-  const pause = useCallback(async () => player.current?.pause(), []);
-  const resume = useCallback(async () => player.current?.resume(), []);
+  const pause = useCallback(async () => {
+    if (loaded.current) await player.current?.pause();
+  }, []);
+  const resume = useCallback(async () => {
+    if (loaded.current) await player.current?.resume();
+  }, []);
   const setVolume = useCallback(async (v: number) => player.current?.setVolume(v), []);
 
   const device: SpotifyDevice = { status, playback, connect, play, pause, resume, setVolume };
