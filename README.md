@@ -30,3 +30,19 @@ One-time per machine:
 Proves the plumbing: Postgres (`spotify_account`), Spotify Web API (a fixed search with the app token),
 and playback (connect a Premium account, start the player in the tab, press Play on a track).
 The worker boots pg-boss, logs a fixed search, and waits on an empty `segment` queue.
+
+## Deploy
+
+Every push to `main` redeploys `radio-web` and `radio-worker` (pof4 Railway project; both build from the
+repo root with `pnpm --filter <app>`). Infra changes go in `../pof4-infra`. Secrets are pushed once, straight
+from 1Password — IaC declares them `preserve()` and never touches them:
+
+```sh
+railway variables -s radio-web \
+  --set "SPOTIFY_CLIENT_ID=$(op read op://Developer/railway-radio-spotify/username)" \
+  --set "SPOTIFY_CLIENT_SECRET=$(op read op://Developer/railway-radio-spotify/credential)"
+railway variables -s radio-worker \
+  --set "SPOTIFY_CLIENT_ID=$(op read op://Developer/railway-radio-spotify/username)" \
+  --set "SPOTIFY_CLIENT_SECRET=$(op read op://Developer/railway-radio-spotify/credential)" \
+  --set "CLAUDE_KEY=$(op read op://Developer/pof4-radio-claude-pof4/credential)"
+```
