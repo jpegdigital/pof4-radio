@@ -1,0 +1,19 @@
+{
+  "id": "radio",
+  "handlers": [],
+  "policy": {
+    "id": "radio",
+    "filter": [
+      {
+        "match": { "all": [{ "kind": "schema" }, { "name": ["pgboss"] }] },
+        "action": "exclude",
+        "audit": { "reasonCode": "pgboss-owns-its-schema", "classification": "acknowledged" }
+      },
+      {
+        "match": { "schema": ["pgboss"] },
+        "action": "exclude",
+        "audit": { "reasonCode": "pgboss-owns-its-schema", "classification": "acknowledged" }
+      }
+    ]
+  }
+}

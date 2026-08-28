@@ -1,0 +1,39 @@
+{
+  "name": "radio",
+  "private": true,
+  "packageManager": "pnpm@10.24.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "op run --env-file=.env.op -- pnpm -r --parallel --filter ./apps/* dev",
+    "dev:web": "op run --env-file=.env.op -- pnpm --filter web dev",
+    "dev:worker": "op run --env-file=.env.op -- pnpm --filter worker dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm --filter web typegen && eslint . && pnpm --filter @radio/db schema:lint",
+    "lint:fix": "pnpm --filter web typegen && eslint . --fix",
+    "db:plan": "op run --env-file=.env.op -- pnpm --filter @radio/db schema:plan",
+    "db:apply": "op run --env-file=.env.op -- pnpm --filter @radio/db schema:apply",
+    "db:sql": "op run --env-file=.env.op -- pnpm --filter @radio/db sql",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.9",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.3.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.11"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver"
+    ]
+  }
+}

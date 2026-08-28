@@ -1,0 +1,6 @@
+{
+  // Root-level tooling only (test config). Apps and packages have their own.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["vitest.config.ts"]
+}

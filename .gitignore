@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.next/
+out/
+*.tsbuildinfo
+.env
+.env.*
+!.env.op
+.DS_Store
+*.log
+.clauderc
+
+# Claude Code local plugin settings
+.claude/
