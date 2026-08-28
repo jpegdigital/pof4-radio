@@ -7,6 +7,11 @@ const Env = z.object({
   SPOTIFY_CLIENT_SECRET: z.string().min(1),
   /** Must match the Spotify app's registered redirect URI exactly (scheme, host, port, path). */
   SPOTIFY_REDIRECT_URI: z.string().url(),
+  /** The DJ. */
+  CLAUDE_KEY: z.string().min(1),
+  CLAUDE_MODEL: z.string().min(1).default("claude-opus-5"),
+  /** The voice. Optional so the station runs (talk skipped) before the key is set up. */
+  ELEVENLABS_KEY: z.string().min(1).optional(),
 });
 
 let cached: z.infer<typeof Env> | null = null;

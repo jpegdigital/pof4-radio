@@ -33,12 +33,7 @@ const toAccount = (r: AccountRow): SpotifyAccount => ({
   expiresAt: r.expires_at,
 });
 
-// ---- segments ------------------------------------------------------------------
-
-/** pg-boss queue the web app sends to and the worker works. */
-export const SEGMENT_QUEUE = "segment";
-
-export type SegmentStatus = "queued" | "planning" | "ready" | "played" | "failed";
+// ---- station / segment ---------------------------------------------------------
 
 /** A resolved Spotify track inside a segment — exactly what the player needs. */
 export interface SegmentTrack {
@@ -50,44 +45,88 @@ export interface SegmentTrack {
   durationMs: number;
 }
 
+/** One finished segment: the spoken bridge and its tracks (schema/segment.sql). */
 export interface Segment {
   id: string;
-  status: SegmentStatus;
-  listenerPrompt: string;
-  intro: string | null;
-  outro: string | null;
+  stationId: string;
+  seq: number;
+  prompt: string;
+  talk: string;
   tracks: SegmentTrack[];
-  model: string | null;
-  error: string | null;
-  playedAt: Date | null;
+  model: string;
+  createdAt: Date;
+}
+
+/** The listener's show (schema/station.sql). `messages` is the DJ conversation, opaque here. */
+export interface Station {
+  id: string;
+  prompt: string;
+  messages: unknown[];
+  segmentCount: number;
   createdAt: Date;
 }
 
 interface SegmentRow {
   id: string;
-  status: SegmentStatus;
-  listener_prompt: string;
-  intro: string | null;
-  outro: string | null;
+  station_id: string;
+  seq: number;
+  prompt: string;
+  talk: string;
   tracks: SegmentTrack[];
-  model: string | null;
-  error: string | null;
-  played_at: Date | null;
+  model: string;
+  created_at: Date;
+}
+
+interface StationRow {
+  id: string;
+  prompt: string;
+  messages: unknown[];
+  segment_count: number;
   created_at: Date;
 }
 
 const toSegment = (r: SegmentRow): Segment => ({
   id: r.id,
-  status: r.status,
-  listenerPrompt: r.listener_prompt,
-  intro: r.intro,
-  outro: r.outro,
+  stationId: r.station_id,
+  seq: r.seq,
+  prompt: r.prompt,
+  talk: r.talk,
   tracks: r.tracks,
   model: r.model,
-  error: r.error,
-  playedAt: r.played_at,
   createdAt: r.created_at,
 });
+
+const toStation = (r: StationRow): Station => ({
+  id: r.id,
+  prompt: r.prompt,
+  messages: r.messages,
+  segmentCount: r.segment_count,
+  createdAt: r.created_at,
+});
+
+/** Everything a finished segment writes, in one transaction (see `lockStation`). */
+export interface CommitInput {
+  prompt: string;
+  messages: unknown[];
+  talk: string;
+  tracks: SegmentTrack[];
+  model: string;
+}
+
+/**
+ * A station row held `for update` while the DJ plans. `commit` inserts the segment and updates
+ * the station inside the same transaction; `release(ok)` commits or rolls back and returns the
+ * connection. Always call `release` — in a `finally`.
+ */
+export type StationLock =
+  | { status: "missing" }
+  | { status: "busy" }
+  | {
+      status: "ok";
+      station: Station;
+      commit: (input: CommitInput) => Promise<Segment>;
+      release: (ok: boolean) => Promise<void>;
+    };
 
 export function createDb(connectionString: string) {
   const pool = new pg.Pool({ connectionString, max: 5 });
@@ -120,67 +159,95 @@ export function createDb(connectionString: string) {
       );
     },
 
-    // --- segments ------------------------------------------------------------
+    // --- station -------------------------------------------------------------
 
-    async createSegment(listenerPrompt: string): Promise<Segment> {
-      const { rows } = await pool.query<SegmentRow>(
-        "insert into segments (listener_prompt) values ($1) returning *",
-        [listenerPrompt],
-      );
-      return toSegment(rows[0]!);
+    async createStation(prompt: string): Promise<Station> {
+      const { rows } = await pool.query<StationRow>("insert into station (prompt) values ($1) returning *", [
+        prompt,
+      ]);
+      return toStation(rows[0]!);
     },
 
-    async getSegment(id: string): Promise<Segment | null> {
-      const { rows } = await pool.query<SegmentRow>("select * from segments where id = $1", [id]);
-      return rows[0] ? toSegment(rows[0]) : null;
+    async getStation(id: string): Promise<Station | null> {
+      const { rows } = await pool.query<StationRow>("select * from station where id = $1", [id]);
+      return rows[0] ? toStation(rows[0]) : null;
     },
 
-    /** Newest first. The page shows these; the player picks the oldest `ready` one. */
-    async listSegments(limit = 20): Promise<Segment[]> {
+    /**
+     * Take the station's row lock for the duration of planning. A second caller (another tab)
+     * gets `busy` immediately instead of queueing behind a 60-second model call.
+     */
+    async lockStation(id: string): Promise<StationLock> {
+      const client = await pool.connect();
+      let done = false;
+      const release = async (ok: boolean) => {
+        if (done) return;
+        done = true;
+        try {
+          await client.query(ok ? "commit" : "rollback");
+        } finally {
+          client.release();
+        }
+      };
+      try {
+        await client.query("begin");
+        const { rows } = await client.query<StationRow>(
+          "select * from station where id = $1 for update skip locked",
+          [id],
+        );
+        if (!rows[0]) {
+          await release(false);
+          const exists = await pool.query("select 1 from station where id = $1", [id]);
+          return { status: exists.rowCount ? "busy" : "missing" };
+        }
+        const station = toStation(rows[0]);
+        return {
+          status: "ok",
+          station,
+          release,
+          async commit(input) {
+            const seg = await client.query<SegmentRow>(
+              `insert into segment (station_id, seq, prompt, talk, tracks, model)
+               values ($1, $2, $3, $4, $5, $6) returning *`,
+              [
+                id,
+                station.segmentCount + 1,
+                input.prompt,
+                input.talk,
+                JSON.stringify(input.tracks),
+                input.model,
+              ],
+            );
+            await client.query(
+              "update station set prompt = $2, messages = $3, segment_count = segment_count + 1 where id = $1",
+              [id, input.prompt, JSON.stringify(input.messages)],
+            );
+            return toSegment(seg.rows[0]!);
+          },
+        };
+      } catch (err) {
+        await release(false);
+        throw err;
+      }
+    },
+
+    // --- segment history -------------------------------------------------------
+
+    /** Newest first. */
+    async listSegments(stationId: string, limit = 20): Promise<Segment[]> {
       const { rows } = await pool.query<SegmentRow>(
-        "select * from segments order by created_at desc limit $1",
-        [limit],
+        "select * from segment where station_id = $1 order by seq desc limit $2",
+        [stationId, limit],
       );
       return rows.map(toSegment);
     },
 
-    async startSegment(id: string, model: string): Promise<void> {
-      await pool.query("update segments set status = 'planning', model = $2 where id = $1", [id, model]);
-    },
-
-    async finishSegment(
-      id: string,
-      out: { intro: string; outro: string; tracks: SegmentTrack[] },
-    ): Promise<void> {
-      await pool.query(
-        "update segments set status = 'ready', intro = $2, outro = $3, tracks = $4 where id = $1",
-        [id, out.intro, out.outro, JSON.stringify(out.tracks)],
+    async lastSegment(stationId: string): Promise<Segment | null> {
+      const { rows } = await pool.query<SegmentRow>(
+        "select * from segment where station_id = $1 order by seq desc limit 1",
+        [stationId],
       );
-    },
-
-    async failSegment(id: string, error: string): Promise<void> {
-      await pool.query("update segments set status = 'failed', error = $2 where id = $1", [id, error]);
-    },
-
-    async markPlayed(id: string): Promise<void> {
-      await pool.query(
-        "update segments set status = 'played', played_at = now() where id = $1 and status = 'ready'",
-        [id],
-      );
-    },
-
-    /**
-     * What the station has played (or has lined up) lately — the DJ's "don't repeat
-     * yourself" memory. Newest segment first, tracks in play order within it.
-     */
-    async recentTracks(segments = 6): Promise<SegmentTrack[]> {
-      const { rows } = await pool.query<{ tracks: SegmentTrack[] }>(
-        `select tracks from segments
-         where status in ('ready', 'played', 'planning')
-         order by created_at desc limit $1`,
-        [segments],
-      );
-      return rows.flatMap((r) => r.tracks);
+      return rows[0] ? toSegment(rows[0]) : null;
     },
 
     async close() {

@@ -8,8 +8,6 @@
   "scripts": {
     "dev": "op run --env-file=.env.op -- pnpm -r --parallel --stream --filter web --filter worker dev",
     "dev:web": "op run --env-file=.env.op -- pnpm --filter web dev",
-    "dev:worker": "op run --env-file=.env.op -- pnpm --filter worker dev",
-    "enqueue": "op run --env-file=.env.op -- pnpm --filter worker enqueue",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm --filter web typegen && eslint . && pnpm --filter @radio/db schema:lint",
