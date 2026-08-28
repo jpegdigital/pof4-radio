@@ -40,5 +40,5 @@ Every push to `main` redeploys `radio-web` (pof4 Railway project; builds from th
 from 1Password — IaC declares them `preserve()` and never touches them:
 
 ```sh
-railway variables -s radio-web   --set "SPOTIFY_CLIENT_ID=$(op read op://Developer/railway-radio-spotify/username)"   --set "SPOTIFY_CLIENT_SECRET=$(op read op://Developer/railway-radio-spotify/credential)"   --set "CLAUDE_KEY=$(op read op://Developer/pof4-radio-claude-pof4/credential)"   --set "ELEVENLABS_KEY=$(op read op://Developer/elevenlabs-radio/credential)"
+railway variables -s radio-web \n  --set "SPOTIFY_CLIENT_ID=$(op read op://Developer/railway-radio-spotify/username)" \n  --set "SPOTIFY_CLIENT_SECRET=$(op read op://Developer/railway-radio-spotify/credential)" \n  --set "CLAUDE_KEY=$(op read op://Developer/pof4-radio-claude-pof4/credential)" \n  --set "ELEVENLABS_KEY=$(op read op://Developer/pof4-radio-elevenlabs-proart/credential)"
 ```
