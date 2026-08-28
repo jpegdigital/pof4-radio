@@ -4,6 +4,7 @@ export {
   type Db,
   type Segment,
   type SegmentTrack,
+  type Setting,
   type SpotifyAccount,
   type Station,
   type StationLock,

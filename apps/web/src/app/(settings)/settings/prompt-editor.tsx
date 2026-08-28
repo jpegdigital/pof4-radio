@@ -1,0 +1,230 @@
+"use client";
+
+import { fillVars, PROMPT_VAR_HELP, type PromptVar, turnVars } from "@radio/dj";
+import { Fragment, useActionState, useRef, useState } from "react";
+import { resetPrompt, type SaveState, savePrompt } from "./actions";
+
+/**
+ * One prompt slot: the script in a mono textarea, its placeholders as chips that drop into the
+ * text at the caret, and — for slots that take placeholders — a preview of the same text as the
+ * DJ will read it, with a sample block filled in and the substitutions lit up.
+ */
+
+interface Slot {
+  key: string;
+  label: string;
+  blurb: string;
+  vars: readonly PromptVar[];
+}
+
+const SAMPLE = turnVars({
+  prompt: "late-night soul with horns",
+  promptChanged: false,
+  previous: {
+    talk: "That was Al Green with Simply Beautiful, cut in Memphis in seventy-two. Let's stay in that room a little longer.",
+    tracks: [
+      { id: "1", uri: "", name: "Simply Beautiful", artists: ["Al Green"], album: "", durationMs: 0 },
+      { id: "2", uri: "", name: "A Song for You", artists: ["Donny Hathaway"], album: "", durationMs: 0 },
+      {
+        id: "3",
+        uri: "",
+        name: "I'd Rather Be with You",
+        artists: ["Bootsy Collins"],
+        album: "",
+        durationMs: 0,
+      },
+    ],
+  },
+});
+
+export function PromptEditor({
+  slot,
+  value,
+  defaultValue,
+  updatedAt,
+}: {
+  slot: Slot;
+  value: string;
+  defaultValue: string;
+  updatedAt: string | null;
+}) {
+  const [text, setText] = useState(value);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const [save, saveAction, saving] = useActionState<SaveState, FormData>(savePrompt, {});
+  const [reset, resetAction, resetting] = useActionState<SaveState, FormData>(resetPrompt, {});
+  const dirty = text !== value;
+  const isDefault = updatedAt === null;
+  const missing = slot.vars.filter((v) => !text.includes(`{${v}}`));
+
+  function insert(name: PromptVar) {
+    const el = area.current;
+    const token = `{${name}}`;
+    if (!el) {
+      setText((t) => t + token);
+      return;
+    }
+    const start = el.selectionStart ?? text.length;
+    const end = el.selectionEnd ?? start;
+    const next = text.slice(0, start) + token + text.slice(end);
+    setText(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + token.length, start + token.length);
+    });
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="font-display text-sm uppercase tracking-[0.2em] text-zinc-500">
+            {isDefault ? "Reading the default" : `Edited ${when(updatedAt)}`}
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{slot.label}</h1>
+          <p className="mt-1 max-w-prose text-sm text-zinc-400">{slot.blurb}</p>
+        </div>
+        <p className="font-mono text-xs text-zinc-600">{slot.key}</p>
+      </div>
+
+      <form action={saveAction} className="flex flex-col gap-3">
+        <input type="hidden" name="key" value={slot.key} />
+        {slot.vars.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+            <span className="font-display text-sm uppercase tracking-[0.15em]">Placeholders</span>
+            {slot.vars.map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => insert(v)}
+                title={`${PROMPT_VAR_HELP[v]} — click to insert at the cursor`}
+                className="var-chip hover:bg-lamp/20"
+              >
+                {`{${v}}`}
+              </button>
+            ))}
+          </div>
+        )}
+        <textarea
+          ref={area}
+          name="value"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={slot.vars.length ? 12 : 24}
+          spellCheck={false}
+          aria-label={`${slot.label} prompt`}
+          className="w-full resize-y rounded-md border border-zinc-800 bg-zinc-900/60 px-4 py-3 font-mono text-[13px] leading-relaxed text-zinc-100 focus:border-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-lamp/60"
+        />
+        {missing.length > 0 && (
+          <p className="text-xs text-zinc-500">
+            Not used here: {missing.map((v) => `{${v}}`).join(", ")} — the DJ won&rsquo;t see it. That&rsquo;s
+            allowed, but usually a mistake.
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={!dirty || saving}
+            className="rounded-md bg-zinc-100 px-4 py-2 text-sm font-medium text-black transition disabled:opacity-40"
+          >
+            {saving ? "Saving…" : "Save changes"}
+          </button>
+          {dirty && !saving && (
+            <button
+              type="button"
+              onClick={() => setText(value)}
+              className="text-sm text-zinc-400 underline-offset-2 hover:underline"
+            >
+              Discard
+            </button>
+          )}
+          {save.error && <span className="text-sm text-red-400">{save.error}</span>}
+          {reset.error && <span className="text-sm text-red-400">{reset.error}</span>}
+          {!dirty && save.savedAt && !save.error && (
+            <span className="text-sm text-zinc-500">Saved — applies to the next block.</span>
+          )}
+        </div>
+      </form>
+
+      {!isDefault && (
+        <form action={resetAction} className="flex items-center gap-3 text-sm">
+          <input type="hidden" name="key" value={slot.key} />
+          {confirmReset ? (
+            <>
+              <span className="text-zinc-400">Drop your edit and go back to the default?</span>
+              <button
+                type="submit"
+                disabled={resetting}
+                className="rounded-md border border-zinc-700 px-3 py-1.5 text-zinc-100 hover:bg-zinc-800 disabled:opacity-40"
+              >
+                {resetting ? "Resetting…" : "Yes, reset"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmReset(false)}
+                className="text-zinc-400 underline-offset-2 hover:underline"
+              >
+                Keep it
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmReset(true)}
+              className="text-zinc-400 underline-offset-2 hover:underline"
+            >
+              Reset to default
+            </button>
+          )}
+        </form>
+      )}
+
+      {slot.vars.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-display text-sm uppercase tracking-[0.2em] text-zinc-500">
+            As the DJ reads it · sample block
+          </h2>
+          <Preview text={text} vars={slot.vars} />
+        </section>
+      )}
+
+      {isDefault && text !== defaultValue && (
+        <p className="text-xs text-zinc-600">
+          You&rsquo;re editing the code default. Saving stores your version.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The filled text, with each substitution wrapped so it shows as lit. */
+function Preview({ text, vars }: { text: string; vars: readonly PromptVar[] }) {
+  const values = Object.fromEntries(vars.map((v) => [v, SAMPLE[v] ?? ""])) as Partial<
+    Record<PromptVar, string>
+  >;
+  const pattern = new RegExp(`\\{(${vars.join("|")})\\}`, "g");
+  const parts = text.split(pattern);
+  return (
+    <pre className="whitespace-pre-wrap rounded-md border border-zinc-800/70 bg-zinc-950 px-4 py-3 font-mono text-[13px] leading-relaxed text-zinc-300">
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          <span key={i} className="var-filled">
+            {fillVars(`{${p}}`, values)}
+          </span>
+        ) : (
+          <Fragment key={i}>{p}</Fragment>
+        ),
+      )}
+    </pre>
+  );
+}
+
+function when(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}

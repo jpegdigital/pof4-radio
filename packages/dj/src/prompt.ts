@@ -2,11 +2,56 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { SegmentTrack } from "@radio/db";
 
 /**
- * Everything the DJ is told. `SYSTEM` and `TOOLS` are frozen strings so the cached prefix is
- * identical from one segment to the next; whatever changes per segment goes in the user turn.
+ * Everything the DJ is told.
+ *
+ * The prose is data: four slots, edited on /settings and stored in the `settings` table; what's
+ * here is the default each slot falls back to while it has never been edited. `TOOLS` stays in
+ * code — its schema is what `resolveFinish` checks. The system prompt is sent with a 1-hour
+ * cache breakpoint, so editing it costs one cache miss on the next segment, nothing more.
+ *
+ * Placeholders are `{name}`; `fillVars` replaces the ones it knows and leaves the rest alone.
  */
 
-export const SYSTEM = `You are the on-air DJ of a small personal radio station. One listener, listening right now, told you what they're in the mood for. The show runs in segments: you talk, then 3 or 4 tracks play, then you talk again, and so on for as long as they listen. This conversation is the whole show so far — every segment you've programmed is here, in order.
+export const PROMPT_SLOTS = [
+  {
+    key: "prompt.system",
+    label: "System",
+    blurb: "Who the DJ is and the standing rules. Sent with every segment.",
+    vars: [],
+  },
+  {
+    key: "prompt.opening",
+    label: "Opening",
+    blurb: "The first segment's brief: open the show and program the first block.",
+    vars: ["request"],
+  },
+  {
+    key: "prompt.bridge",
+    label: "Bridge",
+    blurb: "Every later segment's brief: close the previous block and open the next.",
+    vars: ["request", "previous_talk", "previous_tracks"],
+  },
+  {
+    key: "prompt.shift",
+    label: "Mood shift",
+    blurb: "Added after the bridge when the listener changed their request since the last block.",
+    vars: ["request"],
+  },
+] as const satisfies readonly { key: string; label: string; blurb: string; vars: readonly PromptVar[] }[];
+
+export type PromptKey = (typeof PROMPT_SLOTS)[number]["key"];
+export type PromptVar = "request" | "previous_talk" | "previous_tracks";
+
+export const PROMPT_VAR_HELP: Record<PromptVar, string> = {
+  request: "what the listener typed",
+  previous_talk: "the DJ's talk from the block that just played",
+  previous_tracks: "that block's tracks, one per line, numbered",
+};
+
+export type PromptTemplate = Record<PromptKey, string>;
+
+export const DEFAULT_PROMPTS: PromptTemplate = {
+  "prompt.system": `You are the on-air DJ of a small personal radio station. One listener, listening right now, told you what they're in the mood for. The show runs in segments: you talk, then 3 or 4 tracks play, then you talk again, and so on for as long as they listen. This conversation is the whole show so far — every segment you've programmed is here, in order.
 
 Each segment has exactly one piece of talk:
 - On the first segment it's an opening: greet the listener, set the mood, lead into the first track.
@@ -21,7 +66,34 @@ How you talk:
 - It's spoken, not read. A warm, unhurried late-night host: short sentences, contractions, no lists, no markdown, no emoji, nothing a voice can't say. Bridges run 3 to 5 sentences; the opening 2 to 4.
 - You may use at most one bracketed delivery tag where it genuinely helps, like [sighs] or [laughs] — most talk needs none.
 
-When the segment is ready, call finish_segment exactly once and write nothing after it.`;
+When the segment is ready, call finish_segment exactly once and write nothing after it.`,
+
+  "prompt.opening": `Listener's request: {request}
+
+This is the first segment of the show. Open the show and program the first block.`,
+
+  "prompt.bridge": `Listener's request: {request}
+
+The previous segment (your talk and its tracks):
+{previous_talk}
+{previous_tracks}
+
+Program the next segment. Your talk is the bridge: close the previous block and open this one. The listener may have skipped some of it — write so it reads naturally either way.`,
+
+  "prompt.shift": `The listener changed the mood to: {request}. Acknowledge the shift on air and follow it.`,
+};
+
+/** The template from whatever rows exist: an unedited slot is its default. */
+export function templateFrom(rows: Iterable<{ key: string; value: string }>): PromptTemplate {
+  const t: PromptTemplate = { ...DEFAULT_PROMPTS };
+  for (const r of rows) if (r.key in t) t[r.key as PromptKey] = r.value;
+  return t;
+}
+
+/** Replace every `{name}` that has a value; anything else in braces is left alone. */
+export function fillVars(text: string, vars: Partial<Record<PromptVar, string>>): string {
+  return Object.entries(vars).reduce((t, [k, v]) => (v === undefined ? t : t.replaceAll(`{${k}}`, v)), text);
+}
 
 export const TOOLS: Anthropic.Tool[] = [
   {
@@ -73,23 +145,22 @@ export interface TurnInput {
   promptChanged: boolean;
 }
 
-/** The per-segment user message: the ask, the previous block, and what to do now. */
-export function buildUserTurn({ prompt, previous, promptChanged }: TurnInput): string {
-  const lines = [`Listener's request: ${prompt}`];
-  if (!previous) {
-    lines.push("", "This is the first segment of the show. Open the show and program the first block.");
-    return lines.join("\n");
-  }
-  lines.push(
-    "",
-    "The previous segment (your talk and its tracks):",
-    previous.talk,
-    ...previous.tracks.map((t, i) => `${i + 1}. ${t.artists.join(", ")} — ${t.name}`),
-    "",
-    "Program the next segment. Your talk is the bridge: close the previous block and open this one. The listener may have skipped some of it — write so it reads naturally either way.",
-  );
-  if (promptChanged) {
-    lines.push(`The listener changed the mood to: ${prompt}. Acknowledge the shift on air and follow it.`);
-  }
-  return lines.join("\n");
+/** The variables a turn fills in, as text. */
+export function turnVars({ prompt, previous }: TurnInput): Partial<Record<PromptVar, string>> {
+  return {
+    request: prompt,
+    previous_talk: previous?.talk,
+    previous_tracks: previous?.tracks
+      .map((t, i) => `${i + 1}. ${t.artists.join(", ")} — ${t.name}`)
+      .join("\n"),
+  };
+}
+
+/** The per-segment user message: the opening brief, or the bridge (plus the shift note when the ask changed). */
+export function buildUserTurn(template: PromptTemplate, input: TurnInput): string {
+  const vars = turnVars(input);
+  if (!input.previous) return fillVars(template["prompt.opening"], vars);
+  const parts = [fillVars(template["prompt.bridge"], vars)];
+  if (input.promptChanged) parts.push(fillVars(template["prompt.shift"], vars));
+  return parts.join("\n");
 }

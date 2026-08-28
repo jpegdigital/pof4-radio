@@ -4,6 +4,7 @@ import { z } from "zod";
 import { claude } from "@/lib/claude";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
+import { loadPromptTemplate } from "@/lib/prompts";
 import { search } from "@/lib/spotify";
 
 /**
@@ -32,15 +33,15 @@ export async function POST(req: Request) {
   const tag = `[station ${stationId.slice(0, 8)} #${station.segmentCount + 1}]`;
   let ok = false;
   try {
-    const previous = await db().lastSegment(stationId);
-    const userTurn = buildUserTurn({
+    const [previous, template] = await Promise.all([db().lastSegment(stationId), loadPromptTemplate()]);
+    const userTurn = buildUserTurn(template, {
       prompt,
       previous: previous ? { talk: previous.talk, tracks: previous.tracks } : null,
       promptChanged: previous !== null && prompt !== station.prompt,
     });
     const model = env().CLAUDE_MODEL;
     const out = await planSegment(
-      { history: station.messages as Anthropic.MessageParam[], userTurn },
+      { system: template["prompt.system"], history: station.messages as Anthropic.MessageParam[], userTurn },
       { client: claude(), model, search },
     );
     const messages = capHistory([...(station.messages as Anthropic.MessageParam[]), ...trimTurn(out.turn)]);

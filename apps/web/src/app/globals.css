@@ -1,5 +1,29 @@
 @import "tailwindcss";
 
+/*
+  Two faces beyond the system sans, both loaded in app/layout.tsx:
+    display — Barlow Condensed: signage. Eyebrows, nav, the words printed on the desk.
+    mono    — IBM Plex Mono: script. What the DJ reads; the prompt editors and their preview.
+  One accent: the amber of an on-air lamp. It marks what is live-edited, nothing else.
+*/
+@theme {
+  --font-display: var(--font-barlow), "Arial Narrow", sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "Cascadia Mono", monospace;
+  --color-lamp: #f2b544;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* A placeholder chip / a substituted span: the same amber, so the eye links them. */
+.var-chip {
+  @apply inline-flex items-center rounded-sm border border-lamp/30 bg-lamp/10 px-1.5 py-0.5 font-mono text-xs text-lamp;
+}
+.var-chip:focus-visible {
+  @apply outline-2 outline-offset-2 outline-lamp;
+}
+.var-filled {
+  @apply rounded-sm bg-lamp/15 text-lamp;
+  box-decoration-break: clone;
 }

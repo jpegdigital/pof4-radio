@@ -41,11 +41,21 @@ audio is fetched and held as a Blob, so the hand-off is instant. Run/Stop are ab
 buffered segment and the DJ's memory; a page load is a fresh show (new station) unless a past station is picked from the "Resume a show" list (`GET /api/stations`, `GET /api/station/:id`) — then Run continues that conversation.
 
 **The server is two functions.** `POST /api/station/next` continues the station's one Claude conversation
-(`station.messages`, row-locked while planning → a second tab gets 409): system + tools are frozen,
-the last message carries a 1-hour cache breakpoint, each finished turn is trimmed to its
+(`station.messages`, row-locked while planning → a second tab gets 409): tools are frozen in code, the
+prompts are data (below), the last message carries a 1-hour cache breakpoint, each finished turn is trimmed to its
 `finish_segment` call, history is capped at 20 segments. `GET /api/tts` pipes ElevenLabs' streaming
 endpoint (`eleven_v3`) to the browser; voice id, model and settings come from the browser per request
 (localStorage), only `ELEVENLABS_KEY` lives on the server. `segment` rows are a history log.
+
+**The prompts are settings.** Four slots — `prompt.system`, `prompt.opening`, `prompt.bridge`,
+`prompt.shift` — with `{request}` / `{previous_talk}` / `{previous_tracks}` placeholders
+(`PROMPT_SLOTS`, `DEFAULT_PROMPTS`, `fillVars` in `packages/dj/src/prompt.ts`). The `settings` table holds
+only edited slots (a key with no row reads its code default; "Reset" deletes the row); `/settings`
+edits them, `loadPromptTemplate()` merges them per request. Editing the system prompt costs one cache
+miss. No provenance yet: a station doesn't record which prompt text planned it.
+
+**Two shells, route groups.** `app/(app)` is the station, phone-wide, the page as it was; `app/(settings)`
+is the control room, desktop-wide. The root layout holds only fonts and the ground colour.
 
 ## Working here
 

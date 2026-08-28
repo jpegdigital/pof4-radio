@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildUserTurn } from "./prompt.ts";
+import { buildUserTurn, DEFAULT_PROMPTS, fillVars, PROMPT_SLOTS, templateFrom } from "./prompt.ts";
 
 const previous = {
   talk: "That was Al Green.",
@@ -25,13 +25,14 @@ const previous = {
 
 describe("buildUserTurn", () => {
   it("opens the show on the first segment", () => {
-    const t = buildUserTurn({ prompt: "soul", previous: null, promptChanged: false });
+    const t = buildUserTurn(DEFAULT_PROMPTS, { prompt: "soul", previous: null, promptChanged: false });
+    expect(t).toContain("Listener's request: soul");
     expect(t).toContain("first segment");
     expect(t).not.toContain("previous");
   });
 
   it("carries the whole previous segment and the skip-safe instruction", () => {
-    const t = buildUserTurn({ prompt: "soul", previous, promptChanged: false });
+    const t = buildUserTurn(DEFAULT_PROMPTS, { prompt: "soul", previous, promptChanged: false });
     expect(t).toContain("That was Al Green.");
     expect(t).toContain("1. Al Green — Simply Beautiful");
     expect(t).toContain("2. Donny Hathaway — A Song for You");
@@ -40,7 +41,27 @@ describe("buildUserTurn", () => {
   });
 
   it("announces a prompt change", () => {
-    const t = buildUserTurn({ prompt: "now jazz", previous, promptChanged: true });
+    const t = buildUserTurn(DEFAULT_PROMPTS, { prompt: "now jazz", previous, promptChanged: true });
     expect(t).toContain("changed the mood to: now jazz");
+  });
+
+  it("uses an edited slot and leaves the others at their default", () => {
+    const template = templateFrom([{ key: "prompt.opening", value: "Go: {request}" }]);
+    expect(buildUserTurn(template, { prompt: "soul", previous: null, promptChanged: false })).toBe(
+      "Go: soul",
+    );
+    expect(template["prompt.bridge"]).toBe(DEFAULT_PROMPTS["prompt.bridge"]);
+  });
+});
+
+describe("fillVars", () => {
+  it("fills known placeholders, leaves the rest, skips missing values", () => {
+    expect(
+      fillVars("{request} / {previous_talk} / {other}", { request: "x", previous_talk: undefined }),
+    ).toBe("x / {previous_talk} / {other}");
+  });
+
+  it("every default mentions each of its slot's placeholders", () => {
+    for (const s of PROMPT_SLOTS) for (const v of s.vars) expect(DEFAULT_PROMPTS[s.key]).toContain(`{${v}}`);
   });
 });

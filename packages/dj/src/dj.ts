@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { SegmentTrack } from "@radio/db";
 import type { Track } from "@radio/spotify";
 import { withCache } from "./history.ts";
-import { SYSTEM, TOOLS } from "./prompt.ts";
+import { TOOLS } from "./prompt.ts";
 
 /**
  * One segment = one continuation of the station's conversation, with two tools:
@@ -19,6 +19,8 @@ import { SYSTEM, TOOLS } from "./prompt.ts";
  */
 
 export interface DjInput {
+  /** The system prompt (settings slot `prompt.system`) — cached for an hour, so keep it stable. */
+  system: string;
   history: Anthropic.MessageParam[];
   userTurn: string;
 }
@@ -102,7 +104,7 @@ export async function planSegment(input: DjInput, deps: DjDeps): Promise<DjOutpu
       {
         model: deps.model,
         max_tokens: 4096,
-        system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral", ttl: "1h" } }],
+        system: [{ type: "text", text: input.system, cache_control: { type: "ephemeral", ttl: "1h" } }],
         tools: TOOLS,
         messages: withCache([...input.history, ...turn]),
       },

@@ -33,6 +33,21 @@ const toAccount = (r: AccountRow): SpotifyAccount => ({
   expiresAt: r.expires_at,
 });
 
+// ---- settings ------------------------------------------------------------------
+
+/** One edited prompt slot (schema/settings.sql). A key with no row is at its code default. */
+export interface Setting {
+  key: string;
+  value: string;
+  updatedAt: Date;
+}
+
+interface SettingRow {
+  key: string;
+  value: string;
+  updated_at: Date;
+}
+
 // ---- station / segment ---------------------------------------------------------
 
 /** A resolved Spotify track inside a segment — exactly what the player needs. */
@@ -172,6 +187,25 @@ export function createDb(connectionString: string) {
            expires_at = excluded.expires_at`,
         [a.spotifyUserId, a.displayName, a.product, a.scope, a.refreshToken, a.accessToken, a.expiresAt],
       );
+    },
+
+    // --- settings --------------------------------------------------------------
+
+    async listSettings(): Promise<Setting[]> {
+      const { rows } = await pool.query<SettingRow>("select * from settings order by key");
+      return rows.map((r) => ({ key: r.key, value: r.value, updatedAt: r.updated_at }));
+    },
+
+    async saveSetting(key: string, value: string): Promise<void> {
+      await pool.query(
+        "insert into settings (key, value) values ($1, $2) on conflict (key) do update set value = excluded.value",
+        [key, value],
+      );
+    },
+
+    /** Back to the code default. */
+    async deleteSetting(key: string): Promise<void> {
+      await pool.query("delete from settings where key = $1", [key]);
     },
 
     // --- station -------------------------------------------------------------
