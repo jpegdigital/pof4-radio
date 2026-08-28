@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 
-/** Rehydrate a station after a reload: its prompt and the last 20 segments, newest first. */
+/** Load a past station to resume it: its prompt and the last 20 segments, newest first. */
 export async function GET(_req: Request, ctx: RouteContext<"/api/station/[id]">) {
   const { id } = await ctx.params;
   if (!z.uuid().safeParse(id).success) return Response.json({ error: "unknown station" }, { status: 404 });

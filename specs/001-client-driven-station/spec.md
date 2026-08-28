@@ -61,6 +61,9 @@ playing when stopped.
    still builds on the conversation so far (history is not lost by stopping).
 4. **Given** the page is reloaded, **When** the listener presses Run, **Then** it is a fresh show: a new
    station, an opening talk, empty history. (Memory is kept across Stop/Run, not across page loads.)
+5. **Given** a fresh page, **When** the listener picks a past station from "Resume a show" and presses
+   Run, **Then** its prompt and history are loaded and the next talk bridges from where that show left
+   off (the DJ's memory of it is intact).
 
 ---
 

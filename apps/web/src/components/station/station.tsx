@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { SegmentView } from "./reducer";
+import { ResumePicker } from "./resume-picker";
 import { useSpotifyDevice } from "./use-spotify-device";
 import { useStation } from "./use-station";
 import { VoiceSettingsPanel } from "./voice-settings";
@@ -57,6 +58,17 @@ export function Station({ enabled }: { enabled: boolean }) {
     const stored = loadVoice();
     queueMicrotask(() => setVoice(stored)); // after hydration, not during it
   }, []);
+
+  // Resume a past show: load its prompt and history; Run then continues that conversation.
+  const resume = async (id: string) => {
+    const res = await fetch(`/api/station/${id}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const data = (await res.json()) as { stationId: string; prompt: string; segments: SegmentView[] };
+    setStationId(data.stationId);
+    setPrompt(data.prompt);
+    setHistory(data.segments);
+  };
+  const fresh = state.loop === "stopped" && !state.current && !state.next;
 
   const changeVoice = (v: VoiceSettings) => {
     setVoice(v);
@@ -115,6 +127,25 @@ export function Station({ enabled }: { enabled: boolean }) {
         <div className="rounded-lg border border-zinc-800 p-3">
           <VoiceSettingsPanel value={voice} onChange={changeVoice} />
         </div>
+      )}
+
+      {/* resume a past show — only before anything is on air */}
+      {fresh && enabled && !stationId && <ResumePicker onPick={(id) => void resume(id)} />}
+      {fresh && stationId && (
+        <p className="text-xs text-zinc-500">
+          Resuming a past show ({history.length} block{history.length === 1 ? "" : "s"} so far) — Run
+          continues it.{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setStationId(null);
+              setHistory([]);
+            }}
+            className="underline underline-offset-2"
+          >
+            Start fresh instead
+          </button>
+        </p>
       )}
 
       {/* prompt + loop */}

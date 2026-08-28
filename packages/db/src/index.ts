@@ -7,4 +7,5 @@ export {
   type SpotifyAccount,
   type Station,
   type StationLock,
+  type StationSummary,
 } from "./db.ts";

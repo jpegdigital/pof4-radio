@@ -66,6 +66,21 @@ export interface Station {
   createdAt: Date;
 }
 
+/** A past station as listed for resuming: enough to recognise it, nothing of the conversation. */
+export interface StationSummary {
+  id: string;
+  prompt: string;
+  segmentCount: number;
+  updatedAt: Date;
+}
+
+interface StationSummaryRow {
+  id: string;
+  prompt: string;
+  segment_count: number;
+  updated_at: Date;
+}
+
 interface SegmentRow {
   id: string;
   station_id: string;
@@ -171,6 +186,20 @@ export function createDb(connectionString: string) {
     async getStation(id: string): Promise<Station | null> {
       const { rows } = await pool.query<StationRow>("select * from station where id = $1", [id]);
       return rows[0] ? toStation(rows[0]) : null;
+    },
+
+    /** Stations that produced at least one segment, most recently active first. */
+    async listStations(limit = 20): Promise<StationSummary[]> {
+      const { rows } = await pool.query<StationSummaryRow>(
+        "select id, prompt, segment_count, updated_at from station where segment_count > 0 order by updated_at desc limit $1",
+        [limit],
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        prompt: r.prompt,
+        segmentCount: r.segment_count,
+        updatedAt: r.updated_at,
+      }));
     },
 
     /**

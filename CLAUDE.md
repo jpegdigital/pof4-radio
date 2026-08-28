@@ -38,7 +38,7 @@ tested) with `loop: stopped|running` × `phase: idle|planning|talk|tracks`, and 
 an opening on the first segment and a bridge from the previous one after that. The moment a segment's
 talk starts, the browser asks for the next one; it lands (20–60 s) while the block plays, and its talk
 audio is fetched and held as a Blob, so the hand-off is instant. Run/Stop are absolute; Stop keeps the
-buffered segment and the DJ's memory; a page load is a fresh show (new station).
+buffered segment and the DJ's memory; a page load is a fresh show (new station) unless a past station is picked from the "Resume a show" list (`GET /api/stations`, `GET /api/station/:id`) — then Run continues that conversation.
 
 **The server is two functions.** `POST /api/station/next` continues the station's one Claude conversation
 (`station.messages`, row-locked while planning → a second tab gets 409): system + tools are frozen,
