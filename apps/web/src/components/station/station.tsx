@@ -251,10 +251,10 @@ export function Station({
           </p>
         )}
 
-        <div className="flex items-end gap-3">
-          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <Label>On the mic</Label>
+        <div className="flex items-start gap-3">
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
             <DjPicker value={dj} onChange={changeDj} />
+            <Label className="pl-0.5">On the mic</Label>
           </div>
           {running ? (
             <button
