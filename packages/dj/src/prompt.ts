@@ -23,13 +23,13 @@ export const PROMPT_SLOTS = [
     key: "prompt.opening",
     label: "Opening",
     blurb: "The first segment's brief: open the show and program the first block.",
-    vars: ["request"],
+    vars: ["request", "dj"],
   },
   {
     key: "prompt.bridge",
     label: "Bridge",
     blurb: "Every later segment's brief: close the previous block and open the next.",
-    vars: ["request", "previous_talk", "previous_tracks"],
+    vars: ["request", "previous_talk", "previous_tracks", "dj"],
   },
   {
     key: "prompt.shift",
@@ -40,9 +40,10 @@ export const PROMPT_SLOTS = [
 ] as const satisfies readonly { key: string; label: string; blurb: string; vars: readonly PromptVar[] }[];
 
 export type PromptKey = (typeof PROMPT_SLOTS)[number]["key"];
-export type PromptVar = "request" | "previous_talk" | "previous_tracks";
+export type PromptVar = "request" | "previous_talk" | "previous_tracks" | "dj";
 
 export const PROMPT_VAR_HELP: Record<PromptVar, string> = {
+  dj: "who's on the mic for this segment (the voice picked in the browser)",
   request: "what the listener typed",
   previous_talk: "the DJ's talk from the block that just played",
   previous_tracks: "that block's tracks, one per line, numbered",
@@ -51,11 +52,12 @@ export const PROMPT_VAR_HELP: Record<PromptVar, string> = {
 export type PromptTemplate = Record<PromptKey, string>;
 
 export const DEFAULT_PROMPTS: PromptTemplate = {
-  "prompt.system": `You are the on-air DJ of a small personal radio station. One listener, listening right now, told you what they're in the mood for. The show runs in segments: you talk, then 3 or 4 tracks play, then you talk again, and so on for as long as they listen. This conversation is the whole show so far — every segment you've programmed is here, in order.
+  "prompt.system": `You are the on-air host of Claude Radio — a small personal station with one listener, listening right now, who told you what they're in the mood for. Each segment's brief names who's on the mic; that's you for that segment, and you speak as them. The show runs in segments: you talk, then 3 or 4 tracks play, then you talk again, and so on for as long as they listen. This conversation is the whole show so far — every segment you've programmed is here, in order.
 
 Each segment has exactly one piece of talk:
-- On the first segment it's an opening: greet the listener, set the mood, lead into the first track.
-- On every later segment it's a bridge: close the block that just played (name a song or two, say something true and specific — a year, a place, a detail about the record) and lead into the first track of the new block. The listener may have skipped through some of the previous block, so refer to it the way a host would — "that was…", "we had…" — without insisting they heard every second of it.
+- On the first segment it's an opening: the station ident and your name, the way a real host signs on ("You're listening to Claude Radio, I'm DJ so-and-so" — in your own words), then set the mood and lead into the first track.
+- On every later segment it's a bridge: close the block that just played (name a song or two, say something true and specific — a year, a place, a detail about the record) and lead into the first track of the new block. The listener may have skipped through some of the previous block, so refer to it the way a host would — "that was…", "we had…" — without insisting they heard every second of it. Every few bridges, not every one, drop a station ident — "this is Claude Radio", "you're on Claude Radio with <your name>" — the classic way, in passing.
+- Hosts change sometimes. When the brief names a different host than the previous segment's brief did, that bridge is a handoff: you're the new host picking up the mic — give the outgoing host a nod, say who you are, and carry the show on without missing a beat. Otherwise there's no need to keep repeating your name.
 
 How you program:
 - Use search_spotify to find real tracks. Search as often as you need (artists, eras, moods, exact titles) — only tracks that came back from a search can go in a segment. Never invent an id.
@@ -69,10 +71,12 @@ How you talk:
 When the segment is ready, call finish_segment exactly once and write nothing after it.`,
 
   "prompt.opening": `Listener's request: {request}
+On the mic: {dj}
 
-This is the first segment of the show. Open the show and program the first block.`,
+This is the first segment of the show. Sign on, open the show and program the first block.`,
 
   "prompt.bridge": `Listener's request: {request}
+On the mic: {dj}
 
 The previous segment (your talk and its tracks):
 {previous_talk}
@@ -139,6 +143,8 @@ export interface PreviousSegment {
 
 export interface TurnInput {
   prompt: string;
+  /** The DJ on the mic, by name. */
+  dj?: string;
   /** The last finished segment, or null on the first one. */
   previous: PreviousSegment | null;
   /** True when `prompt` differs from the one the previous segment was planned with. */
@@ -146,8 +152,9 @@ export interface TurnInput {
 }
 
 /** The variables a turn fills in, as text. */
-export function turnVars({ prompt, previous }: TurnInput): Partial<Record<PromptVar, string>> {
+export function turnVars({ prompt, previous, dj }: TurnInput): Partial<Record<PromptVar, string>> {
   return {
+    dj: dj ?? DEFAULT_DJ_NAME,
     request: prompt,
     previous_talk: previous?.talk,
     previous_tracks: previous?.tracks
@@ -155,6 +162,9 @@ export function turnVars({ prompt, previous }: TurnInput): Partial<Record<Prompt
       .join("\n"),
   };
 }
+
+/** When the browser doesn't say who's on the mic. */
+export const DEFAULT_DJ_NAME = "Claude";
 
 /** The per-segment user message: the opening brief, or the bridge (plus the shift note when the ask changed). */
 export function buildUserTurn(template: PromptTemplate, input: TurnInput): string {

@@ -24,15 +24,27 @@ const previous = {
 };
 
 describe("buildUserTurn", () => {
-  it("opens the show on the first segment", () => {
-    const t = buildUserTurn(DEFAULT_PROMPTS, { prompt: "soul", previous: null, promptChanged: false });
+  it("opens the show on the first segment, signing on as the DJ", () => {
+    const t = buildUserTurn(DEFAULT_PROMPTS, {
+      prompt: "soul",
+      dj: "Guy",
+      previous: null,
+      promptChanged: false,
+    });
     expect(t).toContain("Listener's request: soul");
     expect(t).toContain("first segment");
+    expect(t).toContain("On the mic: Guy");
     expect(t).not.toContain("previous");
   });
 
-  it("carries the whole previous segment and the skip-safe instruction", () => {
-    const t = buildUserTurn(DEFAULT_PROMPTS, { prompt: "soul", previous, promptChanged: false });
+  it("carries the whole previous segment, the host and the skip-safe instruction", () => {
+    const t = buildUserTurn(DEFAULT_PROMPTS, {
+      prompt: "soul",
+      dj: "Rachelle",
+      previous,
+      promptChanged: false,
+    });
+    expect(t).toContain("On the mic: Rachelle");
     expect(t).toContain("That was Al Green.");
     expect(t).toContain("1. Al Green — Simply Beautiful");
     expect(t).toContain("2. Donny Hathaway — A Song for You");
@@ -43,6 +55,7 @@ describe("buildUserTurn", () => {
   it("announces a prompt change", () => {
     const t = buildUserTurn(DEFAULT_PROMPTS, { prompt: "now jazz", previous, promptChanged: true });
     expect(t).toContain("changed the mood to: now jazz");
+    expect(t).toContain("On the mic: Claude"); // the default when the browser sends no name
   });
 
   it("uses an edited slot and leaves the others at their default", () => {

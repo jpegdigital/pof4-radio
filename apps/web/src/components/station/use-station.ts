@@ -21,6 +21,8 @@ export interface UseStationOptions {
   getPrompt: () => string;
   /** Read at fetch time, so a changed voice applies to the next talk. */
   getVoice: () => VoiceSettings;
+  /** The DJ's name, sent with each planning request so the prompts can say who's on the mic. */
+  getDj: () => string;
   onStation: (id: string) => void;
   onSegment: (segment: SegmentView) => void;
 }
@@ -48,7 +50,11 @@ export function useStation(opts: UseStationOptions) {
         const res = await guarded("/api/station/next", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stationId: o.current.stationId, prompt: o.current.getPrompt() }),
+          body: JSON.stringify({
+            stationId: o.current.stationId,
+            prompt: o.current.getPrompt(),
+            dj: o.current.getDj(),
+          }),
           signal: ctrl.signal,
         });
         const data = (await res.json()) as { error?: string; stationId?: string; segment?: SegmentView };
@@ -87,7 +93,6 @@ export function useStation(opts: UseStationOptions) {
       const voice = o.current.getVoice();
       void (async () => {
         try {
-          if (!voice.voiceId) throw new Error("no voice chosen (see Voice settings)");
           const res = await guarded(ttsUrl(l.segment.talk, voice));
           if (!res.ok) {
             const body = (await res.json().catch(() => ({}))) as { error?: string };

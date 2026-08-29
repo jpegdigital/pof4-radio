@@ -17,12 +17,14 @@ import { search } from "@/lib/spotify";
 const Body = z.object({
   stationId: z.uuid().nullable(),
   prompt: z.string().trim().min(1).max(500),
+  /** The DJ on the mic, by name — fills {dj} in the prompts. */
+  dj: z.string().trim().min(1).max(60).optional(),
 });
 
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "invalid body" }, { status: 400 });
-  const { prompt } = parsed.data;
+  const { prompt, dj } = parsed.data;
 
   const stationId = parsed.data.stationId ?? (await db().createStation(prompt)).id;
   const lock = await db().lockStation(stationId);
@@ -36,12 +38,17 @@ export async function POST(req: Request) {
     const [previous, template] = await Promise.all([db().lastSegment(stationId), loadPromptTemplate()]);
     const userTurn = buildUserTurn(template, {
       prompt,
+      dj,
       previous: previous ? { talk: previous.talk, tracks: previous.tracks } : null,
       promptChanged: previous !== null && prompt !== station.prompt,
     });
     const model = env().CLAUDE_MODEL;
     const out = await planSegment(
-      { system: template["prompt.system"], history: station.messages as Anthropic.MessageParam[], userTurn },
+      {
+        system: template["prompt.system"],
+        history: station.messages as Anthropic.MessageParam[],
+        userTurn,
+      },
       { client: claude(), model, search },
     );
     const messages = capHistory([...(station.messages as Anthropic.MessageParam[]), ...trimTurn(out.turn)]);

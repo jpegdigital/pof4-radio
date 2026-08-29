@@ -19,6 +19,7 @@ interface Slot {
 
 const SAMPLE = turnVars({
   prompt: "late-night soul with horns",
+  dj: "David Wolfe",
   promptChanged: false,
   previous: {
     talk: "That was Al Green with Simply Beautiful, cut in Memphis in seventy-two. Let's stay in that room a little longer.",
