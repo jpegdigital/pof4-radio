@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Mic, Square, X } from "lucide-react";
+import { LogOut, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { guarded, keepGuardAlive } from "@/lib/guard-client";
 import { DjPicker } from "./dj-picker";
@@ -251,17 +251,16 @@ export function Station({
           </p>
         )}
 
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <Mic className="size-4 shrink-0 text-zinc-500" strokeWidth={1.75} aria-hidden="true" />
-            <Label className="shrink-0">On the mic</Label>
+        <div className="flex items-end gap-3">
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <Label>On the mic</Label>
             <DjPicker value={dj} onChange={changeDj} />
           </div>
           {running ? (
             <button
               type="button"
               onClick={() => dispatch({ type: "STOP" })}
-              className={`flex shrink-0 items-center gap-2 rounded-full bg-zinc-100 px-5 py-2 text-sm font-semibold text-black transition hover:bg-white ${focusRing}`}
+              className={`flex h-11 shrink-0 items-center gap-2 rounded-full bg-zinc-100 px-5 text-sm font-semibold text-black transition hover:bg-white ${focusRing}`}
             >
               <Square className="size-3.5" fill="currentColor" strokeWidth={0} aria-hidden="true" />
               Stop
@@ -271,7 +270,7 @@ export function Station({
               type="button"
               onClick={goOnAir}
               disabled={!enabled || arming}
-              className={`shrink-0 rounded-full bg-lamp px-5 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 ${focusRing}`}
+              className={`h-11 shrink-0 rounded-full bg-lamp px-5 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 ${focusRing}`}
             >
               {arming ? "Activating…" : "Go on air"}
             </button>

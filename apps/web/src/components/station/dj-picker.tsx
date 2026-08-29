@@ -8,17 +8,18 @@ const GROUPS = [
 ] as const;
 
 /**
- * Who's on the mic, as a trailing value control: the name and a chevron, no chrome of its own —
- * the row it sits in is the chrome. The default sits alone at the top; the rest are grouped.
+ * Who's on the mic: a filled field showing the name, chevron trailing — a pop-up button. The
+ * default sits alone at the top of the menu; the rest are grouped.
  */
 export function DjPicker({ value, onChange }: { value: Dj; onChange: (d: Dj) => void }) {
   return (
-    <label className="relative flex items-center text-sm">
+    <label className="relative flex min-w-0 flex-1 items-center text-sm">
       <span className="sr-only">DJ</span>
+      <PodcastMic className="pointer-events-none absolute left-3.5 size-5 text-zinc-500" />
       <select
         value={value.id}
         onChange={(e) => onChange(findDj(e.target.value))}
-        className={`appearance-none rounded-full bg-transparent py-1.5 pr-6 pl-2 text-zinc-100 transition hover:text-white ${focusRing}`}
+        className={`w-full appearance-none truncate rounded-xl border border-zinc-800 bg-zinc-950 py-2.5 pr-9 pl-11 text-base text-zinc-100 transition hover:border-zinc-700 ${focusRing}`}
       >
         <option value={DEFAULT_DJ.id} className="bg-zinc-950">
           {DEFAULT_DJ.name}
@@ -34,10 +35,31 @@ export function DjPicker({ value, onChange }: { value: Dj; onChange: (d: Dj) => 
         ))}
       </select>
       <ChevronDown
-        className="pointer-events-none absolute right-1 size-4 text-zinc-500"
+        className="pointer-events-none absolute right-3 size-4 text-zinc-500"
         strokeWidth={1.75}
         aria-hidden="true"
       />
     </label>
+  );
+}
+
+/** A broadcast mic on its stand — the studio's own glyph, not the phone's dictation one. */
+function PodcastMic({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="8" y="2.5" width="8" height="12" rx="4" />
+      <path d="M8 7.5h8M8 10.5h8" strokeWidth={1.25} />
+      <path d="M5 11a7 7 0 0 0 14 0" />
+      <path d="M12 18v3.5M8.5 21.5h7" />
+    </svg>
   );
 }
