@@ -1,7 +1,8 @@
 /**
- * What the browser remembers: the voice. A per-browser convenience in localStorage — wrapped in
- * try/catch because storage can be missing or blocked. (The station is deliberately not
- * remembered: a page load is a fresh show.)
+ * The DJs: a fixed roster, each an ElevenLabs voice with its tuned settings. The browser remembers
+ * which one is picked — a per-browser convenience in localStorage, wrapped in try/catch because
+ * storage can be missing or blocked. (The station is deliberately not remembered: a page load is a
+ * fresh show.)
  */
 
 export interface VoiceSettings {
@@ -15,8 +16,16 @@ export interface VoiceSettings {
   speakerBoost: boolean;
 }
 
-export const DEFAULT_VOICE: VoiceSettings = {
-  voiceId: "",
+export interface Dj {
+  /** The ElevenLabs voice id doubles as the DJ's id. */
+  id: string;
+  name: string;
+  gender: "female" | "male";
+  voice: VoiceSettings;
+}
+
+/** ElevenLabs defaults on v3, Natural. */
+const BASE = {
   modelId: "eleven_v3",
   stability: 0.5,
   similarityBoost: 0.75,
@@ -25,26 +34,42 @@ export const DEFAULT_VOICE: VoiceSettings = {
   speakerBoost: true,
 };
 
-export const VOICE_MODELS = [
-  { id: "eleven_v3", label: "Eleven v3 (expressive)" },
-  { id: "eleven_multilingual_v2", label: "Multilingual v2" },
-  { id: "eleven_flash_v2_5", label: "Flash v2.5 (fast)" },
-] as const;
+const dj = (id: string, name: string, gender: Dj["gender"], tune: Partial<VoiceSettings> = {}): Dj => ({
+  id,
+  name,
+  gender,
+  voice: { ...BASE, ...tune, voiceId: id },
+});
 
-const VOICE_KEY = "radio.voice";
+/** The first is the default and sits alone at the top of the picker; the rest are grouped by gender. */
+export const DJS: readonly Dj[] = [
+  dj("mR1dRpBxfiThJHgub8nr", "David Wolfe", "male", { speed: 1.1 }),
+  dj("G3Il95iGz0lclzMySk7L", "Rachelle", "female"),
+  dj("FmJ4FDkdrYIKzBTruTkV", "David Hertal", "male", { stability: 1, speed: 1.1 }),
+  dj("QTGiyJvep6bcx4WD1qAq", "Guy", "male", { speed: 1.1 }),
+  dj("HRttR5MBBbw7AvtIFoRq", "Johi", "male"),
+  dj("6psAnGNeDguzLyTxKYvI", "Tim", "male"),
+];
 
-export function loadVoice(): VoiceSettings {
+export const DEFAULT_DJ = DJS[0];
+
+export function findDj(id: string): Dj {
+  return DJS.find((d) => d.id === id) ?? DEFAULT_DJ;
+}
+
+const DJ_KEY = "radio.dj";
+
+export function loadDj(): Dj {
   try {
-    const raw = localStorage.getItem(VOICE_KEY);
-    return raw ? { ...DEFAULT_VOICE, ...(JSON.parse(raw) as Partial<VoiceSettings>) } : DEFAULT_VOICE;
+    return findDj(localStorage.getItem(DJ_KEY) ?? "");
   } catch {
-    return DEFAULT_VOICE;
+    return DEFAULT_DJ;
   }
 }
 
-export function saveVoice(v: VoiceSettings): void {
+export function saveDj(d: Dj): void {
   try {
-    localStorage.setItem(VOICE_KEY, JSON.stringify(v));
+    localStorage.setItem(DJ_KEY, d.id);
   } catch {
     // storage unavailable — the choice just won't survive a reload
   }
