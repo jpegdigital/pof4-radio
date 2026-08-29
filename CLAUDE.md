@@ -17,7 +17,8 @@ doubt, do what dreamweaver does (its `CLAUDE.md` is the fuller philosophy).
 - `packages/*` own pure logic and never read `process.env`; `apps/*` own process/env concerns. There is
   one app now, but the split stays: it's what keeps the DJ (`packages/dj`) and the queries unit-testable
   without Next in the way, not a sharing mechanism.
-- Private behind Guard (`guard.pof4.com`): one gate, `apps/web/src/proxy.ts`; exempt = `api/health` +
+- Private behind Guard (`guard.pof4.com`): one gate, `apps/web/src/proxy.ts` (**temporarily open** —
+  `GUARD_OPEN = true` there, so friends can test without a login; flip it back); exempt = `api/health` +
   static, nothing else. No user table. Dev runs at `https://dev.radio.pof4.com:3000` because the cookie is
   bound to `pof4.com` — no localhost bypass.
 
@@ -44,11 +45,14 @@ buffered segment and the DJ's memory; a page load is a fresh show (new station) 
 (`station.messages`, row-locked while planning → a second tab gets 409): tools are frozen in code, the
 prompts are data (below), the last message carries a 1-hour cache breakpoint, each finished turn is trimmed to its
 `finish_segment` call, history is capped at 20 segments. `GET /api/tts` pipes ElevenLabs' streaming
-endpoint (`eleven_v3`) to the browser; voice id, model and settings come from the browser per request
-(localStorage), only `ELEVENLABS_KEY` lives on the server. `segment` rows are a history log.
+endpoint (`eleven_v3`) to the browser; voice id, model and settings come from the browser per request —
+a fixed roster of DJs, each a voice with its tuned settings (`DJS` in `voice-store.ts`; the pick is
+remembered in localStorage) — and only `ELEVENLABS_KEY` lives on the server. `segment` rows are a history log.
 
 **The prompts are settings.** Four slots — `prompt.system`, `prompt.opening`, `prompt.bridge`,
-`prompt.shift` — with `{request}` / `{previous_talk}` / `{previous_tracks}` placeholders
+`prompt.shift` — with `{request}` / `{previous_talk}` / `{previous_tracks}` / `{dj}` placeholders
+(`{dj}` is the picked DJ's name, sent by the browser with each planning request and baked into each brief —
+"On the mic: …" — never into the system prompt, so switching DJ mid-show is a handoff on air, not a cache miss)
 (`PROMPT_SLOTS`, `DEFAULT_PROMPTS`, `fillVars` in `packages/dj/src/prompt.ts`). The `settings` table holds
 only edited slots (a key with no row reads its code default; "Reset" deletes the row); `/settings`
 edits them, `loadPromptTemplate()` merges them per request. Editing the system prompt costs one cache
