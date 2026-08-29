@@ -97,6 +97,11 @@ when it's trimmed from the list, and every *unplayed* entry is dropped when the 
   track row → `JUMP {seg, i+1}`; the tail with no audio yet shows a quiet "up next". Visual design
   is a separate pass (frontend-design skill) after the model lands.
 - "Skip talk" is removed.
+- **No focus zoom on iOS.** Safari zooms the page when a focused form control's font is under
+  16px; the request `<textarea>` and the DJ `<select>` are 14px today. One rule in `globals.css`
+  under `@media (pointer: coarse)`: `textarea, select, input { font-size: 16px }` — desktop keeps
+  the current sizes. Not `maximum-scale=1` in the viewport meta: that disables pinch zoom for
+  everyone, which the HIG and WCAG both reject.
 
 ## Testing
 
