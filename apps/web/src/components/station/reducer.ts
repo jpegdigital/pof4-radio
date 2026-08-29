@@ -140,7 +140,7 @@ export function reducer(s: StationState, e: StationEvent): StationState {
 
     case "SEGMENT_READY": {
       const loaded = load(e.segment);
-      const settled: StationState = { ...s, pending: false, retried: false };
+      const settled: StationState = { ...s, pending: false, retried: false, error: null };
       if (s.loop === "running" && (s.phase === "idle" || s.phase === "planning")) {
         return startSegment(settled, loaded, false);
       }

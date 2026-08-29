@@ -74,6 +74,13 @@ describe("run / segments", () => {
     s = reducer(s, { type: "SEGMENT_FAILED", error: "boom again" });
     expect(s).toMatchObject({ loop: "stopped", phase: "idle", pending: false, error: "boom again" });
   });
+
+  it("a successful retry clears the error", () => {
+    let s = run([{ type: "RUN" }, { type: "SEGMENT_FAILED", error: "boom" }]);
+    expect(s.error).toBe("boom");
+    s = reducer(s, { type: "SEGMENT_READY", segment: seg(1) });
+    expect(s).toMatchObject({ phase: "talk", retried: false, error: null });
+  });
 });
 
 describe("stop / resume", () => {
