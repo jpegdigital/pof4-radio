@@ -2,7 +2,6 @@ export { describeTrack, type DjDeps, type DjInput, type DjOutput, planSegment, r
 export { capHistory, DEFAULT_MAX_SEGMENTS, MESSAGES_PER_SEGMENT, trimTurn, withCache } from "./history.ts";
 export {
   buildUserTurn,
-  DEFAULT_PROMPTS,
   fillVars,
   type PreviousSegment,
   PROMPT_SLOTS,

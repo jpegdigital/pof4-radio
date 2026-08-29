@@ -59,9 +59,10 @@ remembered in localStorage) — and only `ELEVENLABS_KEY` lives on the server. `
 `prompt.shift` — with `{request}` / `{previous_talk}` / `{previous_tracks}` / `{dj}` placeholders
 (`{dj}` is the picked DJ's name, sent by the browser with each planning request and baked into each brief —
 "On the mic: …" — never into the system prompt, so switching DJ mid-show is a handoff on air, not a cache miss)
-(`PROMPT_SLOTS`, `DEFAULT_PROMPTS`, `fillVars` in `packages/dj/src/prompt.ts`). The `settings` table holds
-only edited slots (a key with no row reads its code default; "Reset" deletes the row); `/settings`
-edits them, `loadPromptTemplate()` merges them per request. Editing the system prompt costs one cache
+(`PROMPT_SLOTS`, `fillVars` in `packages/dj/src/prompt.ts`). **The text lives only in the `settings` table** —
+four rows, one per slot, no copy or fallback in code; edit it on `/settings` or straight in the table.
+`loadPromptTemplate()` reads the rows per request and throws if a slot is missing. A fresh database needs
+the four rows filled by hand. Editing the system prompt costs one cache
 miss. No provenance yet: a station doesn't record which prompt text planned it.
 
 **Two shells, route groups.** `app/(app)` is the station, phone-wide, the page as it was; `app/(settings)`

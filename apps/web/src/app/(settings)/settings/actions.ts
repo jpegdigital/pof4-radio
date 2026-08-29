@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 
 /**
- * /settings Server Actions: save one prompt slot, or put it back to its code default. The
+ * /settings Server Action: save one prompt slot. The
  * next segment reads the change (`loadPromptTemplate`); segments already planned keep theirs.
  */
 
@@ -24,12 +24,4 @@ export async function savePrompt(_prev: SaveState, formData: FormData): Promise<
   await db().saveSetting(parsed.data.key, parsed.data.value);
   revalidatePath("/settings");
   return { savedAt: new Date().toISOString() };
-}
-
-export async function resetPrompt(_prev: SaveState, formData: FormData): Promise<SaveState> {
-  const key = Key.safeParse(formData.get("key"));
-  if (!key.success) return { error: "Unknown prompt." };
-  await db().deleteSetting(key.data);
-  revalidatePath("/settings");
-  return {};
 }

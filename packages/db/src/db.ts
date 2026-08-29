@@ -2,7 +2,7 @@ import pg from "pg";
 
 // ---- settings ------------------------------------------------------------------
 
-/** One edited prompt slot (schema/settings.sql). A key with no row is at its code default. */
+/** One prompt slot (schema/settings.sql) — the only place its text lives. */
 export interface Setting {
   key: string;
   value: string;
@@ -143,11 +143,6 @@ export function createDb(connectionString: string) {
         "insert into settings (key, value) values ($1, $2) on conflict (key) do update set value = excluded.value",
         [key, value],
       );
-    },
-
-    /** Back to the code default. */
-    async deleteSetting(key: string): Promise<void> {
-      await pool.query("delete from settings where key = $1", [key]);
     },
 
     // --- station -------------------------------------------------------------

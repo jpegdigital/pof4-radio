@@ -2,7 +2,7 @@
 
 import { fillVars, PROMPT_VAR_HELP, type PromptVar, turnVars } from "@radio/dj";
 import { Fragment, useActionState, useRef, useState } from "react";
-import { resetPrompt, type SaveState, savePrompt } from "./actions";
+import { type SaveState, savePrompt } from "./actions";
 
 /**
  * One prompt slot: the script in a mono textarea, its placeholders as chips that drop into the
@@ -41,21 +41,17 @@ const SAMPLE = turnVars({
 export function PromptEditor({
   slot,
   value,
-  defaultValue,
   updatedAt,
 }: {
   slot: Slot;
   value: string;
-  defaultValue: string;
   updatedAt: string | null;
 }) {
   const [text, setText] = useState(value);
-  const [confirmReset, setConfirmReset] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const [save, saveAction, saving] = useActionState<SaveState, FormData>(savePrompt, {});
-  const [reset, resetAction, resetting] = useActionState<SaveState, FormData>(resetPrompt, {});
   const dirty = text !== value;
-  const isDefault = updatedAt === null;
+  const missingRow = updatedAt === null;
   const missing = slot.vars.filter((v) => !text.includes(`{${v}}`));
 
   function insert(name: PromptVar) {
@@ -80,7 +76,7 @@ export function PromptEditor({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="font-display text-sm uppercase tracking-[0.2em] text-zinc-500">
-            {isDefault ? "Reading the default" : `Edited ${when(updatedAt)}`}
+            {missingRow ? "No row in settings yet" : `Edited ${when(updatedAt)}`}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{slot.label}</h1>
           <p className="mt-1 max-w-prose text-sm text-zinc-400">{slot.blurb}</p>
@@ -140,45 +136,11 @@ export function PromptEditor({
             </button>
           )}
           {save.error && <span className="text-sm text-red-400">{save.error}</span>}
-          {reset.error && <span className="text-sm text-red-400">{reset.error}</span>}
           {!dirty && save.savedAt && !save.error && (
             <span className="text-sm text-zinc-500">Saved — applies to the next block.</span>
           )}
         </div>
       </form>
-
-      {!isDefault && (
-        <form action={resetAction} className="flex items-center gap-3 text-sm">
-          <input type="hidden" name="key" value={slot.key} />
-          {confirmReset ? (
-            <>
-              <span className="text-zinc-400">Drop your edit and go back to the default?</span>
-              <button
-                type="submit"
-                disabled={resetting}
-                className="rounded-md border border-zinc-700 px-3 py-1.5 text-zinc-100 hover:bg-zinc-800 disabled:opacity-40"
-              >
-                {resetting ? "Resetting…" : "Yes, reset"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmReset(false)}
-                className="text-zinc-400 underline-offset-2 hover:underline"
-              >
-                Keep it
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmReset(true)}
-              className="text-zinc-400 underline-offset-2 hover:underline"
-            >
-              Reset to default
-            </button>
-          )}
-        </form>
-      )}
 
       {slot.vars.length > 0 && (
         <section className="flex flex-col gap-2">
@@ -187,12 +149,6 @@ export function PromptEditor({
           </h2>
           <Preview text={text} vars={slot.vars} />
         </section>
-      )}
-
-      {isDefault && text !== defaultValue && (
-        <p className="text-xs text-zinc-600">
-          You&rsquo;re editing the code default. Saving stores your version.
-        </p>
       )}
     </div>
   );

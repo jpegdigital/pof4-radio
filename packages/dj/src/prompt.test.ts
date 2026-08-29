@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildUserTurn, DEFAULT_PROMPTS, fillVars, PROMPT_SLOTS, templateFrom } from "./prompt.ts";
+import { buildUserTurn, fillVars, type PromptTemplate, templateFrom } from "./prompt.ts";
+
+/** A stand-in for the `settings` rows — the real text lives only in the database. */
+const T: PromptTemplate = {
+  "prompt.system": "You are the host.",
+  "prompt.opening": "Listener's request: {request}\nOn the mic: {dj}\nThis is the first segment.",
+  "prompt.bridge":
+    "Listener's request: {request}\nOn the mic: {dj}\n{previous_talk}\n{previous_tracks}\nThe listener may have skipped some of it.",
+  "prompt.shift": "The listener changed the mood to: {request}.",
+};
 
 const previous = {
   talk: "That was Al Green.",
@@ -25,7 +34,7 @@ const previous = {
 
 describe("buildUserTurn", () => {
   it("opens the show on the first segment, signing on as the DJ", () => {
-    const t = buildUserTurn(DEFAULT_PROMPTS, {
+    const t = buildUserTurn(T, {
       prompt: "soul",
       dj: "Guy",
       previous: null,
@@ -38,7 +47,7 @@ describe("buildUserTurn", () => {
   });
 
   it("carries the whole previous segment, the host and the skip-safe instruction", () => {
-    const t = buildUserTurn(DEFAULT_PROMPTS, {
+    const t = buildUserTurn(T, {
       prompt: "soul",
       dj: "Rachelle",
       previous,
@@ -53,17 +62,24 @@ describe("buildUserTurn", () => {
   });
 
   it("announces a prompt change", () => {
-    const t = buildUserTurn(DEFAULT_PROMPTS, { prompt: "now jazz", previous, promptChanged: true });
+    const t = buildUserTurn(T, { prompt: "now jazz", previous, promptChanged: true });
     expect(t).toContain("changed the mood to: now jazz");
     expect(t).toContain("On the mic: Claude"); // the default when the browser sends no name
   });
+});
 
-  it("uses an edited slot and leaves the others at their default", () => {
-    const template = templateFrom([{ key: "prompt.opening", value: "Go: {request}" }]);
-    expect(buildUserTurn(template, { prompt: "soul", previous: null, promptChanged: false })).toBe(
-      "Go: soul",
-    );
-    expect(template["prompt.bridge"]).toBe(DEFAULT_PROMPTS["prompt.bridge"]);
+describe("templateFrom", () => {
+  it("builds the template from the rows", () => {
+    const rows = Object.entries(T).map(([key, value]) => ({ key, value }));
+    expect(templateFrom(rows)).toEqual(T);
+  });
+
+  it("refuses a missing or blank slot — there is no text in code to fall back to", () => {
+    const rows = Object.entries(T)
+      .filter(([key]) => key !== "prompt.shift")
+      .map(([key, value]) => ({ key, value }));
+    expect(() => templateFrom(rows)).toThrow(/prompt\.shift/);
+    expect(() => templateFrom([...rows, { key: "prompt.shift", value: "  " }])).toThrow(/prompt\.shift/);
   });
 });
 
@@ -72,9 +88,5 @@ describe("fillVars", () => {
     expect(
       fillVars("{request} / {previous_talk} / {other}", { request: "x", previous_talk: undefined }),
     ).toBe("x / {previous_talk} / {other}");
-  });
-
-  it("every default mentions each of its slot's placeholders", () => {
-    for (const s of PROMPT_SLOTS) for (const v of s.vars) expect(DEFAULT_PROMPTS[s.key]).toContain(`{${v}}`);
   });
 });
