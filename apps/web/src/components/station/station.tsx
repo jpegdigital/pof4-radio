@@ -1,15 +1,15 @@
 "use client";
 
-import { X } from "lucide-react";
+import { LogOut, Mic, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { guarded, keepGuardAlive } from "@/lib/guard-client";
-import { OnAir } from "./on-air";
+import { DjPicker } from "./dj-picker";
 import { Player, type PlayerFace } from "./player";
 import { cursorSegment, type SegmentView } from "./reducer";
 import { ResumePicker } from "./resume-picker";
 import { Show } from "./show";
 import type { SpotifyAccount } from "./spotify-account";
-import { Card, focusRing, Label } from "./ui";
+import { Card, focusRing, Label, SpotifyMark } from "./ui";
 import { useSpotifyDevice } from "./use-spotify-device";
 import { useStation } from "./use-station";
 import { DEFAULT_DJ, type Dj, loadDj, saveDj } from "./voice-store";
@@ -87,7 +87,8 @@ export function Station({
   const ready = device.status.kind === "ready";
   const running = state.loop === "running";
   const fresh = !running && state.segments.length === 0;
-  const canGo = enabled && prompt.trim() !== "";
+  const requestBox = useRef<HTMLTextAreaElement>(null);
+  const [needRequest, setNeedRequest] = useState(false);
 
   // "Go on air" is one tap even when this tab isn't the Spotify device yet: it registers the tab
   // and runs the moment the device is ready. The unlock/activate calls must stay inside the tap.
@@ -95,6 +96,12 @@ export function Station({
   const arming = device.status.kind === "connecting";
   const armed = useRef(false);
   const goOnAir = () => {
+    if (prompt.trim() === "") {
+      // Not a disabled button: the tap says what's missing and puts the cursor there.
+      setNeedRequest(true);
+      requestBox.current?.focus();
+      return;
+    }
     unlock();
     device.activate();
     if (ready) {
@@ -163,55 +170,112 @@ export function Station({
 
   return (
     <>
-      <OnAir
-        running={running}
-        talking={talking}
-        arming={arming}
-        canGo={canGo}
-        onGo={goOnAir}
-        onStop={() => dispatch({ type: "STOP" })}
-        device={device.status}
-        dj={dj}
-        onDj={changeDj}
-        account={account}
-        onConnect={onConnect}
-        onDisconnect={onDisconnect}
-      />
+      {/* the desk, one card: indicators · the request · who's on the mic and the one button */}
+      <Card className="flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className={`lamp size-2.5 rounded-full ${running ? "on" : ""} ${talking ? "talking" : ""}`}
+            />
+            <Label className={running ? "text-lamp" : ""}>{running ? "On air" : "Off air"}</Label>
+          </div>
+          {account ? (
+            <div className="flex min-w-0 items-center gap-2 text-sm">
+              <SpotifyMark className="size-4 shrink-0 text-[#1DB954]" />
+              <span className="truncate text-zinc-300">{account.displayName ?? account.spotifyUserId}</span>
+              {!enabled && <span className="shrink-0 text-xs text-amber-300/90">not Premium</span>}
+              <button
+                type="button"
+                onClick={onDisconnect}
+                aria-label="Sign out of Spotify"
+                title="Sign out of Spotify"
+                className={`-mr-1.5 rounded-full p-1.5 text-zinc-500 transition hover:text-zinc-200 ${focusRing}`}
+              >
+                <LogOut className="size-4" strokeWidth={1.75} aria-hidden="true" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onConnect}
+              className={`flex items-center gap-2 rounded-full bg-[#1DB954] px-3.5 py-1.5 text-xs font-semibold text-black transition hover:bg-[#1ed760] ${focusRing}`}
+            >
+              <SpotifyMark className="size-3.5" />
+              Connect
+            </button>
+          )}
+        </div>
 
-      {/* the request */}
-      <Card className="flex flex-col gap-3">
-        <Label>The request</Label>
+        {/* the request: 16px so iOS doesn't zoom the page when it's tapped */}
         <textarea
+          ref={requestBox}
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            if (needRequest && e.target.value.trim() !== "") setNeedRequest(false);
+          }}
           placeholder="What do you want to hear tonight? e.g. late-night soul with horns"
           maxLength={500}
           rows={3}
-          className={`w-full resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2.5 font-mono text-sm leading-relaxed placeholder:text-zinc-600 ${focusRing}`}
+          aria-label="The request"
+          className={`w-full resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-3 font-mono text-base leading-relaxed placeholder:text-zinc-600 ${focusRing}`}
         />
-        {running && prompt.trim() !== (cur?.prompt ?? prompt.trim()) && (
-          <p className="-mt-1 text-xs text-zinc-500">The new request reaches the DJ on the next block.</p>
+        {needRequest && prompt.trim() === "" && (
+          <p className="-mt-2 text-xs text-lamp">Tell the DJ what you want to hear first.</p>
         )}
-        <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            {fresh && enabled && !stationId && <ResumePicker onPick={(id) => void resume(id)} />}
-            {!running && stationId && cursor === null && state.segments.length > 0 && (
-              <p className="text-xs text-zinc-500">
-                Resuming ({state.segments.length} block{state.segments.length === 1 ? "" : "s"}) — tap a
-                block, or go on air.{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStationId(null);
-                    dispatch({ type: "CLEAR_SHOW" });
-                  }}
-                  className="underline underline-offset-2 hover:text-zinc-300"
-                >
-                  Start fresh
-                </button>
-              </p>
-            )}
+        {running && prompt.trim() !== (cur?.prompt ?? prompt.trim()) && (
+          <p className="-mt-2 text-xs text-zinc-500">The new request reaches the DJ on the next block.</p>
+        )}
+        {!account && <p className="-mt-2 text-xs text-zinc-500">Playback needs a Spotify Premium account.</p>}
+        {device.status.kind === "error" && (
+          <p className="-mt-2 text-xs text-red-400">
+            This tab couldn&rsquo;t become the player: {device.status.message}
+          </p>
+        )}
+        {fresh && enabled && !stationId && <ResumePicker onPick={(id) => void resume(id)} />}
+        {!running && stationId && cursor === null && state.segments.length > 0 && (
+          <p className="text-xs text-zinc-500">
+            Resuming ({state.segments.length} block{state.segments.length === 1 ? "" : "s"}) — tap a block, or
+            go on air.{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setStationId(null);
+                dispatch({ type: "CLEAR_SHOW" });
+              }}
+              className="underline underline-offset-2 hover:text-zinc-300"
+            >
+              Start fresh
+            </button>
+          </p>
+        )}
+
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Mic className="size-4 shrink-0 text-zinc-500" strokeWidth={1.75} aria-hidden="true" />
+            <Label className="shrink-0">On the mic</Label>
+            <DjPicker value={dj} onChange={changeDj} />
           </div>
+          {running ? (
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "STOP" })}
+              className={`flex shrink-0 items-center gap-2 rounded-full bg-zinc-100 px-5 py-2 text-sm font-semibold text-black transition hover:bg-white ${focusRing}`}
+            >
+              <Square className="size-3.5" fill="currentColor" strokeWidth={0} aria-hidden="true" />
+              Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={goOnAir}
+              disabled={!enabled || arming}
+              className={`shrink-0 rounded-full bg-lamp px-5 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 ${focusRing}`}
+            >
+              {arming ? "Activating…" : "Go on air"}
+            </button>
+          )}
         </div>
       </Card>
 
