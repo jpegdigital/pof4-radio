@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { guarded, keepGuardAlive } from "@/lib/guard-client";
 import { DjPicker } from "./dj-picker";
 import { Player, type PlayerFace } from "./player";
-import { cursorSegment, type SegmentView } from "./reducer";
+import { cursorSegment, type SegmentView, type StationEvent } from "./reducer";
 import { ResumePicker } from "./resume-picker";
 import { Show } from "./show";
 import type { SpotifyAccount } from "./spotify-account";
@@ -94,7 +94,8 @@ export function Station({
   // and runs the moment the device is ready. The unlock/activate calls must stay inside the tap.
   // "Connecting" only ever happens from this tap now, so the button can read it straight off the device.
   const arming = device.status.kind === "connecting";
-  const armed = useRef(false);
+  // What to dispatch the moment the tab becomes the device: Run from the button, or the row tapped.
+  const armed = useRef<StationEvent | null>(null);
   const goOnAir = () => {
     if (prompt.trim() === "") {
       // Not a disabled button: the tap says what's missing and puts the cursor there.
@@ -108,16 +109,27 @@ export function Station({
       dispatch({ type: "RUN" });
       return;
     }
-    armed.current = true;
+    arm({ type: "RUN" });
+  };
+  // A tapped row after a reload: same story, the tab registers first, then the show starts there.
+  const jump = (seg: number, item: number) => {
+    unlock();
+    device.activate();
+    if (ready) dispatch({ type: "JUMP", seg, item });
+    else arm({ type: "JUMP", seg, item });
+  };
+  const arm = (e: StationEvent) => {
+    armed.current = e;
     void device.connect();
   };
   useEffect(() => {
-    if (!armed.current) return;
+    const e = armed.current;
+    if (!e) return;
     if (ready) {
-      armed.current = false;
-      dispatch({ type: "RUN" });
+      armed.current = null;
+      dispatch(e);
     } else if (device.status.kind === "error") {
-      armed.current = false;
+      armed.current = null;
     }
   }, [ready, device.status.kind, dispatch]);
   const cur = cursorSegment(state);
@@ -328,12 +340,7 @@ export function Station({
           const t = talk(id);
           return t !== undefined && "url" in t;
         }}
-        onJump={(seg, item) => {
-          if (!ready) return;
-          unlock();
-          device.activate();
-          dispatch({ type: "JUMP", seg, item });
-        }}
+        onJump={jump}
       />
     </>
   );
