@@ -1,21 +1,10 @@
-import {
-  clientCredentialsToken,
-  type ClientConfig,
-  refreshToken,
-  searchTracks,
-  type Track,
-} from "@radio/spotify";
-import type { SpotifyAccount } from "@radio/db";
-import { db } from "./db";
+import { clientCredentialsToken, type ClientConfig, searchTracks, type Track } from "@radio/spotify";
 import { env } from "./env";
 
 /**
- * The web app's two Spotify tokens.
- *
- *  - app token (client credentials): search and lookup. Cached in the process; nobody's identity.
- *  - user token (authorization code): playback. The refresh token lives in Postgres
- *    (`spotify_account`, one row); `userAccessToken()` hands the player a fresh access token,
- *    refreshing it first when it is within a minute of expiring.
+ * The server's one Spotify token: the app token (client credentials) for search and lookup,
+ * cached in the process, nobody's identity. Playback tokens are the browser's business
+ * (components/station/spotify-account.ts) — the server never holds a user's Spotify token.
  */
 
 export function clientConfig(): ClientConfig {
@@ -34,21 +23,3 @@ export async function appAccessToken(): Promise<string> {
 
 export const search = async (q: string, limit = 10): Promise<Track[]> =>
   searchTracks(await appAccessToken(), q, limit);
-
-/** The connected account, with a usable access token — or null when nobody has connected yet. */
-export async function userAccount(): Promise<SpotifyAccount | null> {
-  const account = await db().getSpotifyAccount();
-  if (!account) return null;
-  if (account.expiresAt.getTime() - Date.now() > 60_000) return account;
-
-  const t = await refreshToken(clientConfig(), account.refreshToken);
-  const fresh: SpotifyAccount = {
-    ...account,
-    accessToken: t.access_token,
-    refreshToken: t.refresh_token ?? account.refreshToken,
-    scope: t.scope ?? account.scope,
-    expiresAt: new Date(Date.now() + t.expires_in * 1000),
-  };
-  await db().saveSpotifyAccount(fresh);
-  return fresh;
-}

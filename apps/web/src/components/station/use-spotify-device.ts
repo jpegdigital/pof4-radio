@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { guarded } from "@/lib/guard-client";
+import { accessToken } from "./spotify-account";
 
 /**
  * The browser as the Spotify device. The Web Playback SDK only *creates* the device; playback
- * is `PUT /me/player/play?device_id=…` with the token from `/api/spotify/token` (refreshed
- * server-side). Playback state comes back through `player_state_changed`.
+ * is `PUT /me/player/play?device_id=…` with this browser's own token (spotify-account.ts,
+ * refreshed in place). Playback state comes back through `player_state_changed`.
  */
 
 interface SdkPlayer {
@@ -56,13 +56,6 @@ export interface SpotifyDevice {
   setVolume(v: number): Promise<void>;
 }
 
-async function fetchToken(): Promise<string> {
-  const res = await guarded("/api/spotify/token", { cache: "no-store" });
-  if (res.status === 401) throw new Error("signed out of Guard — reload the page to sign in");
-  if (!res.ok) throw new Error(`token ${res.status}`);
-  return ((await res.json()) as { access_token: string }).access_token;
-}
-
 function loadSdk(): Promise<NonNullable<Window["Spotify"]>> {
   return new Promise((resolve, reject) => {
     if (window.Spotify) return resolve(window.Spotify);
@@ -77,12 +70,15 @@ function loadSdk(): Promise<NonNullable<Window["Spotify"]>> {
 
 export const USER_VOLUME = 0.8;
 
-export function useSpotifyDevice(handlers: {
-  onTrackListEnded: () => void;
-  /** The current track changed (the SDK plays through the list on its own). */
-  onTrackChanged: (uri: string) => void;
-  onLost: (message: string) => void;
-}) {
+export function useSpotifyDevice(
+  clientId: string,
+  handlers: {
+    onTrackListEnded: () => void;
+    /** The current track changed (the SDK plays through the list on its own). */
+    onTrackChanged: (uri: string) => void;
+    onLost: (message: string) => void;
+  },
+) {
   const [status, setStatus] = useState<DeviceStatus>({ kind: "idle" });
   const [playback, setPlayback] = useState<Playback | null>(null);
   const player = useRef<SdkPlayer | null>(null);
@@ -104,7 +100,7 @@ export function useSpotifyDevice(handlers: {
       const Spotify = await loadSdk();
       const p = new Spotify.Player({
         name: "Radio",
-        getOAuthToken: (cb) => void fetchToken().then(cb),
+        getOAuthToken: (cb) => void accessToken(clientId).then(cb),
         volume: USER_VOLUME,
       });
       p.addListener("ready", (e) => setStatus({ kind: "ready", id: (e as { device_id: string }).device_id }));
@@ -151,13 +147,13 @@ export function useSpotifyDevice(handlers: {
     } catch (err) {
       setStatus({ kind: "error", message: err instanceof Error ? err.message : String(err) });
     }
-  }, []);
+  }, [clientId]);
 
   const play = useCallback(
     async (uris: string[], position: number) => {
       if (status.kind !== "ready") throw new Error("no device");
       list.current = { last: uris.at(-1) ?? "", startedAt: Date.now() };
-      const token = await fetchToken();
+      const token = await accessToken(clientId);
       const res = await fetch(
         `https://api.spotify.com/v1/me/player/play?device_id=${encodeURIComponent(status.id)}`,
         {
@@ -169,7 +165,7 @@ export function useSpotifyDevice(handlers: {
       if (!res.ok) throw new Error(`play failed: ${res.status} ${await res.text()}`);
       loaded.current = true;
     },
-    [status],
+    [status, clientId],
   );
 
   const pause = useCallback(async () => {

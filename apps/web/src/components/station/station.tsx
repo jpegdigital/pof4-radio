@@ -14,7 +14,7 @@ import { DEFAULT_VOICE, loadVoice, saveVoice, type VoiceSettings } from "./voice
  * air, the voice settings and the history. The browser is the whole state machine — nothing
  * happens when this component isn't running.
  */
-export function Station({ enabled }: { enabled: boolean }) {
+export function Station({ enabled, clientId }: { enabled: boolean; clientId: string }) {
   const [prompt, setPrompt] = useState("");
   const [voice, setVoice] = useState<VoiceSettings>(DEFAULT_VOICE);
   const [stationId, setStationId] = useState<string | null>(null);
@@ -35,7 +35,7 @@ export function Station({ enabled }: { enabled: boolean }) {
         | { type: "HALT"; error: string },
     ) => void
   >(() => {});
-  const device = useSpotifyDevice({
+  const device = useSpotifyDevice(clientId, {
     onTrackListEnded: () => dispatchRef.current({ type: "TRACK_LIST_ENDED" }),
     onTrackChanged: (uri) => dispatchRef.current({ type: "TRACK_CHANGED", uri }),
     onLost: (error) => dispatchRef.current({ type: "HALT", error }),

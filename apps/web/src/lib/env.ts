@@ -5,8 +5,6 @@ const Env = z.object({
   DATABASE_URL: z.string().url(),
   SPOTIFY_CLIENT_ID: z.string().min(1),
   SPOTIFY_CLIENT_SECRET: z.string().min(1),
-  /** Must match the Spotify app's registered redirect URI exactly (scheme, host, port, path). */
-  SPOTIFY_REDIRECT_URI: z.string().url(),
   /** The DJ. */
   CLAUDE_KEY: z.string().min(1),
   CLAUDE_MODEL: z.string().min(1).default("claude-opus-5"),

@@ -5,7 +5,6 @@ export {
   type Segment,
   type SegmentTrack,
   type Setting,
-  type SpotifyAccount,
   type Station,
   type StationLock,
   type StationSummary,

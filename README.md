@@ -3,11 +3,11 @@
 An AI DJ over Spotify. See `CLAUDE.md` for the shape and the rules.
 
 ```
-apps/web         Next.js — Guard gate, Spotify sign-in, the station (state machine + player in the browser),
+apps/web         Next.js — Guard gate, the station (Spotify sign-in, state machine + player: all in the browser),
                  /api/station/next (the DJ) and /api/tts (the voice)
 packages/db      Postgres: declarative schema (schema/*.sql via pg-delta) + typed queries
 packages/dj      The DJ: prompt, tools, the Claude loop, history trimming/caching (pure, tested)
-packages/spotify Spotify Web API: client-credentials + authorization-code flows, search, play
+packages/spotify Spotify Web API: client-credentials (server) + PKCE user flow (browser), search, play
 ```
 
 ## Run locally
@@ -23,8 +23,9 @@ One-time per machine:
 - `op` (1Password CLI) signed in; the vault items named in `.env.op` exist.
 - DNS `dev.radio.pof4.com A 127.0.0.1` (recorded in pof4-infra's railway.ts header) — the Guard cookie is
   bound to `.pof4.com`, so dev must be served under it. `next dev --experimental-https` mints the cert with mkcert.
-- The Spotify app lists `https://dev.radio.pof4.com:3000/api/spotify/callback` and
-  `https://radio.pof4.com/api/spotify/callback` as redirect URIs.
+- The Spotify app lists `https://dev.radio.pof4.com:3000/spotify/callback` and
+  `https://radio.pof4.com/spotify/callback` as redirect URIs, and (while in Development mode) every
+  listener's Spotify account under User Management — each person plays through their own Premium account.
 
 ## Status
 
