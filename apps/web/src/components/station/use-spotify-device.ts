@@ -83,16 +83,22 @@ export interface SpotifyDevice {
   setVolume(v: number): Promise<void>;
 }
 
+/** One fetch of the SDK script per page, started at mount so connect() finds it already here. */
+let sdk: Promise<NonNullable<Window["Spotify"]>> | null = null;
 function loadSdk(): Promise<NonNullable<Window["Spotify"]>> {
-  return new Promise((resolve, reject) => {
+  sdk ??= new Promise((resolve, reject) => {
     if (window.Spotify) return resolve(window.Spotify);
     window.onSpotifyWebPlaybackSDKReady = () => resolve(window.Spotify!);
     const s = document.createElement("script");
     s.src = "https://sdk.scdn.co/spotify-player.js";
     s.async = true;
-    s.onerror = () => reject(new Error("could not load the Spotify SDK"));
+    s.onerror = () => {
+      sdk = null; // let a later tap try again
+      reject(new Error("could not load the Spotify SDK"));
+    };
     document.body.appendChild(s);
   });
+  return sdk;
 }
 
 export const USER_VOLUME = 0.8;
@@ -120,6 +126,11 @@ export function useSpotifyDevice(
   const loaded = useRef(false);
 
   useEffect(() => () => player.current?.disconnect(), []);
+  // Fetch the SDK script now, off the tap: on iOS the player's element must be activated inside
+  // the tap's activation window, and a cold script fetch could eat it.
+  useEffect(() => {
+    void loadSdk().catch(() => {});
+  }, []);
 
   const connect = useCallback(async () => {
     setStatus({ kind: "connecting" });
@@ -130,6 +141,10 @@ export function useSpotifyDevice(
         getOAuthToken: (cb) => void accessToken(clientId).then(cb),
         volume: USER_VOLUME,
       });
+      // connect() only ever runs from a tap. iOS lets the SDK's own audio element start later
+      // (after the talk, with no gesture in sight) only if it was activated inside that tap —
+      // and `activate()` can't reach a player that doesn't exist yet, so bless it here.
+      void p.activateElement().catch(() => {});
       p.addListener("ready", (e) => setStatus({ kind: "ready", id: (e as { device_id: string }).device_id }));
       p.addListener("not_ready", () => {
         setStatus({ kind: "error", message: "device went offline" });
