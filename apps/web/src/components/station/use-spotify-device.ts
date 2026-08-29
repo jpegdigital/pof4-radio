@@ -14,6 +14,8 @@ interface SdkPlayer {
   setVolume(v: number): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
+  /** Mobile Safari: must be called inside a user gesture before the SDK may make sound. */
+  activateElement(): Promise<void>;
 }
 interface SdkTrack {
   uri: string;
@@ -69,6 +71,11 @@ export interface SpotifyDevice {
   status: DeviceStatus;
   playback: Playback | null;
   connect(): Promise<void>;
+  /**
+   * Call synchronously from a tap/click. iOS refuses audio that wasn't unlocked inside a user
+   * gesture; the SDK's `activateElement` does that for its own hidden media element.
+   */
+  activate(): void;
   /** Start `uris` on this device from `position`. */
   play(uris: string[], position: number): Promise<void>;
   pause(): Promise<void>;
@@ -211,7 +218,10 @@ export function useSpotifyDevice(
     if (loaded.current) await player.current?.resume();
   }, []);
   const setVolume = useCallback(async (v: number) => player.current?.setVolume(v), []);
+  const activate = useCallback(() => {
+    void player.current?.activateElement().catch(() => {});
+  }, []);
 
-  const device: SpotifyDevice = { status, playback, connect, play, pause, resume, setVolume };
+  const device: SpotifyDevice = { status, playback, connect, activate, play, pause, resume, setVolume };
   return device;
 }

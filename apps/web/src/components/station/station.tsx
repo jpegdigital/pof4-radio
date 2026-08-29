@@ -43,7 +43,7 @@ export function Station({ enabled, clientId }: { enabled: boolean; clientId: str
     onLost: (error) => dispatchRef.current({ type: "HALT", error }),
   });
 
-  const { state, dispatch } = useStation({
+  const { state, dispatch, unlock } = useStation({
     device,
     stationId,
     getPrompt: () => promptRef.current,
@@ -128,7 +128,10 @@ export function Station({ enabled, clientId }: { enabled: boolean; clientId: str
           ) : (
             <button
               type="button"
-              onClick={() => void device.connect()}
+              onClick={() => {
+                device.activate();
+                void device.connect();
+              }}
               disabled={!enabled || device.status.kind === "connecting"}
               className={`flex items-center gap-2 rounded-full border border-zinc-700 px-4 py-2 font-medium text-zinc-100 transition hover:border-zinc-500 disabled:opacity-40 ${focusRing}`}
             >
@@ -186,7 +189,11 @@ export function Station({ enabled, clientId }: { enabled: boolean; clientId: str
           ) : (
             <button
               type="button"
-              onClick={() => dispatch({ type: "RUN" })}
+              onClick={() => {
+                unlock();
+                device.activate();
+                dispatch({ type: "RUN" });
+              }}
               disabled={!canRun}
               className={`rounded-full bg-lamp px-5 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 ${focusRing}`}
             >

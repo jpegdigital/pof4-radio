@@ -12,6 +12,8 @@ import { ttsUrl, type VoiceSettings } from "./voice-store";
  */
 
 const DUCK_VOLUME = 0.15;
+/** A few ms of silence (WAV); playing it inside a tap unlocks the element for later `play()`s on iOS. */
+const SILENCE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
 const REQUEST_TIMEOUT_MS = 120_000;
 
 export interface UseStationOptions {
@@ -174,5 +176,20 @@ export function useStation(opts: UseStationOptions) {
     void o.current.device.pause().catch(() => {});
   }, [state.loop]);
 
-  return { state, dispatch };
+  /**
+   * Call synchronously from the tap that starts the show. iOS Safari only lets an
+   * `HTMLMediaElement` play if *that element* first played inside a user gesture; the talk plays
+   * from an effect 20–60 s later, so the element is created and unlocked here, then reused.
+   */
+  const unlock = () => {
+    const el = (audio.current ??= new Audio());
+    if (el.src) return; // already unlocked (or mid-talk)
+    el.src = SILENCE;
+    void el.play().then(
+      () => el.pause(),
+      () => {},
+    );
+  };
+
+  return { state, dispatch, unlock };
 }
