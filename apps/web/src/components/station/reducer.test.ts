@@ -29,12 +29,22 @@ const run = (events: StationEvent[], from: StationState = initialState) => event
 
 /** A running show with blocks 1 and 2 loaded, cursor on block 1's talk. */
 const twoBlocks = () =>
-  run([{ type: "RUN" }, { type: "SEGMENT_READY", segment: seg(1) }, { type: "SEGMENT_READY", segment: seg(2) }]);
+  run([
+    { type: "RUN" },
+    { type: "SEGMENT_READY", segment: seg(1) },
+    { type: "SEGMENT_READY", segment: seg(2) },
+  ]);
 
 describe("run / segments", () => {
   it("RUN from empty asks for a segment and waits", () => {
     const s = run([{ type: "RUN" }]);
-    expect(s).toMatchObject({ loop: "running", phase: "planning", pending: true, requestSeq: 1, cursor: null });
+    expect(s).toMatchObject({
+      loop: "running",
+      phase: "planning",
+      pending: true,
+      requestSeq: 1,
+      cursor: null,
+    });
   });
 
   it("SEGMENT_READY while planning goes on air at its talk and requests the next one", () => {
@@ -75,9 +85,19 @@ describe("run / segments", () => {
   });
 
   it("RUN while planning after a halt asks again", () => {
-    let s = run([{ type: "RUN" }, { type: "SEGMENT_FAILED", error: "a" }, { type: "SEGMENT_FAILED", error: "b" }]);
+    let s = run([
+      { type: "RUN" },
+      { type: "SEGMENT_FAILED", error: "a" },
+      { type: "SEGMENT_FAILED", error: "b" },
+    ]);
     s = reducer(s, { type: "RUN" });
-    expect(s).toMatchObject({ loop: "running", phase: "planning", pending: true, requestSeq: 3, error: null });
+    expect(s).toMatchObject({
+      loop: "running",
+      phase: "planning",
+      pending: true,
+      requestSeq: 3,
+      error: null,
+    });
   });
 });
 
@@ -178,7 +198,11 @@ describe("stop / run / jump", () => {
   });
 
   it("RUN at the tail with nothing buffered asks for the next block", () => {
-    let s = run([{ type: "RUN" }, { type: "SEGMENT_READY", segment: seg(1) }, { type: "SEGMENT_FAILED", error: "x" }]);
+    let s = run([
+      { type: "RUN" },
+      { type: "SEGMENT_READY", segment: seg(1) },
+      { type: "SEGMENT_FAILED", error: "x" },
+    ]);
     s = run([{ type: "SEGMENT_FAILED", error: "y" }], s); // halted, cursor on s1 talk
     expect(s.loop).toBe("stopped");
     s = reducer(s, { type: "RUN" });
@@ -204,7 +228,12 @@ describe("stop / run / jump", () => {
     expect(s).toMatchObject({ loop: "stopped", phase: "idle", cursor: null });
     expect(s.segments).toHaveLength(3);
     s = reducer(s, { type: "JUMP", seg: 1, item: 0 });
-    expect(s).toMatchObject({ loop: "running", phase: "playing", cursor: { seg: 1, item: 0 }, pending: false });
+    expect(s).toMatchObject({
+      loop: "running",
+      phase: "playing",
+      cursor: { seg: 1, item: 0 },
+      pending: false,
+    });
   });
 
   it("JUMP to the tail's talk on a loaded show plans the next block", () => {

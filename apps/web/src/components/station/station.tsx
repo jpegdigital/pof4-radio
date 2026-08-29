@@ -4,53 +4,43 @@ import { Radio, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { guarded, keepGuardAlive } from "@/lib/guard-client";
 import { DjPicker } from "./dj-picker";
-import { NowPlaying } from "./now-playing";
-import type { SegmentView } from "./reducer";
+import { Player, type PlayerFace } from "./player";
+import { cursorSegment, type SegmentView } from "./reducer";
 import { ResumePicker } from "./resume-picker";
+import { Show } from "./show";
 import { Card, focusRing, Label } from "./ui";
 import { useSpotifyDevice } from "./use-spotify-device";
 import { useStation } from "./use-station";
 import { DEFAULT_DJ, type Dj, loadDj, saveDj } from "./voice-store";
 
 /**
- * The station, on one page: on air (the lamp, the DJ, the player), the request, the transport,
- * what's queued and what already aired. The browser is the whole state machine — nothing
- * happens when this component isn't running.
+ * The station, on one page: on air (the lamp, the DJ, the device), the request, the player, the
+ * show. The browser is the whole state machine — nothing happens when this component isn't running.
  */
 export function Station({ enabled, clientId }: { enabled: boolean; clientId: string }) {
   const [prompt, setPrompt] = useState("");
   const [dj, setDj] = useState<Dj>(DEFAULT_DJ);
   const [stationId, setStationId] = useState<string | null>(null);
-  const [history, setHistory] = useState<SegmentView[]>([]);
   const promptRef = useRef(prompt);
-  const djRef = useRef(dj);
   useEffect(() => {
     promptRef.current = prompt;
-    djRef.current = dj;
-  }, [prompt, dj]);
+  }, [prompt]);
 
   const dispatchRef = useRef<
-    (
-      e:
-        | { type: "TRACK_LIST_ENDED" }
-        | { type: "TRACK_CHANGED"; uri: string }
-        | { type: "HALT"; error: string },
-    ) => void
+    (e: { type: "ENDED" } | { type: "TRACK_CHANGED"; uri: string } | { type: "HALT"; error: string }) => void
   >(() => {});
   const device = useSpotifyDevice(clientId, {
-    onTrackListEnded: () => dispatchRef.current({ type: "TRACK_LIST_ENDED" }),
+    onTrackListEnded: () => dispatchRef.current({ type: "ENDED" }),
     onTrackChanged: (uri) => dispatchRef.current({ type: "TRACK_CHANGED", uri }),
     onLost: (error) => dispatchRef.current({ type: "HALT", error }),
   });
 
-  const { state, dispatch, unlock } = useStation({
+  const { state, dispatch, talk, talkPlayback, toggle, prev, next, unlock } = useStation({
     device,
     stationId,
+    dj,
     getPrompt: () => promptRef.current,
-    getVoice: () => djRef.current.voice,
-    getDj: () => djRef.current.name,
     onStation: setStationId,
-    onSegment: (seg) => setHistory((h) => [seg, ...h].slice(0, 20)),
   });
   useEffect(() => {
     dispatchRef.current = dispatch;
@@ -63,16 +53,15 @@ export function Station({ enabled, clientId }: { enabled: boolean; clientId: str
     queueMicrotask(() => setDj(stored)); // after hydration, not during it
   }, []);
 
-  // Resume a past show: load its prompt and history; Run then continues that conversation.
+  // Resume a past show: its prompt and blocks load into the show; tap any block, or Run at the tail.
   const resume = async (id: string) => {
     const res = await guarded(`/api/station/${id}`, { cache: "no-store" });
     if (!res.ok) return;
     const data = (await res.json()) as { stationId: string; prompt: string; segments: SegmentView[] };
     setStationId(data.stationId);
     setPrompt(data.prompt);
-    setHistory(data.segments);
+    dispatch({ type: "LOAD_SHOW", segments: [...data.segments].sort((a, b) => a.seq - b.seq) });
   };
-  const fresh = state.loop === "stopped" && !state.current && !state.next;
 
   // The Guard cookie lasts 15 minutes; a show lasts hours. Keep it fresh without reloading.
   useEffect(keepGuardAlive, []);
@@ -84,29 +73,59 @@ export function Station({ enabled, clientId }: { enabled: boolean; clientId: str
 
   const ready = device.status.kind === "ready";
   const running = state.loop === "running";
+  const fresh = !running && state.segments.length === 0;
   const canRun = enabled && ready && prompt.trim() !== "";
-  const cur = state.current;
-  const songPaused = device.playback?.paused ?? false;
-  const past = history.filter((s) => s.id !== cur?.segment.id && s.id !== state.next?.segment.id);
+  const cur = cursorSegment(state);
+  const cursor = state.cursor;
+  const talking = running && state.phase === "playing" && cursor?.item === 0;
+
+  const face: PlayerFace | null = (() => {
+    if (state.phase === "planning") return { kind: "planning", dj: dj.name };
+    if (!cur || !cursor) return null;
+    if (cursor.item === 0) {
+      return {
+        kind: "talk",
+        dj: dj.name,
+        initial: dj.name.charAt(0).toUpperCase(),
+        seq: cur.seq,
+        excerpt: firstSentence(cur.talk),
+        playback: !running
+          ? { paused: true, position: 0, duration: 0, at: 0 }
+          : talkPlayback && talkPlayback.duration > 0
+            ? talkPlayback
+            : null,
+      };
+    }
+    const t = cur.tracks[cursor.item - 1];
+    if (!t) return null;
+    const p = device.playback;
+    const live = p?.uri === t.uri ? p : null;
+    return {
+      kind: "track",
+      name: t.name,
+      artists: t.artists,
+      album: t.album,
+      image: live?.track?.image ?? null,
+      playback: live
+        ? { paused: live.paused, position: live.position, duration: live.duration, at: live.at }
+        : { paused: true, position: 0, duration: t.durationMs, at: 0 },
+    };
+  })();
 
   const status = (() => {
-    if (!running) return state.current || state.next ? "Stopped" : "Off air";
-    switch (state.phase) {
-      case "planning":
-        return "The DJ is planning…";
-      case "talk":
-        return cur?.talkUrl ? `${dj.name} on the mic` : `${dj.name} on the mic (loading voice…)`;
-      case "tracks":
-        return `Track ${state.trackIndex + 1} of ${cur?.segment.tracks.length ?? 0}`;
-      default:
-        return "On air";
-    }
+    if (!running) return state.segments.length > 0 ? "Stopped" : "Off air";
+    if (state.phase === "planning") return "The DJ is planning…";
+    if (talking) return `${dj.name} on the mic`;
+    if (cur && cursor) return `Track ${cursor.item} of ${cur.tracks.length}`;
+    return "On air";
   })();
-  const talking = running && state.phase === "talk";
+
+  const canPrev = cursor !== null && !(cursor.seg === 0 && cursor.item === 0);
+  const canNext = cursor !== null && state.phase === "playing";
 
   return (
     <>
-      {/* on air: the lamp, the DJ, the player */}
+      {/* on air: the lamp, the DJ, the device */}
       <Card className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -155,20 +174,21 @@ export function Station({ enabled, clientId }: { enabled: boolean; clientId: str
           rows={3}
           className={`w-full resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2.5 font-mono text-sm leading-relaxed placeholder:text-zinc-600 ${focusRing}`}
         />
-        {running && prompt.trim() !== (cur?.segment.prompt ?? prompt.trim()) && (
+        {running && prompt.trim() !== (cur?.prompt ?? prompt.trim()) && (
           <p className="-mt-1 text-xs text-zinc-500">The new request reaches the DJ on the next block.</p>
         )}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
             {fresh && enabled && !stationId && <ResumePicker onPick={(id) => void resume(id)} />}
-            {fresh && stationId && (
+            {!running && stationId && cursor === null && state.segments.length > 0 && (
               <p className="text-xs text-zinc-500">
-                Resuming ({history.length} block{history.length === 1 ? "" : "s"}).{" "}
+                Resuming ({state.segments.length} block{state.segments.length === 1 ? "" : "s"}) — tap a
+                block, or go on air.{" "}
                 <button
                   type="button"
                   onClick={() => {
                     setStationId(null);
-                    setHistory([]);
+                    dispatch({ type: "CLEAR_SHOW" });
                   }}
                   className="underline underline-offset-2 hover:text-zinc-300"
                 >
@@ -217,98 +237,45 @@ export function Station({ enabled, clientId }: { enabled: boolean; clientId: str
         </div>
       )}
 
-      {/* now playing: the transport, once anything is on air */}
-      {(cur || state.next || running) && (
+      {/* the player: mounted from the first block on, never unmounts */}
+      {face && (
         <Card className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3">
             <Label>Now playing</Label>
             <span className={`text-xs ${running ? "text-zinc-300" : "text-zinc-500"}`}>{status}</span>
-            {running && state.phase === "talk" && (
-              <button
-                type="button"
-                onClick={() => dispatch({ type: "SKIP_TALK" })}
-                className={`text-xs text-zinc-400 underline-offset-2 hover:underline ${focusRing}`}
-              >
-                Skip talk
-              </button>
-            )}
           </div>
-
-          {talking && cur ? (
-            <p className="font-mono text-sm leading-relaxed text-zinc-300">{cur.segment.talk}</p>
-          ) : device.playback?.track ? (
-            <NowPlaying
-              playback={device.playback}
-              onPrev={() => dispatch({ type: "PREV" })}
-              onNext={() => dispatch({ type: "NEXT" })}
-              onToggle={() => void (songPaused ? device.resume() : device.pause())}
-            />
-          ) : (
-            <p className="text-sm text-zinc-500">{running ? "Waiting for the DJ…" : "Nothing playing."}</p>
-          )}
-
-          {cur && state.phase === "tracks" && (
-            <TrackList tracks={cur.segment.tracks} activeIndex={state.trackIndex} />
-          )}
-          {state.next && <p className="text-xs text-zinc-500">Next block ready.</p>}
+          <Player
+            face={face}
+            running={running}
+            canPrev={canPrev}
+            canNext={canNext}
+            onPrev={prev}
+            onNext={next}
+            onToggle={toggle}
+          />
         </Card>
       )}
 
-      {/* next up */}
-      {state.next && (
-        <Card>
-          <Label className="mb-3">Next up</Label>
-          <SegmentBody segment={state.next.segment} />
-        </Card>
-      )}
-
-      {/* history: what already aired, newest first — not what's on air or buffered */}
-      {past.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <Label>Earlier tonight</Label>
-          {past.map((s) => (
-            <Card key={s.id} className="bg-transparent">
-              <SegmentBody segment={s} />
-            </Card>
-          ))}
-        </div>
-      )}
+      {/* the show */}
+      <Show
+        segments={state.segments}
+        cursor={cursor}
+        voiced={(id) => {
+          const t = talk(id);
+          return t !== undefined && "url" in t;
+        }}
+        onJump={(seg, item) => {
+          if (!ready) return;
+          unlock();
+          device.activate();
+          dispatch({ type: "JUMP", seg, item });
+        }}
+      />
     </>
   );
 }
 
-function SegmentBody({ segment }: { segment: SegmentView }) {
-  return (
-    <>
-      <div className="mb-2 truncate text-xs text-zinc-500">
-        #{segment.seq} · “{segment.prompt}”
-      </div>
-      <p className="mb-3 font-mono text-sm leading-relaxed text-zinc-400">{segment.talk}</p>
-      <TrackList tracks={segment.tracks} activeIndex={-1} />
-    </>
-  );
-}
-
-function TrackList({ tracks, activeIndex }: { tracks: SegmentView["tracks"]; activeIndex: number }) {
-  return (
-    <ol className="flex flex-col gap-1 text-sm">
-      {tracks.map((t, i) => (
-        <li
-          key={t.id}
-          className={`flex items-baseline gap-2 ${i === activeIndex ? "text-lamp" : "text-zinc-400"}`}
-        >
-          <span className="w-4 shrink-0 font-mono text-xs text-zinc-600">{i + 1}</span>
-          <span className="min-w-0 flex-1 truncate">
-            {t.artists.join(", ")} — {t.name}
-          </span>
-          <span className="font-mono text-xs tabular-nums text-zinc-600">{clock(t.durationMs)}</span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function clock(ms: number): string {
-  const s = Math.round(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+function firstSentence(text: string): string {
+  const m = text.match(/^.*?[.!?…](\s|$)/);
+  return (m ? m[0] : text).trim();
 }
