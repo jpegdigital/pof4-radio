@@ -4,12 +4,19 @@ import { authorizeUrl, exchangeCode, me, pkceChallenge, pkceVerifier, refreshTok
  * The browser's own Spotify account. The PKCE flow needs no secret, so the whole thing lives
  * here: consent → code → tokens in localStorage, refreshed in place when they lapse. Each
  * visitor plays through their own Premium account; the server never sees a user token.
+ *
+ * Who is connected (id, name, product — never a token) is also kept in a cookie, so the page
+ * can render the name and the Premium gate on first paint instead of a frame later.
  */
 
-export interface SpotifyAccount {
+/** Who is connected — the part of the account the server may see and the page renders first. */
+export interface SpotifyIdentity {
   spotifyUserId: string;
   displayName: string | null;
   product: string | null;
+}
+
+export interface SpotifyAccount extends SpotifyIdentity {
   accessToken: string;
   refreshToken: string;
   /** Epoch ms. */
@@ -17,6 +24,8 @@ export interface SpotifyAccount {
 }
 
 const ACCOUNT_KEY = "radio.spotify";
+/** The identity cookie the server page reads (app/(app)/page.tsx). */
+export const IDENTITY_COOKIE = "radio.spotify.who";
 const FLOW_KEY = "radio.spotify.flow"; // sessionStorage: { state, verifier } across the redirect
 
 export const CALLBACK_PATH = "/spotify/callback";
@@ -31,12 +40,24 @@ export function loadAccount(): SpotifyAccount | null {
   }
 }
 
+export const identityOf = (a: SpotifyAccount): SpotifyIdentity => ({
+  spotifyUserId: a.spotifyUserId,
+  displayName: a.displayName,
+  product: a.product,
+});
+
 function saveAccount(a: SpotifyAccount): void {
   try {
     localStorage.setItem(ACCOUNT_KEY, JSON.stringify(a));
   } catch {
     // storage unavailable — the connection just won't survive a reload
   }
+  rememberIdentity(a);
+}
+
+/** Write the identity cookie for the page's first paint (also backfills a browser from before the cookie). */
+export function rememberIdentity(a: SpotifyAccount): void {
+  document.cookie = `${IDENTITY_COOKIE}=${encodeURIComponent(JSON.stringify(identityOf(a)))}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`;
 }
 
 export function clearAccount(): void {
@@ -44,6 +65,20 @@ export function clearAccount(): void {
     localStorage.removeItem(ACCOUNT_KEY);
   } catch {
     // nothing to clear
+  }
+  document.cookie = `${IDENTITY_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax; Secure`;
+}
+
+/** The identity cookie's value, as the server reads it; null if absent or not ours. */
+export function parseIdentity(raw: string | undefined): SpotifyIdentity | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(decodeURIComponent(raw)) as Partial<SpotifyIdentity>;
+    return typeof v.spotifyUserId === "string"
+      ? { spotifyUserId: v.spotifyUserId, displayName: v.displayName ?? null, product: v.product ?? null }
+      : null;
+  } catch {
+    return null;
   }
 }
 

@@ -1,13 +1,23 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { PROMPT_SLOTS, type PromptKey } from "@radio/dj";
+import {
+  parseVoices,
+  PROMPT_SLOTS,
+  type PromptKey,
+  type Voice,
+  VOICES_KEY,
+  VoiceSchema,
+  VoicesSchema,
+} from "@radio/dj";
 import { z } from "zod";
 import { db } from "@/lib/db";
 
 /**
- * /settings Server Action: save one prompt slot. The
- * next segment reads the change (`loadPromptTemplate`); segments already planned keep theirs.
+ * /settings Server Actions. Prompts: save one slot; the next segment reads the change
+ * (`loadPromptTemplate`), segments already planned keep theirs. Voices: the roster is one JSON
+ * row (`settings.voices`); every change reads it, edits it, writes it back — the next line of
+ * talk reads the change (`/api/tts`), lines already cached in an open tab keep their voice.
  */
 
 export type SaveState = { error?: string; savedAt?: string };
@@ -24,4 +34,56 @@ export async function savePrompt(_prev: SaveState, formData: FormData): Promise<
   await db().saveSetting(parsed.data.key, parsed.data.value);
   revalidatePath("/settings");
   return { savedAt: new Date().toISOString() };
+}
+
+// ---- voices -------------------------------------------------------------------
+
+async function readRoster(): Promise<Voice[]> {
+  const row = await db().getSetting(VOICES_KEY);
+  return row ? parseVoices(row.value) : [];
+}
+
+async function writeRoster(voices: Voice[]): Promise<void> {
+  await db().saveSetting(VOICES_KEY, JSON.stringify(VoicesSchema.parse(voices)));
+  revalidatePath("/settings");
+}
+
+export type VoiceState = { error?: string; savedAt?: string; id?: string };
+
+/** Save one voice as the form holds it. `was` is the id it had when the form opened ("" for a new one). */
+export async function saveVoice(_prev: VoiceState, formData: FormData): Promise<VoiceState> {
+  const raw = formData.get("voice");
+  let json: unknown = null;
+  try {
+    json = typeof raw === "string" ? JSON.parse(raw) : null;
+  } catch {
+    // stays null — rejected below
+  }
+  const parsed = VoiceSchema.safeParse(json);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the voice." };
+  const voice = parsed.data;
+  const wasRaw = formData.get("was");
+  const was = typeof wasRaw === "string" ? wasRaw : "";
+  const roster = await readRoster();
+  const at = roster.findIndex((v) => v.id === was);
+  if (roster.some((v, i) => v.id === voice.id && i !== at))
+    return { error: "Another voice already has that id." };
+  const next = at === -1 ? [...roster, voice] : roster.with(at, voice);
+  await writeRoster(next);
+  return { savedAt: new Date().toISOString(), id: voice.id };
+}
+
+export async function deleteVoice(id: string): Promise<void> {
+  await writeRoster((await readRoster()).filter((v) => v.id !== id));
+}
+
+/** Move a voice one step up (-1) or down (+1); the first in the roster is the default. */
+export async function moveVoice(id: string, by: -1 | 1): Promise<void> {
+  const roster = await readRoster();
+  const i = roster.findIndex((v) => v.id === id);
+  const j = i + by;
+  if (i === -1 || j < 0 || j >= roster.length) return;
+  const next = [...roster];
+  [next[i], next[j]] = [next[j], next[i]];
+  await writeRoster(next);
 }

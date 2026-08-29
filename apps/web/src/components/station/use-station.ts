@@ -121,11 +121,10 @@ export function useStation(opts: UseStationOptions) {
       const have = talks.get(key);
       if ((have && "url" in have) || fetchingTalk.current.has(key)) continue; // a failed fetch is retried
       fetchingTalk.current.add(key);
-      const voice = o.current.dj.voice;
       void (async () => {
         let entry: TalkEntry;
         try {
-          const res = await guarded(ttsUrl(seg.talk, voice));
+          const res = await guarded(ttsUrl(seg.talk, voiceId));
           if (!res.ok) {
             const body = (await res.json().catch(() => ({}))) as { error?: string };
             throw new Error(body.error ?? `tts ${res.status}`);

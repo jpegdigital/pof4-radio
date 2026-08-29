@@ -6,7 +6,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "op run --env-file=.env.op -- pnpm -r --parallel --stream --filter web --filter worker dev",
+    "dev": "op run --env-file=.env.op -- pnpm --filter web dev",
     "dev:web": "op run --env-file=.env.op -- pnpm --filter web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",

@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { focusRing } from "./ui";
-import { DEFAULT_DJ, DJS, type Dj, findDj } from "./voice-store";
+import { type Dj, findDj } from "./voice-store";
 
 const GROUPS = [
   { gender: "female", label: "Female" },
@@ -9,28 +9,46 @@ const GROUPS = [
 
 /**
  * Who's on the mic: a filled field showing the name, chevron trailing — a pop-up button. The
- * default sits alone at the top of the menu; the rest are grouped.
+ * roster's first sits alone at the top of the menu as the default; the rest are grouped.
  */
-export function DjPicker({ value, onChange }: { value: Dj; onChange: (d: Dj) => void }) {
+export function DjPicker({
+  djs,
+  value,
+  onChange,
+}: {
+  djs: readonly Dj[];
+  value: Dj;
+  onChange: (d: Dj) => void;
+}) {
+  const first = djs[0];
   return (
     <label className="relative flex min-w-0 flex-1 items-center text-sm">
       <span className="sr-only">DJ</span>
       <PodcastMic className="pointer-events-none absolute left-3.5 size-5 text-zinc-500" />
       <select
         value={value.id}
-        onChange={(e) => onChange(findDj(e.target.value))}
+        disabled={!first}
+        onChange={(e) => onChange(findDj(djs, e.target.value))}
         className={`w-full appearance-none truncate rounded-xl border border-zinc-800 bg-zinc-950 py-2.5 pr-9 pl-11 text-base text-zinc-100 transition hover:border-zinc-700 ${focusRing}`}
       >
-        <option value={DEFAULT_DJ.id} className="bg-zinc-950">
-          {DEFAULT_DJ.name}
-        </option>
+        {first ? (
+          <option value={first.id} className="bg-zinc-950">
+            {first.name}
+          </option>
+        ) : (
+          <option value="" className="bg-zinc-950">
+            {value.name}
+          </option>
+        )}
         {GROUPS.map((g) => (
           <optgroup key={g.gender} label={g.label} className="bg-zinc-950">
-            {DJS.filter((d) => d.gender === g.gender && d.id !== DEFAULT_DJ.id).map((d) => (
-              <option key={d.id} value={d.id} className="bg-zinc-950">
-                {d.name}
-              </option>
-            ))}
+            {djs
+              .filter((d) => d.gender === g.gender && d.id !== first?.id)
+              .map((d) => (
+                <option key={d.id} value={d.id} className="bg-zinc-950">
+                  {d.name}
+                </option>
+              ))}
           </optgroup>
         ))}
       </select>

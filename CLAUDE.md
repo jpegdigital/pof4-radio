@@ -44,16 +44,23 @@ lands in 20–60 s while the block plays); talk audio is fetched by *position* �
 and the one after it, cached per session by `voiceId:segmentId` — so a resumed show's past blocks are
 voiced when tapped and a rewind is instant. Run/Stop are absolute; Stop keeps the cursor and the
 DJ's memory; a page load is a fresh show (new station) unless a past station is picked from the
-"Resume a show" list (`GET /api/stations`, `GET /api/station/:id`) — its blocks load into the show,
+"Resume a show" list (loaded with the page; `GET /api/station/:id` fetches the pick) — its blocks load into the show,
 and tapping one or pressing Run continues that conversation.
 
 **The server is two functions.** `POST /api/station/next` continues the station's one Claude conversation
 (`station.messages`, row-locked while planning → a second tab gets 409): tools are frozen in code, the
 prompts are data (below), the last message carries a 1-hour cache breakpoint, each finished turn is trimmed to its
-`finish_segment` call, history is capped at 20 segments. `GET /api/tts` pipes ElevenLabs' streaming
-endpoint (`eleven_v3`) to the browser; voice id, model and settings come from the browser per request —
-a fixed roster of DJs, each a voice with its tuned settings (`DJS` in `voice-store.ts`; the pick is
-remembered in localStorage) — and only `ELEVENLABS_KEY` lives on the server. `segment` rows are a history log.
+`finish_segment` call, history is capped at 20 segments. `GET /api/tts?text&voiceId` pipes ElevenLabs'
+streaming endpoint to the browser: the browser names the voice, the server reads that voice's model and
+settings from the roster per request and assembles the call (`lib/elevenlabs.ts`, `ttsBody` in
+`packages/dj/src/voice.ts`); only `ELEVENLABS_KEY` lives on the server. The roster is the `settings.voices`
+row — JSON, `[{id, name, gender, modelId, stability, similarityBoost, style, speed, speakerBoost}]`, array
+order is picker order and the first is the default; `eleven_v3` (stability is a 0/0.5/1 mode; reads
+`[audio tags]` in the talk; ignores `speed` and `style` — measured) or `eleven_multilingual_v2` (continuous; `speed` works). Edited on `/settings` → Voices, with
+`POST /api/tts/preview` (guarded like `/settings`) voicing the unsaved form; the station page reads
+the roster on the server (`app/(app)/page.tsx` — ids, names, grouping, never the tuning) so the picker is
+full on first paint, and remembers the pick in localStorage.
+Talk audio cached in an open tab keeps the voice it was made with. `segment` rows are a history log.
 
 **The prompts are settings.** Four slots — `prompt.system`, `prompt.opening`, `prompt.bridge`,
 `prompt.shift` — with `{request}` / `{previous_talk}` / `{previous_tracks}` / `{dj}` placeholders
@@ -62,7 +69,8 @@ remembered in localStorage) — and only `ELEVENLABS_KEY` lives on the server. `
 (`PROMPT_SLOTS`, `fillVars` in `packages/dj/src/prompt.ts`). **The text lives only in the `settings` table** —
 four rows, one per slot, no copy or fallback in code; edit it on `/settings` or straight in the table.
 `loadPromptTemplate()` reads the rows per request and throws if a slot is missing. A fresh database needs
-the four rows filled by hand. Editing the system prompt costs one cache
+the four rows filled by hand (and a `voices` row — add the first voice on `/settings`; with no row the
+roster is empty and the station has nothing to pick). Editing the system prompt costs one cache
 miss. No provenance yet: a station doesn't record which prompt text planned it.
 
 **Two shells, route groups.** `app/(app)` is the station, phone-wide, the page as it was; `app/(settings)`

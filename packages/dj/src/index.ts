@@ -14,3 +14,16 @@ export {
   type TurnInput,
   turnVars,
 } from "./prompt.ts";
+export {
+  parseVoices,
+  summarize,
+  ttsBody,
+  VOICE_DEFAULTS,
+  VOICE_MODELS,
+  VOICES_KEY,
+  type Voice,
+  type VoiceModelId,
+  VoiceSchema,
+  VoicesSchema,
+  type VoiceSummary,
+} from "./voice.ts";

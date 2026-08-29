@@ -6,13 +6,13 @@ import { guarded, keepGuardAlive } from "@/lib/guard-client";
 import { DjPicker } from "./dj-picker";
 import { Player, type PlayerFace } from "./player";
 import { cursorSegment, type SegmentView, type StationEvent } from "./reducer";
-import { ResumePicker } from "./resume-picker";
+import { ResumePicker, type StationSummary } from "./resume-picker";
 import { Show } from "./show";
-import type { SpotifyAccount } from "./spotify-account";
+import type { SpotifyAccount, SpotifyIdentity } from "./spotify-account";
 import { Card, focusRing, Label, SpotifyMark } from "./ui";
 import { useSpotifyDevice } from "./use-spotify-device";
 import { useStation } from "./use-station";
-import { DEFAULT_DJ, type Dj, loadDj, saveDj } from "./voice-store";
+import { type Dj, findDj, loadDj, saveDj } from "./voice-store";
 
 /**
  * The station, on one page: on air (the lamp and the one button, the DJ, the account), the
@@ -21,18 +21,30 @@ import { DEFAULT_DJ, type Dj, loadDj, saveDj } from "./voice-store";
  */
 export function Station({
   clientId,
+  identity,
+  djs,
+  stations,
   account,
   onConnect,
   onDisconnect,
 }: {
   clientId: string;
+  /** The roster, in picker order; the first is the default. */
+  djs: readonly Dj[];
+  /** Past shows to resume, most recent first. */
+  stations: readonly StationSummary[];
+  /** Who is connected — on the page from the first paint (the identity cookie). */
+  identity: SpotifyIdentity | null;
+  /** The connected account with its tokens — from localStorage, a frame later. Gates going on air. */
   account: SpotifyAccount | null;
   onConnect: () => void;
   onDisconnect: () => void;
 }) {
-  const enabled = account?.product === "premium";
+  const premium = identity?.product === "premium";
+  /** Going on air needs the tokens loaded, not just the name. */
+  const enabled = premium && account !== null;
   const [prompt, setPrompt] = useState("");
-  const [dj, setDj] = useState<Dj>(DEFAULT_DJ);
+  const [dj, setDj] = useState<Dj>(() => findDj(djs, ""));
   const [stationId, setStationId] = useState<string | null>(null);
   const promptRef = useRef(prompt);
   useEffect(() => {
@@ -59,12 +71,14 @@ export function Station({
     dispatchRef.current = dispatch;
   }, [dispatch]);
 
-  // The DJ is remembered per browser. The station is not: a page load is a fresh show —
-  // Stop/Run inside the page keeps the DJ's memory, a reload starts over.
+  // The roster arrives with the page; the pick is remembered per browser and applied after
+  // hydration, so the first paint shows the default and the remembered DJ takes over at once.
+  // The station is not remembered: a page load is a fresh show — Stop/Run inside the page keeps
+  // the DJ's memory, a reload starts over.
   useEffect(() => {
-    const stored = loadDj();
+    const stored = loadDj(djs);
     queueMicrotask(() => setDj(stored)); // after hydration, not during it
-  }, []);
+  }, [djs]);
 
   // Resume a past show: its prompt and blocks load into the show; tap any block, or Run at the tail.
   const resume = async (id: string) => {
@@ -192,11 +206,11 @@ export function Station({
             />
             <Label className={running ? "text-lamp" : ""}>{running ? "On air" : "Off air"}</Label>
           </div>
-          {account ? (
+          {identity ? (
             <div className="flex min-w-0 items-center gap-2 text-sm">
               <SpotifyMark className="size-4 shrink-0 text-[#1DB954]" />
-              <span className="truncate text-zinc-300">{account.displayName ?? account.spotifyUserId}</span>
-              {!enabled && <span className="shrink-0 text-xs text-amber-300/90">not Premium</span>}
+              <span className="truncate text-zinc-300">{identity.displayName ?? identity.spotifyUserId}</span>
+              {!premium && <span className="shrink-0 text-xs text-amber-300/90">not Premium</span>}
               <button
                 type="button"
                 onClick={onDisconnect}
@@ -239,13 +253,15 @@ export function Station({
         {running && prompt.trim() !== (cur?.prompt ?? prompt.trim()) && (
           <p className="-mt-2 text-xs text-zinc-500">The new request reaches the DJ on the next block.</p>
         )}
-        {!account && <p className="-mt-2 text-xs text-zinc-500">Playback needs a Spotify Premium account.</p>}
+        {!identity && (
+          <p className="-mt-2 text-xs text-zinc-500">Playback needs a Spotify Premium account.</p>
+        )}
         {device.status.kind === "error" && (
           <p className="-mt-2 text-xs text-red-400">
             This tab couldn&rsquo;t become the player: {device.status.message}
           </p>
         )}
-        {fresh && enabled && !stationId && <ResumePicker onPick={(id) => void resume(id)} />}
+        {fresh && !stationId && <ResumePicker stations={stations} onPick={(id) => void resume(id)} />}
         {!running && stationId && cursor === null && state.segments.length > 0 && (
           <p className="text-xs text-zinc-500">
             Resuming ({state.segments.length} block{state.segments.length === 1 ? "" : "s"}) — tap a block, or
@@ -267,7 +283,7 @@ export function Station({
           {/* the voice field, its name on a plate riding the top-left of the bezel — the way a
               console labels a control: on it, not near it. Lit while the DJ is actually talking. */}
           <div className="relative min-w-0 flex-1">
-            <DjPicker value={dj} onChange={changeDj} />
+            <DjPicker djs={djs} value={dj} onChange={changeDj} />
             <span
               aria-hidden="true"
               className={`absolute -top-[11px] left-3 rounded-[3px] px-1.5 py-px font-display text-[10px] font-semibold uppercase tracking-[0.22em] transition ${

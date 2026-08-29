@@ -1,11 +1,10 @@
 import { ChevronDown, History } from "lucide-react";
-import { useEffect, useState } from "react";
-import { guarded } from "@/lib/guard-client";
 import { focusRing } from "./ui";
 
 /**
- * Pick up a past show. Shown only on a fresh page, before anything is on air: choosing a
- * station loads its prompt and history; pressing Run then continues that DJ conversation
+ * Pick up a past show. The list arrives with the page (app/(app)/page.tsx), so it is there on
+ * first paint. Shown only on a fresh page, before anything is on air: choosing a station loads
+ * its prompt and history; pressing Run then continues that DJ conversation
  * (the next talk bridges from wherever it left off).
  */
 
@@ -16,24 +15,14 @@ export interface StationSummary {
   updatedAt: string;
 }
 
-export function ResumePicker({ onPick }: { onPick: (id: string) => void }) {
-  const [stations, setStations] = useState<StationSummary[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    void guarded("/api/stations", { cache: "no-store" })
-      .then((r) => (r.ok ? (r.json() as Promise<StationSummary[]>) : []))
-      .then((list) => {
-        if (live) setStations(list);
-      })
-      .catch(() => {
-        if (live) setStations([]);
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  if (!stations?.length) return null;
+export function ResumePicker({
+  stations,
+  onPick,
+}: {
+  stations: readonly StationSummary[];
+  onPick: (id: string) => void;
+}) {
+  if (!stations.length) return null;
   return (
     <label className="relative flex min-w-0 items-center gap-2 text-xs text-zinc-500">
       <History className="size-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />

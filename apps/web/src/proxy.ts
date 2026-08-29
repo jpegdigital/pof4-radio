@@ -12,10 +12,10 @@ import { failureKind, guardUrl, isNavigation, returnUrl, verifyGuard } from "./l
 
 /**
  * TEMPORARY: the station is open so friends can test without a pof4 login; only the control
- * room (/settings — prompt editing) still asks for the passkey. Flip to false to gate everything.
+ * room (/settings — prompts and voices, plus its voice-preview endpoint) still asks for the passkey. Flip to false to gate everything.
  */
 const GUARD_OPEN = true;
-const ALWAYS_GUARDED = ["/settings"];
+const ALWAYS_GUARDED = ["/settings", "/api/tts/preview"];
 
 export const config = {
   // The complete exempt list: Railway's healthcheck and static assets. /media and the

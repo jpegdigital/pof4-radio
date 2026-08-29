@@ -138,6 +138,12 @@ export function createDb(connectionString: string) {
       return rows.map((r) => ({ key: r.key, value: r.value, updatedAt: r.updated_at }));
     },
 
+    async getSetting(key: string): Promise<Setting | null> {
+      const { rows } = await pool.query<SettingRow>("select * from settings where key = $1", [key]);
+      const r = rows[0];
+      return r ? { key: r.key, value: r.value, updatedAt: r.updated_at } : null;
+    },
+
     async saveSetting(key: string, value: string): Promise<void> {
       await pool.query(
         "insert into settings (key, value) values ($1, $2) on conflict (key) do update set value = excluded.value",
