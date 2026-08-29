@@ -50,20 +50,20 @@ function searchingClient() {
   let n = 0;
   const client = {
     messages: {
-      create: async (req: { messages: { role: string; content: unknown }[] }) => {
+      create: (req: { messages: { role: string; content: unknown }[] }) => {
         const last = req.messages.at(-1)?.content;
         if (Array.isArray(last)) {
           for (const b of last as { type: string; text?: string }[])
             if (b.type === "text" && b.text) prompts.push(b.text);
         }
         n++;
-        return {
+        return Promise.resolve({
           stop_reason: "tool_use",
           usage: { input_tokens: 1, output_tokens: 1 },
           content: [
             { type: "tool_use", id: `u${n}`, name: "search_spotify", input: { query: `q${n}`, limit: 5 } },
           ],
-        };
+        });
       },
     },
   };
@@ -76,7 +76,11 @@ describe("planSegment", () => {
     await expect(
       planSegment(
         { system: "s", history: [], userTurn: "go" },
-        { client: client as never, model: "m", search: async () => [track("a"), track("b"), track("c")] },
+        {
+          client: client as never,
+          model: "m",
+          search: () => Promise.resolve([track("a"), track("b"), track("c")]),
+        },
       ),
     ).rejects.toThrow(/did not finish within 12 turns: 12 searches \(q1, q2, q3, …, q12\)/);
     expect(prompts.some((p) => p.includes("finish_segment now"))).toBe(true);
