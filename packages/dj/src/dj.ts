@@ -50,6 +50,36 @@ interface FinishInput {
 }
 
 const MAX_TURNS = 12; // searches are cheap; this is a runaway guard, not a budget
+/** With this many calls left, the DJ is told to finish with what it has seen. */
+const WRAP_UP_AT = 3;
+
+/** What the DJ did this turn, for the log when it fails: searches made, finishes rejected. */
+export function describeTurn(turn: Anthropic.MessageParam[]): string {
+  const queries: string[] = [];
+  let rejected = 0;
+  let lastError = "";
+  for (const m of turn) {
+    if (!Array.isArray(m.content)) continue;
+    for (const b of m.content) {
+      if (b.type === "tool_use" && b.name === "search_spotify") queries.push((b.input as SearchInput).query);
+      if (
+        b.type === "tool_result" &&
+        b.is_error &&
+        typeof b.content === "string" &&
+        !b.content.startsWith("search failed")
+      ) {
+        rejected++;
+        lastError = b.content;
+      }
+    }
+  }
+  const shown = queries.length > 4 ? [...queries.slice(0, 3), "…", queries.at(-1) ?? ""] : queries;
+  const parts = [
+    `${queries.length} search${queries.length === 1 ? "" : "es"}${queries.length ? ` (${shown.join(", ")})` : ""}`,
+  ];
+  if (rejected) parts.push(`finish_segment rejected ${rejected}×, last: ${lastError}`);
+  return parts.join("; ");
+}
 
 export function describeTrack(t: Track | SegmentTrack): string {
   const year = "releaseDate" in t && t.releaseDate ? ` (${t.releaseDate.slice(0, 4)})` : "";
@@ -163,9 +193,20 @@ export async function planSegment(input: DjInput, deps: DjDeps): Promise<DjOutpu
       }
     }
 
-    turn.push({ role: "user", content: results });
+    const left = MAX_TURNS - i - 1;
+    const content: Anthropic.ContentBlockParam[] =
+      left === WRAP_UP_AT
+        ? [
+            ...results,
+            {
+              type: "text",
+              text: `You have ${left} tool calls left. Call finish_segment now with 3 or 4 of the tracks you have already seen.`,
+            },
+          ]
+        : results;
+    turn.push({ role: "user", content });
     if (finished) return { ...finished, turn, usage };
   }
 
-  throw new Error(`the DJ did not finish within ${MAX_TURNS} turns`);
+  throw new Error(`the DJ did not finish within ${MAX_TURNS} turns: ${describeTurn(turn)}`);
 }

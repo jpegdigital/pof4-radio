@@ -64,8 +64,8 @@ export function Player({
           )}
           {face.kind === "planning" && (
             <>
-              <div className="truncate text-base font-medium">The DJ is planning…</div>
-              <div className="truncate text-sm text-zinc-400">{face.dj} is picking the next block</div>
+              <div className="truncate text-base font-medium">Next block</div>
+              <div className="truncate text-sm text-zinc-400">{face.dj} is picking the tracks…</div>
             </>
           )}
         </div>
