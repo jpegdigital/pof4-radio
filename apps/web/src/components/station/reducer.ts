@@ -4,13 +4,18 @@ import type { SegmentTrack } from "@radio/db";
  * The station's state machine. Pure: every decision about what plays next lives here; the
  * effects hook (use-station.ts) only carries out what the state says.
  *
- *   loop   — Run/Stop. Absolute. Stopping keeps the buffered segment and the DJ's memory.
- *   phase  — idle | planning (waiting on the DJ, nothing to play) | talk | tracks
- *   current/next — what's on air and the one segment buffered behind it
- *   pending — a /api/station/next request is wanted/in flight (requestSeq bumps per request)
+ * The show is an ordered list of *metatracks*: a segment is its talk, then its 3–4 tracks. One
+ * cursor walks it — `{seg, item}` where item 0 is the talk and 1..n the tracks. Any position can
+ * be jumped to; the DJ is only asked for more when the cursor lands on the talk of the *last*
+ * segment (or on RUN at the tail), so rewinding never plans.
  *
- * A request for the next segment goes out the moment a segment's talk starts, so N+1 arrives
- * while N plays. One buffered segment, one request at a time.
+ *   loop    — Run/Stop. Absolute. Stopping keeps the cursor and the DJ's memory.
+ *   phase   — idle (nothing yet) | planning (waiting on the DJ for the block to start) | playing
+ *   pending — a /api/station/next request is wanted/in flight (requestSeq bumps per request)
+ *   playSeq — bumps whenever the item under the cursor must (re)start
+ *
+ * Talk *audio* is not state here: the hook caches it by position (use-station.ts). The only audio
+ * fact the reducer needs is TALK_FAILED, so a broken voice never stalls the show.
  */
 
 export interface SegmentView {
@@ -21,96 +26,105 @@ export interface SegmentView {
   tracks: SegmentTrack[];
 }
 
-export interface Loaded {
-  segment: SegmentView;
-  /** Object URL of the fetched talk audio; null until the prefetch lands. */
-  talkUrl: string | null;
-  talkFailed: boolean;
+export interface Cursor {
+  seg: number;
+  /** 0 = the talk; 1..n = tracks[item - 1]. */
+  item: number;
 }
 
-export type Phase = "idle" | "planning" | "talk" | "tracks";
+export type Phase = "idle" | "planning" | "playing";
 
 export interface StationState {
   loop: "stopped" | "running";
   phase: Phase;
-  current: Loaded | null;
-  trackIndex: number;
-  next: Loaded | null;
+  segments: SegmentView[];
+  cursor: Cursor | null;
   pending: boolean;
   requestSeq: number;
   retried: boolean;
-  /** Bumps whenever the tracks effect must (re)start playback of `trackIndex`. */
   playSeq: number;
-  /** Where to pick up on Run after a Stop mid-segment. */
-  resume: "talk" | "tracks" | null;
   error: string | null;
 }
 
 export type StationEvent =
   | { type: "RUN" }
   | { type: "STOP" }
+  /** Something the loop can't continue through (device gone, another tab owns the station). */
+  | { type: "HALT"; error: string }
+  /** A resumed station's past blocks. Only while stopped. */
+  | { type: "LOAD_SHOW"; segments: SegmentView[] }
+  | { type: "CLEAR_SHOW" }
   | { type: "SEGMENT_READY"; segment: SegmentView }
   | { type: "SEGMENT_FAILED"; error: string }
-  | { type: "TALK_READY"; segmentId: string; url: string }
-  | { type: "TALK_AUDIO_FAILED"; segmentId: string; error: string }
-  | { type: "TALK_ENDED" }
-  | { type: "SKIP_TALK" }
-  | { type: "TRACK_LIST_ENDED" }
-  /** Spotify moved on to another track of the block by itself (no NEXT/PREV from us). */
+  /** The talk audio for a segment could not be fetched or played. */
+  | { type: "TALK_FAILED"; segmentId: string }
+  /** The item under the cursor finished (talk audio ended, or Spotify ran out of list). */
+  | { type: "ENDED" }
+  /** Spotify moved on to another track of the block by itself. */
   | { type: "TRACK_CHANGED"; uri: string }
   | { type: "NEXT" }
   | { type: "PREV" }
-  /** Something the loop can't continue through (device gone, another tab owns the station). */
-  | { type: "HALT"; error: string }
+  | { type: "JUMP"; seg: number; item: number }
   | { type: "CLEAR_ERROR" };
+
+export const MAX_SEGMENTS = 20;
 
 export const initialState: StationState = {
   loop: "stopped",
   phase: "idle",
-  current: null,
-  trackIndex: 0,
-  next: null,
+  segments: [],
+  cursor: null,
   pending: false,
   requestSeq: 0,
   retried: false,
   playSeq: 0,
-  resume: null,
   error: null,
 };
 
-const load = (segment: SegmentView): Loaded => ({ segment, talkUrl: null, talkFailed: false });
+export const itemCount = (seg: SegmentView): number => 1 + seg.tracks.length;
+
+export function cursorSegment(s: StationState): SegmentView | null {
+  return s.cursor ? (s.segments[s.cursor.seg] ?? null) : null;
+}
+
+export function atTail(s: StationState): boolean {
+  return s.cursor !== null && s.cursor.seg === s.segments.length - 1;
+}
 
 /** Ask for the next segment unless one is already on its way. */
 function requestNext(s: StationState): StationState {
   return s.pending ? s : { ...s, pending: true, requestSeq: s.requestSeq + 1 };
 }
 
-/** Put a segment on air, starting with its talk. Requests the one after it. */
-function startSegment(s: StationState, loaded: Loaded, fromNext: boolean): StationState {
-  const next = fromNext ? null : s.next;
-  const base: StationState = { ...s, phase: "talk", current: loaded, trackIndex: 0, next, resume: null };
-  return next ? base : requestNext(base);
+/** Put the cursor somewhere and (re)start what's there. Landing on the tail's talk plans. */
+function moveTo(s: StationState, cursor: Cursor): StationState {
+  const moved: StationState = { ...s, phase: "playing", cursor, playSeq: s.playSeq + 1 };
+  const plans = s.loop === "running" && cursor.item === 0 && cursor.seg === s.segments.length - 1;
+  return plans ? requestNext(moved) : moved;
 }
 
-/** The block is over: on to the buffered segment, or wait for the DJ. */
-function advance(s: StationState): StationState {
-  if (s.next) return startSegment(s, s.next, true);
-  return requestNext({ ...s, phase: "planning", current: null, trackIndex: 0 });
+function inBounds(s: StationState, c: Cursor): boolean {
+  const seg = s.segments[c.seg];
+  return seg !== undefined && c.item >= 0 && c.item < itemCount(seg);
+}
+
+/** The item after the cursor, or null past the end of the show. */
+function after(s: StationState, c: Cursor): Cursor | null {
+  const seg = s.segments[c.seg];
+  if (!seg) return null;
+  if (c.item < itemCount(seg) - 1) return { seg: c.seg, item: c.item + 1 };
+  return c.seg < s.segments.length - 1 ? { seg: c.seg + 1, item: 0 } : null;
+}
+
+/** The item before the cursor, or null at the first talk. */
+function before(s: StationState, c: Cursor): Cursor | null {
+  if (c.item > 0) return { seg: c.seg, item: c.item - 1 };
+  const prev = s.segments[c.seg - 1];
+  return prev ? { seg: c.seg - 1, item: itemCount(prev) - 1 } : null;
 }
 
 function halt(s: StationState, error: string | null): StationState {
-  return {
-    ...s,
-    loop: "stopped",
-    phase: "idle",
-    resume: s.phase === "talk" || s.phase === "tracks" ? s.phase : null,
-    error,
-  };
-}
-
-function patchLoaded(s: StationState, segmentId: string, patch: Partial<Loaded>): StationState {
-  const fix = (l: Loaded | null) => (l && l.segment.id === segmentId ? { ...l, ...patch } : l);
-  return { ...s, current: fix(s.current), next: fix(s.next) };
+  return { ...s, loop: "stopped", error };
 }
 
 export function reducer(s: StationState, e: StationEvent): StationState {
@@ -118,33 +132,37 @@ export function reducer(s: StationState, e: StationEvent): StationState {
     case "RUN": {
       if (s.loop === "running") return s;
       const running: StationState = { ...s, loop: "running", retried: false, error: null };
-      if (s.next && (s.resume === null || s.current === null)) return startSegment(running, s.next, true);
-      if (s.current && s.resume) {
-        const resumed: StationState = {
-          ...running,
-          phase: s.resume,
-          resume: null,
-          playSeq: s.resume === "tracks" ? s.playSeq + 1 : s.playSeq,
-        };
-        return s.next ? resumed : requestNext(resumed);
+      if (s.cursor && s.phase === "playing") {
+        const resumed: StationState = { ...running, playSeq: s.playSeq + 1 };
+        return atTail(resumed) ? requestNext(resumed) : resumed;
       }
-      if (s.next) return startSegment(running, s.next, true);
-      return requestNext({ ...running, phase: "planning", current: null, trackIndex: 0 });
+      return requestNext({ ...running, phase: "planning" });
     }
 
     case "STOP":
       return s.loop === "stopped" ? s : halt(s, s.error);
 
     case "HALT":
-      return { ...halt(s, e.error), resume: null };
+      return halt(s, e.error);
+
+    case "LOAD_SHOW":
+      if (s.loop === "running") return s;
+      return { ...s, phase: "idle", segments: e.segments.slice(-MAX_SEGMENTS), cursor: null, error: null };
+
+    case "CLEAR_SHOW":
+      if (s.loop === "running") return s;
+      return { ...s, phase: "idle", segments: [], cursor: null, error: null };
 
     case "SEGMENT_READY": {
-      const loaded = load(e.segment);
-      const settled: StationState = { ...s, pending: false, retried: false, error: null };
-      if (s.loop === "running" && (s.phase === "idle" || s.phase === "planning")) {
-        return startSegment(settled, loaded, false);
+      let segments = [...s.segments, e.segment];
+      let cursor = s.cursor;
+      if (segments.length > MAX_SEGMENTS) {
+        segments = segments.slice(1);
+        if (cursor) cursor = { ...cursor, seg: Math.max(0, cursor.seg - 1) };
       }
-      return { ...settled, next: loaded };
+      const settled: StationState = { ...s, segments, cursor, pending: false, retried: false, error: null };
+      if (s.phase !== "planning") return settled;
+      return moveTo(settled, { seg: segments.length - 1, item: 0 });
     }
 
     case "SEGMENT_FAILED": {
@@ -154,45 +172,38 @@ export function reducer(s: StationState, e: StationEvent): StationState {
       return halt({ ...failed, retried: false }, e.error);
     }
 
-    case "TALK_READY":
-      return patchLoaded(s, e.segmentId, { talkUrl: e.url });
-
-    case "TALK_AUDIO_FAILED": {
-      const marked = { ...patchLoaded(s, e.segmentId, { talkFailed: true }), error: e.error };
-      if (s.phase === "talk" && s.current?.segment.id === e.segmentId) {
-        return { ...marked, phase: "tracks", trackIndex: 0, playSeq: s.playSeq + 1 };
-      }
-      return marked;
+    case "TALK_FAILED": {
+      const seg = cursorSegment(s);
+      if (!s.cursor || s.cursor.item !== 0 || seg?.id !== e.segmentId) return s;
+      return moveTo(s, { seg: s.cursor.seg, item: 1 });
     }
 
-    case "TALK_ENDED":
-    case "SKIP_TALK":
-      if (s.phase !== "talk") return s;
-      return { ...s, phase: "tracks", trackIndex: 0, playSeq: s.playSeq + 1 };
+    case "ENDED":
+    case "NEXT": {
+      if (s.loop !== "running" || s.phase !== "playing" || !s.cursor) return s;
+      const to = after(s, s.cursor);
+      return to ? moveTo(s, to) : requestNext({ ...s, phase: "planning" });
+    }
 
-    case "TRACK_LIST_ENDED":
-      if (s.phase !== "tracks") return s;
-      return advance(s);
+    case "PREV": {
+      if (s.loop !== "running" || s.phase !== "playing" || !s.cursor) return s;
+      const to = before(s, s.cursor);
+      return to ? moveTo(s, to) : s;
+    }
+
+    case "JUMP": {
+      const to = { seg: e.seg, item: e.item };
+      if (!inBounds(s, to)) return s;
+      return moveTo({ ...s, loop: "running", retried: false, error: null }, to);
+    }
 
     case "TRACK_CHANGED": {
-      if (s.phase !== "tracks" || !s.current) return s;
-      const i = s.current.segment.tracks.findIndex((t) => t.uri === e.uri);
-      return i < 0 || i === s.trackIndex ? s : { ...s, trackIndex: i };
+      const seg = cursorSegment(s);
+      if (s.phase !== "playing" || !s.cursor || s.cursor.item === 0 || !seg) return s;
+      const i = seg.tracks.findIndex((t) => t.uri === e.uri);
+      if (i < 0 || i + 1 === s.cursor.item) return s;
+      return { ...s, cursor: { seg: s.cursor.seg, item: i + 1 } };
     }
-
-    case "NEXT": {
-      if (s.loop !== "running") return s;
-      if (s.phase === "talk") return { ...s, phase: "tracks", trackIndex: 0, playSeq: s.playSeq + 1 };
-      if (s.phase !== "tracks" || !s.current) return s;
-      if (s.trackIndex < s.current.segment.tracks.length - 1) {
-        return { ...s, trackIndex: s.trackIndex + 1, playSeq: s.playSeq + 1 };
-      }
-      return advance(s);
-    }
-
-    case "PREV":
-      if (s.loop !== "running" || s.phase !== "tracks") return s;
-      return { ...s, trackIndex: Math.max(0, s.trackIndex - 1), playSeq: s.playSeq + 1 };
 
     case "CLEAR_ERROR":
       return s.error ? { ...s, error: null } : s;

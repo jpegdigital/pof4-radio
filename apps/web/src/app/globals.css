@@ -62,3 +62,39 @@ body {
   @apply rounded-sm bg-lamp/15 text-lamp;
   box-decoration-break: clone;
 }
+/* The cue sheet's rail: amber down to the row on air, dark glass past it. */
+.rail-row {
+  position: relative;
+}
+.rail-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #27272a;
+  transition: background 300ms;
+}
+.rail-row.lit::before {
+  background: var(--color-lamp);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-lamp) 45%, transparent);
+}
+
+/* A progress line with nothing to measure yet: the voice is still on its way. */
+.shimmer {
+  background: linear-gradient(90deg, #27272a 0%, #52525b 50%, #27272a 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+    background: #3f3f46;
+  }
+}

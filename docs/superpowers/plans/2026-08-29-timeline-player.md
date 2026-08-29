@@ -54,7 +54,7 @@
   export function atTail(s: StationState): boolean;
   ```
 
-- [ ] **Step 1: Replace the test file with the cursor-model tests**
+- [x] **Step 1: Replace the test file with the cursor-model tests**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -301,12 +301,12 @@ describe("stop / run / jump", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to see them fail**
+- [x] **Step 2: Run the tests to see them fail**
 
 Run: `pnpm vitest run apps/web/src/components/station/reducer.test.ts`
 Expected: FAIL — type errors / `atTail is not a function`, `MAX_SEGMENTS` undefined.
 
-- [ ] **Step 3: Rewrite `reducer.ts`**
+- [x] **Step 3: Rewrite `reducer.ts`**
 
 ```ts
 import type { SegmentTrack } from "@radio/db";
@@ -522,12 +522,12 @@ export function reducer(s: StationState, e: StationEvent): StationState {
 }
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `pnpm vitest run apps/web/src/components/station/reducer.test.ts`
 Expected: all PASS. (`station.tsx` / `use-station.ts` will not typecheck yet — that's Tasks 2–3; do not run `pnpm check` here.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/components/station/reducer.ts apps/web/src/components/station/reducer.test.ts
@@ -557,7 +557,7 @@ git commit -m "Reducer: the show is a list of metatracks walked by one cursor"
   }
   ```
 
-- [ ] **Step 1: Rewrite `use-station.ts`**
+- [x] **Step 1: Rewrite `use-station.ts`**
 
 ```ts
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
@@ -856,12 +856,12 @@ export function useStation(opts: UseStationOptions) {
 }
 ```
 
-- [ ] **Step 2: Typecheck this file alone**
+- [x] **Step 2: Typecheck this file alone**
 
 Run: `pnpm --filter web exec tsc --noEmit -p . 2>&1 | grep -v station.tsx | grep -v now-playing`
 Expected: no errors from `use-station.ts` (errors in `station.tsx` are expected until Task 3).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/components/station/use-station.ts
@@ -900,7 +900,7 @@ Visual direction (kept inside the page's existing vocabulary — Barlow Condense
   export function Show(p: { segments: SegmentView[]; cursor: Cursor | null; voiced: (id: string) => boolean; onJump: (seg: number, item: number) => void }): JSX.Element
   ```
 
-- [ ] **Step 1: Add the rail and shimmer styles to `globals.css`** (append after the `.lamp` block)
+- [x] **Step 1: Add the rail and shimmer styles to `globals.css`** (append after the `.lamp` block)
 
 ```css
 /* The cue sheet's rail: amber down to the row on air, dark glass past it. */
@@ -941,7 +941,7 @@ Visual direction (kept inside the page's existing vocabulary — Barlow Condense
 }
 ```
 
-- [ ] **Step 2: Create `player.tsx`**
+- [x] **Step 2: Create `player.tsx`**
 
 ```tsx
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
@@ -1117,7 +1117,7 @@ function fmt(ms: number): string {
 }
 ```
 
-- [ ] **Step 3: Create `show.tsx`**
+- [x] **Step 3: Create `show.tsx`**
 
 ```tsx
 import { Mic } from "lucide-react";
@@ -1220,7 +1220,7 @@ function clock(ms: number): string {
 }
 ```
 
-- [ ] **Step 4: Rewrite `station.tsx`**
+- [x] **Step 4: Rewrite `station.tsx`**
 
 ```tsx
 "use client";
