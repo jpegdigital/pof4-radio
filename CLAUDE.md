@@ -18,7 +18,7 @@ doubt, do what dreamweaver does (its `CLAUDE.md` is the fuller philosophy).
   one app now, but the split stays: it's what keeps the DJ (`packages/dj`) and the queries unit-testable
   without Next in the way, not a sharing mechanism.
 - Private behind Guard (`guard.pof4.com`): one gate, `apps/web/src/proxy.ts` (**temporarily open** —
-  `GUARD_OPEN = true` there, so friends can test without a login; flip it back); exempt = `api/health` +
+  `GUARD_OPEN = true` there, so friends can test without a login — only `/settings` still asks for the passkey; flip it back); exempt = `api/health` +
   static, nothing else. No user table. Dev runs at `https://dev.radio.pof4.com:3000` because the cookie is
   bound to `pof4.com` — no localhost bypass.
 
