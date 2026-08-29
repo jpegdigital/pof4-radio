@@ -1,10 +1,9 @@
 "use client";
 
-import { Square, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { guarded, keepGuardAlive } from "@/lib/guard-client";
-import { Desk } from "./desk";
-import { Masthead } from "./masthead";
+import { OnAir } from "./on-air";
 import { Player, type PlayerFace } from "./player";
 import { cursorSegment, type SegmentView } from "./reducer";
 import { ResumePicker } from "./resume-picker";
@@ -16,8 +15,8 @@ import { useStation } from "./use-station";
 import { DEFAULT_DJ, type Dj, loadDj, saveDj } from "./voice-store";
 
 /**
- * The station, on one page: the masthead (with the on-air lamp), the desk (account, player, DJ),
- * the request, the player, the show. The browser is the whole state machine — nothing happens
+ * The station, on one page: on air (the lamp and the one button, the DJ, the account), the
+ * request, the player, the show. The browser is the whole state machine — nothing happens
  * when this component isn't running.
  */
 export function Station({
@@ -88,7 +87,32 @@ export function Station({
   const ready = device.status.kind === "ready";
   const running = state.loop === "running";
   const fresh = !running && state.segments.length === 0;
-  const canRun = enabled && ready && prompt.trim() !== "";
+  const canGo = enabled && prompt.trim() !== "";
+
+  // "Go on air" is one tap even when this tab isn't the Spotify device yet: it registers the tab
+  // and runs the moment the device is ready. The unlock/activate calls must stay inside the tap.
+  // "Connecting" only ever happens from this tap now, so the button can read it straight off the device.
+  const arming = device.status.kind === "connecting";
+  const armed = useRef(false);
+  const goOnAir = () => {
+    unlock();
+    device.activate();
+    if (ready) {
+      dispatch({ type: "RUN" });
+      return;
+    }
+    armed.current = true;
+    void device.connect();
+  };
+  useEffect(() => {
+    if (!armed.current) return;
+    if (ready) {
+      armed.current = false;
+      dispatch({ type: "RUN" });
+    } else if (device.status.kind === "error") {
+      armed.current = false;
+    }
+  }, [ready, device.status.kind, dispatch]);
   const cur = cursorSegment(state);
   const cursor = state.cursor;
   const talking = running && state.phase === "playing" && cursor?.item === 0;
@@ -139,20 +163,19 @@ export function Station({
 
   return (
     <>
-      <Masthead running={running} talking={talking} />
-
-      {/* the desk: what to set before going on air, in the order it gates */}
-      <Desk
+      <OnAir
+        running={running}
+        talking={talking}
+        arming={arming}
+        canGo={canGo}
+        onGo={goOnAir}
+        onStop={() => dispatch({ type: "STOP" })}
+        device={device.status}
+        dj={dj}
+        onDj={changeDj}
         account={account}
         onConnect={onConnect}
         onDisconnect={onDisconnect}
-        device={device.status}
-        onActivate={() => {
-          device.activate();
-          void device.connect();
-        }}
-        dj={dj}
-        onDj={changeDj}
       />
 
       {/* the request */}
@@ -169,7 +192,7 @@ export function Station({
         {running && prompt.trim() !== (cur?.prompt ?? prompt.trim()) && (
           <p className="-mt-1 text-xs text-zinc-500">The new request reaches the DJ on the next block.</p>
         )}
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             {fresh && enabled && !stationId && <ResumePicker onPick={(id) => void resume(id)} />}
             {!running && stationId && cursor === null && state.segments.length > 0 && (
@@ -189,29 +212,6 @@ export function Station({
               </p>
             )}
           </div>
-          {running ? (
-            <button
-              type="button"
-              onClick={() => dispatch({ type: "STOP" })}
-              className={`flex items-center gap-2 rounded-full bg-zinc-100 px-5 py-2 text-sm font-semibold text-black ${focusRing}`}
-            >
-              <Square className="size-3.5" fill="currentColor" strokeWidth={0} aria-hidden="true" />
-              Stop
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                unlock();
-                device.activate();
-                dispatch({ type: "RUN" });
-              }}
-              disabled={!canRun}
-              className={`rounded-full bg-lamp px-5 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 ${focusRing}`}
-            >
-              Go on air
-            </button>
-          )}
         </div>
       </Card>
 
