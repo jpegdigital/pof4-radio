@@ -18,7 +18,7 @@ export function DjPicker({ value, onChange }: { value: Dj; onChange: (d: Dj) => 
       <select
         value={value.id}
         onChange={(e) => onChange(findDj(e.target.value))}
-        className={`appearance-none rounded-full bg-transparent py-1.5 pr-6 pl-3 text-right text-zinc-100 transition hover:text-white ${focusRing}`}
+        className={`appearance-none rounded-full bg-transparent py-1.5 pr-6 pl-2 text-zinc-100 transition hover:text-white ${focusRing}`}
       >
         <option value={DEFAULT_DJ.id} className="bg-zinc-950">
           {DEFAULT_DJ.name}
