@@ -251,14 +251,14 @@ export function Station({
           </p>
         )}
 
-        <div className="flex items-start gap-3 pb-1.5">
-          {/* the voice field, its name on a plate riding the bottom-left of the bezel — the way a
+        <div className="flex items-end gap-3 pt-1.5">
+          {/* the voice field, its name on a plate riding the top-left of the bezel — the way a
               console labels a control: on it, not near it. Lit while the DJ is actually talking. */}
           <div className="relative min-w-0 flex-1">
             <DjPicker value={dj} onChange={changeDj} />
             <span
               aria-hidden="true"
-              className={`absolute -bottom-2 left-3 rounded-[3px] px-1.5 py-px font-display text-[10px] font-semibold uppercase tracking-[0.22em] transition ${
+              className={`absolute -top-2 left-3 rounded-[3px] px-1.5 py-px font-display text-[10px] font-semibold uppercase tracking-[0.22em] transition ${
                 talking ? "bg-lamp text-black" : "bg-zinc-800 text-zinc-400"
               }`}
             >
