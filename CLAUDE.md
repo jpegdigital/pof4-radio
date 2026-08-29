@@ -38,7 +38,8 @@ tested) and one effects hook (`use-station.ts`) that carries out what the state 
 ordered list of *metatracks* — a segment is `{talk, tracks[3–4]}`, its talk an opening on the first
 and a bridge from the previous one after that — walked by one cursor `{seg, item}` (item 0 = the
 talk). One transport (`player.tsx`) moves the cursor through talk and tracks alike; the show is a
-tappable cue sheet (`show.tsx`) and any row rewinds to it. Segment text and talk audio are separate
+tappable cue sheet (`show.tsx`) and any row rewinds to it; `use-media-session.ts` mirrors the player face onto the
+lock screen (Media Session API — re-asserted on every talk↔track handoff, since the SDK writes its own). Segment text and talk audio are separate
 pipelines: the DJ is asked for the next segment the moment the cursor lands on the *tail's* talk (it
 lands in 20–60 s while the block plays); talk audio is fetched by *position* — the cursor's segment
 and the one after it, cached per session by `voiceId:segmentId` — so a resumed show's past blocks are

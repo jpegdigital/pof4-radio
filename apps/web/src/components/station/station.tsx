@@ -11,6 +11,7 @@ import { Show } from "./show";
 import type { SpotifyAccount, SpotifyIdentity } from "./spotify-account";
 import { Card, focusRing, Label, SpotifyMark } from "./ui";
 import { useSpotifyDevice } from "./use-spotify-device";
+import { useMediaSession } from "./use-media-session";
 import { useStation } from "./use-station";
 import { type Dj, findDj, loadDj, saveDj } from "./voice-store";
 
@@ -193,6 +194,7 @@ export function Station({
 
   const canPrev = cursor !== null && !(cursor.seg === 0 && cursor.item === 0);
   const canNext = cursor !== null && state.phase === "playing";
+  useMediaSession({ face, running, canPrev, canNext, onToggle: toggle, onPrev: prev, onNext: next });
 
   return (
     <>
