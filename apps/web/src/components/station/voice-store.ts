@@ -43,7 +43,7 @@ const dj = (id: string, name: string, gender: Dj["gender"], tune: Partial<VoiceS
 
 /** The first is the default and sits alone at the top of the picker; the rest are grouped by gender. */
 export const DJS: readonly Dj[] = [
-  dj("mR1dRpBxfiThJHgub8nr", "David Wolfe", "male", { speed: 1.1 }),
+  dj("mR1dRpBxfiThJHgub8nr", "David Wolfe", "male", { speed: 1.15 }),
   dj("G3Il95iGz0lclzMySk7L", "Rachelle", "female"),
   dj("FmJ4FDkdrYIKzBTruTkV", "David Hertal", "male", { stability: 1, speed: 1.1 }),
   dj("QTGiyJvep6bcx4WD1qAq", "Guy", "male", { speed: 1.1 }),

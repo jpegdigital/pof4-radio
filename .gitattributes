@@ -1,0 +1,15 @@
+# The repo owns its line endings: every text file is LF, in the repo AND in the
+# working tree, on every machine — this overrides any local core.autocrlf. Modern
+# editors and toolchains on Windows are fine with LF; Biome/CI check for it.
+* text=auto eol=lf
+
+# Binaries: never convert.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary

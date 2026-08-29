@@ -18,11 +18,13 @@ export function DjPicker({ value, onChange }: { value: Dj; onChange: (d: Dj) => 
         onChange={(e) => onChange(findDj(e.target.value))}
         className={`appearance-none bg-transparent py-1.5 pr-5 text-zinc-100 ${focusRing} rounded-full`}
       >
-        <option value={DEFAULT_DJ.id}>{DEFAULT_DJ.name}</option>
+        <option value={DEFAULT_DJ.id} className="bg-zinc-950">
+          {DEFAULT_DJ.name}
+        </option>
         {GROUPS.map((g) => (
-          <optgroup key={g.gender} label={g.label}>
+          <optgroup key={g.gender} label={g.label} className="bg-zinc-950">
             {DJS.filter((d) => d.gender === g.gender && d.id !== DEFAULT_DJ.id).map((d) => (
-              <option key={d.id} value={d.id}>
+              <option key={d.id} value={d.id} className="bg-zinc-950">
                 {d.name}
               </option>
             ))}

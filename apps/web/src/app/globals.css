@@ -12,6 +12,11 @@
   --color-lamp: #f2b544;
 }
 
+/* The app is dark everywhere; native controls (the DJ select's popup, scrollbars) follow this, not the OS. */
+html {
+  color-scheme: dark;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
 }

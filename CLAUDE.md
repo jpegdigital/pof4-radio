@@ -63,6 +63,9 @@ is the control room, desktop-wide. The root layout holds only fonts and the grou
 
 ## Working here
 
+- Line endings are LF everywhere, in the repo and the working tree, on every machine: `.gitattributes`
+  (`* text=auto eol=lf`) overrides any local `core.autocrlf`; `.editorconfig` and Biome (`lineEnding: lf`)
+  write the same. If a fresh clone shows phantom "modified" files, `git add --renormalize .` once.
 - Node via fnm (`.node-version`), pnpm workspaces. `pnpm check` (= lint + format:check + typecheck + test)
   then `pnpm --filter web build` is the pre-push gate; CI runs the same.
 - Tests: pure logic only (`*.test.ts` next to the code: the reducer, the DJ's prompt/trimming/checks).
