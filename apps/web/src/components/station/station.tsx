@@ -160,7 +160,7 @@ export function Station({
   const status = (() => {
     if (!running) return state.segments.length > 0 ? "Stopped" : "Off air";
     if (state.phase === "planning") return "The DJ is planning…";
-    if (talking) return `${dj.name} on the mic`;
+    if (talking && cur) return cur.seq === 1 ? "Opening" : "Bridge";
     if (cur && cursor) return `Track ${cursor.item} of ${cur.tracks.length}`;
     return "On air";
   })();
