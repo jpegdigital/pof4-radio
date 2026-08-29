@@ -1,4 +1,4 @@
-import { ChevronDown, Mic } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { focusRing } from "./ui";
 import { DEFAULT_DJ, DJS, type Dj, findDj } from "./voice-store";
 
@@ -7,16 +7,18 @@ const GROUPS = [
   { gender: "male", label: "Male" },
 ] as const;
 
-/** Who's on the mic. The default sits alone at the top; the rest are grouped by gender. */
+/**
+ * Who's on the mic, as a trailing value control: the name and a chevron, no chrome of its own —
+ * the row it sits in is the chrome. The default sits alone at the top; the rest are grouped.
+ */
 export function DjPicker({ value, onChange }: { value: Dj; onChange: (d: Dj) => void }) {
   return (
-    <label className="relative flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950 pr-2 pl-3 text-sm">
-      <Mic className="size-4 shrink-0 text-zinc-500" strokeWidth={1.75} aria-hidden="true" />
+    <label className="relative flex items-center text-sm">
       <span className="sr-only">DJ</span>
       <select
         value={value.id}
         onChange={(e) => onChange(findDj(e.target.value))}
-        className={`appearance-none bg-transparent py-1.5 pr-5 text-zinc-100 ${focusRing} rounded-full`}
+        className={`appearance-none rounded-full bg-transparent py-1.5 pr-6 pl-3 text-right text-zinc-100 transition hover:text-white ${focusRing}`}
       >
         <option value={DEFAULT_DJ.id} className="bg-zinc-950">
           {DEFAULT_DJ.name}
@@ -32,7 +34,7 @@ export function DjPicker({ value, onChange }: { value: Dj; onChange: (d: Dj) => 
         ))}
       </select>
       <ChevronDown
-        className="pointer-events-none absolute right-2 size-4 text-zinc-500"
+        className="pointer-events-none absolute right-1 size-4 text-zinc-500"
         strokeWidth={1.75}
         aria-hidden="true"
       />

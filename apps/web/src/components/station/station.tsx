@@ -1,23 +1,37 @@
 "use client";
 
-import { Radio, Square, X } from "lucide-react";
+import { Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { guarded, keepGuardAlive } from "@/lib/guard-client";
-import { DjPicker } from "./dj-picker";
+import { Desk } from "./desk";
+import { Masthead } from "./masthead";
 import { Player, type PlayerFace } from "./player";
 import { cursorSegment, type SegmentView } from "./reducer";
 import { ResumePicker } from "./resume-picker";
 import { Show } from "./show";
+import type { SpotifyAccount } from "./spotify-account";
 import { Card, focusRing, Label } from "./ui";
 import { useSpotifyDevice } from "./use-spotify-device";
 import { useStation } from "./use-station";
 import { DEFAULT_DJ, type Dj, loadDj, saveDj } from "./voice-store";
 
 /**
- * The station, on one page: on air (the lamp, the DJ, the device), the request, the player, the
- * show. The browser is the whole state machine — nothing happens when this component isn't running.
+ * The station, on one page: the masthead (with the on-air lamp), the desk (account, player, DJ),
+ * the request, the player, the show. The browser is the whole state machine — nothing happens
+ * when this component isn't running.
  */
-export function Station({ enabled, clientId }: { enabled: boolean; clientId: string }) {
+export function Station({
+  clientId,
+  account,
+  onConnect,
+  onDisconnect,
+}: {
+  clientId: string;
+  account: SpotifyAccount | null;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  const enabled = account?.product === "premium";
   const [prompt, setPrompt] = useState("");
   const [dj, setDj] = useState<Dj>(DEFAULT_DJ);
   const [stationId, setStationId] = useState<string | null>(null);
@@ -125,43 +139,21 @@ export function Station({ enabled, clientId }: { enabled: boolean; clientId: str
 
   return (
     <>
-      {/* on air: the lamp, the DJ, the device */}
-      <Card className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className={`lamp size-2.5 rounded-full ${running ? "on" : ""} ${talking ? "talking" : ""}`}
-            />
-            <Label className={running ? "text-lamp" : ""}>On air</Label>
-          </div>
-          <DjPicker value={dj} onChange={changeDj} />
-        </div>
+      <Masthead running={running} talking={talking} />
 
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          {ready ? (
-            <span className="flex items-center gap-2 text-zinc-400">
-              <Radio className="size-4 text-[#1DB954]" strokeWidth={1.75} aria-hidden="true" />
-              This tab is the player
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                device.activate();
-                void device.connect();
-              }}
-              disabled={!enabled || device.status.kind === "connecting"}
-              className={`flex items-center gap-2 rounded-full border border-zinc-700 px-4 py-2 font-medium text-zinc-100 transition hover:border-zinc-500 disabled:opacity-40 ${focusRing}`}
-            >
-              <Radio className="size-4" strokeWidth={1.75} aria-hidden="true" />
-              {device.status.kind === "connecting" ? "Activating…" : "Activate this tab as the player"}
-            </button>
-          )}
-          {device.status.kind === "error" && <span className="text-red-400">{device.status.message}</span>}
-          {!enabled && <span className="text-xs text-zinc-500">Connect a Premium account first.</span>}
-        </div>
-      </Card>
+      {/* the desk: what to set before going on air, in the order it gates */}
+      <Desk
+        account={account}
+        onConnect={onConnect}
+        onDisconnect={onDisconnect}
+        device={device.status}
+        onActivate={() => {
+          device.activate();
+          void device.connect();
+        }}
+        dj={dj}
+        onDj={changeDj}
+      />
 
       {/* the request */}
       <Card className="flex flex-col gap-3">
