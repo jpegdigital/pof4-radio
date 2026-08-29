@@ -1,5 +1,7 @@
+import { ChevronDown, History } from "lucide-react";
 import { useEffect, useState } from "react";
 import { guarded } from "@/lib/guard-client";
+import { focusRing } from "./ui";
 
 /**
  * Pick up a past show. Shown only on a fresh page, before anything is on air: choosing a
@@ -33,20 +35,26 @@ export function ResumePicker({ onPick }: { onPick: (id: string) => void }) {
 
   if (!stations?.length) return null;
   return (
-    <label className="flex items-center gap-2 text-sm text-zinc-400">
-      <span>Resume a show</span>
+    <label className="relative flex min-w-0 items-center gap-2 text-xs text-zinc-500">
+      <History className="size-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+      <span className="sr-only">Resume a show</span>
       <select
         defaultValue=""
         onChange={(e) => e.target.value && onPick(e.target.value)}
-        className="max-w-md flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+        className={`min-w-0 flex-1 appearance-none truncate rounded-md bg-transparent py-1 pr-5 hover:text-zinc-300 ${focusRing}`}
       >
-        <option value="">— pick a past station —</option>
+        <option value="">Resume a show…</option>
         {stations.map((s) => (
           <option key={s.stationId} value={s.stationId}>
             {when(s.updatedAt)} · {s.segmentCount} block{s.segmentCount === 1 ? "" : "s"} · {s.prompt}
           </option>
         ))}
       </select>
+      <ChevronDown
+        className="pointer-events-none absolute right-0 size-3.5"
+        strokeWidth={1.75}
+        aria-hidden="true"
+      />
     </label>
   );
 }

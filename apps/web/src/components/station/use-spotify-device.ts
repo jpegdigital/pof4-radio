@@ -15,11 +15,17 @@ interface SdkPlayer {
   pause(): Promise<void>;
   resume(): Promise<void>;
 }
+interface SdkTrack {
+  uri: string;
+  name: string;
+  artists: { name: string }[];
+  album: { name: string; images: { url: string; width?: number | null }[] };
+}
 interface SdkState {
   paused: boolean;
   position: number;
   duration: number;
-  track_window: { current_track: { uri: string; name: string } | null; next_tracks: unknown[] };
+  track_window: { current_track: SdkTrack | null; next_tracks: unknown[] };
 }
 declare global {
   interface Window {
@@ -40,9 +46,23 @@ export type DeviceStatus =
   | { kind: "ready"; id: string }
   | { kind: "error"; message: string };
 
+export interface NowPlaying {
+  uri: string;
+  name: string;
+  artists: string[];
+  album: string;
+  /** Largest album image, if any. */
+  image: string | null;
+}
+
 export interface Playback {
   uri: string | null;
   paused: boolean;
+  track: NowPlaying | null;
+  /** Position/duration in ms as of `at` (performance.now()); the UI interpolates while playing. */
+  position: number;
+  duration: number;
+  at: number;
 }
 
 export interface SpotifyDevice {
@@ -125,7 +145,23 @@ export function useSpotifyDevice(
           lastUri.current = cur;
           h.current.onTrackChanged(cur);
         }
-        setPlayback({ uri: cur, paused: s.paused });
+        const t = s.track_window.current_track;
+        setPlayback({
+          uri: cur,
+          paused: s.paused,
+          track: t
+            ? {
+                uri: t.uri,
+                name: t.name,
+                artists: t.artists.map((a) => a.name),
+                album: t.album.name,
+                image: [...t.album.images].sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url ?? null,
+              }
+            : null,
+          position: s.position,
+          duration: s.duration,
+          at: performance.now(),
+        });
         // Spotify signals "list finished" as: paused, at position 0, nothing queued next, and
         // the current track is still the last one we handed it. Ignore the first moments after
         // a play() call, when the state can look the same.

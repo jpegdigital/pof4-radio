@@ -7,7 +7,7 @@ const barlow = Barlow_Condensed({ variable: "--font-barlow", subsets: ["latin"],
 const plexMono = IBM_Plex_Mono({ variable: "--font-plex-mono", subsets: ["latin"], weight: ["400", "500"] });
 
 export const metadata: Metadata = {
-  title: "Radio",
+  title: "Claude Radio",
   description: "An AI DJ over your Spotify.",
 };
 
