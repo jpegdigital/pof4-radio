@@ -22,6 +22,7 @@ export default async function Page() {
       stations={past.map((s) => ({
         stationId: s.id,
         prompt: s.prompt,
+        dj: s.dj,
         segmentCount: s.segmentCount,
         updatedAt: s.updatedAt.toISOString(),
       }))}

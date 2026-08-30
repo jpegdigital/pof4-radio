@@ -24,6 +24,6 @@ export function lockScreen(face: PlayerFace): LockScreen {
     case "talk":
       return { title: `${face.dj} on the mic`, artist: face.excerpt, album: "Radio", artwork: [] };
     case "planning":
-      return { title: `${face.dj} is picking the tracks…`, artist: "", album: "Radio", artwork: [] };
+      return { title: `${face.dj} is producing…`, artist: "", album: "Radio", artwork: [] };
   }
 }

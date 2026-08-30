@@ -10,6 +10,17 @@ const Env = z.object({
   CLAUDE_MODEL: z.string().min(1).default("claude-opus-5"),
   /** The voice. Optional so the station runs (talk skipped) before the key is set up. */
   ELEVENLABS_KEY: z.string().min(1).optional(),
+  /**
+   * The clips bucket (Railway's `radio-clips`, S3-compatible). Optional as a group: with any of
+   * the five unset, `bucket()` is null and the voice/clip routes answer 503. Railway sets them from
+   * the bucket's refs (`railway variables -s radio-web`); locally they come from the 1Password item
+   * `pof4-radio-clips-bucket` through `.env.op`.
+   */
+  BUCKET_ENDPOINT: z.string().url().optional(),
+  BUCKET_NAME: z.string().min(1).optional(),
+  BUCKET_REGION: z.string().min(1).optional(),
+  BUCKET_ACCESS_KEY_ID: z.string().min(1).optional(),
+  BUCKET_SECRET_ACCESS_KEY: z.string().min(1).optional(),
 });
 
 let cached: z.infer<typeof Env> | null = null;

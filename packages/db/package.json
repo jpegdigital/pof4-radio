@@ -16,7 +16,8 @@
     "clear": "tsx scripts/clear.ts"
   },
   "dependencies": {
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "@radio/dj": "workspace:*"
   },
   "devDependencies": {
     "@supabase/pg-delta": "1.0.0-alpha.42",

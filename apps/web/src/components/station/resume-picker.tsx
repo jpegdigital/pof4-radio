@@ -4,13 +4,14 @@ import { focusRing } from "./ui";
 /**
  * Pick up a past show. The list arrives with the page (app/(app)/page.tsx), so it is there on
  * first paint. Shown only on a fresh page, before anything is on air: choosing a station loads
- * its prompt and history; pressing Run then continues that DJ conversation
- * (the next talk bridges from wherever it left off).
+ * every kept segment as it was produced — nothing is re-made; going on air plays it from the
+ * top (or any tapped row), and past its end the next segment follows from it.
  */
 
 export interface StationSummary {
   stationId: string;
   prompt: string;
+  dj: string;
   segmentCount: number;
   updatedAt: string;
 }
@@ -35,7 +36,8 @@ export function ResumePicker({
         <option value="">Resume a show…</option>
         {stations.map((s) => (
           <option key={s.stationId} value={s.stationId}>
-            {when(s.updatedAt)} · {s.segmentCount} block{s.segmentCount === 1 ? "" : "s"} · {s.prompt}
+            {when(s.updatedAt)} · {s.dj} · {s.segmentCount} segment{s.segmentCount === 1 ? "" : "s"} ·{" "}
+            {s.prompt}
           </option>
         ))}
       </select>

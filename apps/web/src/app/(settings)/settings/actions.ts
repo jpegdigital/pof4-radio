@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  Identity,
   parseVoices,
   PROMPT_SLOTS,
   type PromptKey,
@@ -12,12 +13,14 @@ import {
 } from "@radio/dj";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { IDENTITY_KEY } from "@/lib/prompts";
 
 /**
- * /settings Server Actions. Prompts: save one slot; the next segment reads the change
- * (`loadPromptTemplate`), segments already planned keep theirs. Voices: the roster is one JSON
- * row (`settings.voices`); every change reads it, edits it, writes it back — the next line of
- * talk reads the change (`/api/tts`), lines already cached in an open tab keep their voice.
+ * /settings Server Actions. Prompts: save one slot; the next segment produced reads the change
+ * (`loadPromptTemplate`), segments already kept keep theirs. Identity: one JSON row, copied onto
+ * each station at creation. Voices: the roster is one JSON row (`settings.voices`); every change
+ * reads it, edits it, writes it back — the next segment voiced reads the change, clips already
+ * kept keep their voice.
  */
 
 export type SaveState = { error?: string; savedAt?: string };
@@ -33,6 +36,22 @@ export async function savePrompt(_prev: SaveState, formData: FormData): Promise<
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the prompt." };
   await db().saveSetting(parsed.data.key, parsed.data.value);
   revalidatePath("/settings");
+  return { savedAt: new Date().toISOString() };
+}
+
+// ---- identity -----------------------------------------------------------------
+
+export async function saveIdentity(_prev: SaveState, formData: FormData): Promise<SaveState> {
+  const field = (name: string) => {
+    const v = formData.get(name);
+    return typeof v === "string" ? v.trim() : "";
+  };
+  const parsed = Identity.safeParse({ calls: field("calls"), city: field("city"), onAir: field("onAir") });
+  if (!parsed.success)
+    return { error: "Every field is needed: call letters, city, the name as said on air." };
+  await db().saveSetting(IDENTITY_KEY, JSON.stringify(parsed.data));
+  revalidatePath("/settings");
+  revalidatePath("/");
   return { savedAt: new Date().toISOString() };
 }
 

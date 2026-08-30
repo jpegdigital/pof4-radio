@@ -2,7 +2,7 @@
   "name": "@radio/dj",
   "version": "0.0.0",
   "private": true,
-  "description": "The DJ: one ongoing Claude conversation per station, a search_spotify tool, and the trimming/caching that keeps it cheap. Pure â€” the client, model and search function are passed in.",
+  "description": "The producer's pure logic: the shapes of a record, a card, a line and a kept segment; the clock rules; timings from an alignment; the assembly ladder; the prompt slots and tool schemas. Nothing here reads the environment or calls a service.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -12,8 +12,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
-    "@radio/db": "workspace:*",
-    "@radio/spotify": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

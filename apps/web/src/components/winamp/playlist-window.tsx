@@ -1,46 +1,51 @@
+import type { Element, Record as RecordShape } from "@radio/dj";
 import type { ReactNode } from "react";
-import type { Cursor, SegmentView } from "../station/reducer";
 import { PLAYLIST as P } from "./skin";
 import { useTile } from "./use-tile";
 
 /**
- * The playlist window: the show as Winamp would list it — one numbered line per item, the
- * DJ's talk a line like any track, the duration on the right — inside the skin's frame. It
- * fills whatever height the page leaves below the main window and scrolls inside. `header`
- * (the request console) sits at the top of the list, in the list's own colours.
+ * The playlist window: the show as Winamp would list it — one numbered line per element, a
+ * break a line like any song, the duration on the right — inside the skin's frame. A pending
+ * segment's records follow in the dim tone. It fills whatever height the page leaves below the
+ * main window and scrolls inside. `header` (the request console) sits at the top of the list,
+ * in the list's own colours. `ahead` are the records whose slots haven't landed yet.
  */
 export function PlaylistWindow({
-  segments,
+  elements,
+  ahead,
   cursor,
   dj,
   header,
   onJump,
 }: {
-  segments: SegmentView[];
-  cursor: Cursor | null;
+  elements: Element[];
+  ahead: RecordShape[];
+  cursor: number | null;
   dj: string;
   header: ReactNode;
-  onJump: (seg: number, item: number) => void;
+  onJump: (index: number) => void;
 }) {
-  const rows: { seg: number; item: number; text: string; time: string; tone: Tone }[] = [];
-  let n = 0;
-  for (const [seg, s] of segments.entries()) {
-    n++;
+  const rows: { key: string; index: number | null; text: string; time: string; tone: Tone }[] = [];
+  for (const [i, el] of elements.entries()) {
     rows.push({
-      seg,
-      item: 0,
-      text: `${n}. ${dj} - ${firstSentence(s.talk)}`,
-      time: "",
-      tone: tone(cursor, seg, 0),
+      key: String(i),
+      index: i,
+      text:
+        el.kind === "break"
+          ? `${i + 1}. ${dj} - ${el.label.toLowerCase()}`
+          : `${i + 1}. ${el.track.artists.join(", ")} - ${el.track.name}`,
+      time: el.kind === "song" ? clock(el.track.durationMs) : "",
+      tone: cursor === null ? "ahead" : i === cursor ? "on" : i < cursor ? "played" : "ahead",
     });
-    for (const [i, t] of s.tracks.entries()) {
-      n++;
+  }
+  {
+    for (const [i, r] of ahead.entries()) {
       rows.push({
-        seg,
-        item: i + 1,
-        text: `${n}. ${t.artists.join(", ")} - ${t.name}`,
-        time: clock(t.durationMs),
-        tone: tone(cursor, seg, i + 1),
+        key: `ahead:${r.id}`,
+        index: null,
+        text: `${elements.length + i + 1}. ${r.artists.join(", ")} - ${r.name} (producing...)`,
+        time: clock(r.durationMs),
+        tone: "ahead",
       });
     }
   }
@@ -64,12 +69,13 @@ export function PlaylistWindow({
           {header}
           <ol className="wa-pl-list">
             {rows.map((r) => (
-              <li key={`${r.seg}:${r.item}`}>
+              <li key={r.key}>
                 <button
                   type="button"
                   className={`wa-pl-row wa-${r.tone}`}
                   aria-current={r.tone === "on" ? "true" : undefined}
-                  onClick={() => onJump(r.seg, r.item)}
+                  disabled={r.index === null}
+                  onClick={() => r.index !== null && onJump(r.index)}
                 >
                   <span className="wa-pl-text">{r.text}</span>
                   <span className="wa-pl-time">{r.time}</span>
@@ -90,18 +96,7 @@ export function PlaylistWindow({
 
 type Tone = "played" | "on" | "ahead";
 
-function tone(cursor: Cursor | null, seg: number, item: number): Tone {
-  if (cursor === null) return "ahead";
-  if (seg === cursor.seg && item === cursor.item) return "on";
-  return seg < cursor.seg || (seg === cursor.seg && item < cursor.item) ? "played" : "ahead";
-}
-
 function clock(ms: number): string {
   const s = Math.round(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
-export function firstSentence(text: string): string {
-  const m = text.match(/^.*?[.!?…](\s|$)/);
-  return (m ? m[0] : text).trim();
 }

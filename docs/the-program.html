@@ -84,6 +84,10 @@
 </nav>
 <main>
 
+<div style="border:1px solid #c9a227;background:#fff8e1;padding:.75em 1em;margin-bottom:1.5em">
+<strong>Superseded, 2026-08-30.</strong> The segment station (<code>specs/003-segment-station/</code>) is now the home page: the five-stage maker described here was lifted into <code>apps/web/src/lib/producer/</code> and <code>packages/dj/src/program/</code>, produced live one segment at a time and kept in Postgres and the <code>radio-clips</code> bucket. What follows is the hand-run, file-based sandbox under <code>app/(program)/</code>, which is dev-only and 404 in production, and is kept only to lift from. Sandbox-only parts: the five stage files under <code>public/program/make/</code>, <code>make/prompts.ts</code>, the <code>/program</code> player and its own bed and sweepers under <code>public/program/</code>. The rules of the clock, the timings and the assembly ladder are the same in both.
+</div>
+
 <h1>The program — hot path and the dance</h1>
 <p>Read from the code on 2026-08-30. What an hour of radio is supposed to sound like, what the maker does to get there, and what the player does to put it on air. Companion to <a href="handoff.html">handoff.html</a>, which covers the live station; this covers <code>app/(program)/</code>.</p>
 

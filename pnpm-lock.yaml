@@ -81,6 +81,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@radio/dj':
+        specifier: workspace:*
+        version: link:../dj
       pg:
         specifier: ^8.23.0
         version: 8.23.0
@@ -106,12 +109,6 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.120.0
         version: 0.120.0(zod@4.4.3)
-      '@radio/db':
-        specifier: workspace:*
-        version: link:../db
-      '@radio/spotify':
-        specifier: workspace:*
-        version: link:../spotify
       zod:
         specifier: ^4.4.3
         version: 4.4.3

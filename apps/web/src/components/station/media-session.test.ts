@@ -28,7 +28,7 @@ describe("lockScreen", () => {
 
   it("says what the DJ is doing while planning", () => {
     expect(lockScreen({ kind: "planning", dj: "Nova" })).toEqual({
-      title: "Nova is picking the tracks…",
+      title: "Nova is producing…",
       artist: "",
       album: "Radio",
       artwork: [],

@@ -1,24 +1,27 @@
 "use client";
 
 import { LogOut, Square, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { guarded, keepGuardAlive } from "@/lib/guard-client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { keepGuardAlive } from "@/lib/guard-client";
 import { DjPicker } from "./dj-picker";
 import { Player, type PlayerFace } from "./player";
-import { cursorSegment, type SegmentView, type StationEvent } from "./reducer";
+import { awaiting, inGap, nextRecord, onAir, type ProgramEvent, segmentAt } from "./reducer";
 import { ResumePicker, type StationSummary } from "./resume-picker";
-import { Show } from "./show";
+import { Rundown } from "./rundown";
 import type { SpotifyAccount, SpotifyIdentity } from "./spotify-account";
 import { Card, focusRing, Label, SpotifyMark } from "./ui";
-import { useSpotifyDevice } from "./use-spotify-device";
 import { useMediaSession } from "./use-media-session";
-import { useStation } from "./use-station";
+import { useProgram } from "./use-program";
+import { useSpotifyDevice } from "./use-spotify-device";
 import { type Dj, findDj, loadDj, saveDj } from "./voice-store";
+
+/** Prev on a song this far in restarts it instead (the Spotify convention). */
+const RESTART_AFTER_MS = 3000;
 
 /**
  * The station, on one page: on air (the lamp and the one button, the DJ, the account), the
- * request, the player, the show. The browser is the whole state machine — nothing happens
- * when this component isn't running.
+ * request, the player, the rundown. The browser is the whole state machine — nothing happens
+ * when this component isn't running; the server produces one segment when asked.
  */
 export function Station({
   clientId,
@@ -46,27 +49,22 @@ export function Station({
   const enabled = premium && account !== null;
   const [prompt, setPrompt] = useState("");
   const [dj, setDj] = useState<Dj>(() => findDj(djs, ""));
-  const [stationId, setStationId] = useState<string | null>(null);
   const promptRef = useRef(prompt);
   useEffect(() => {
     promptRef.current = prompt;
   }, [prompt]);
 
-  const dispatchRef = useRef<
-    (e: { type: "ENDED" } | { type: "TRACK_CHANGED"; uri: string } | { type: "HALT"; error: string }) => void
-  >(() => {});
+  const dispatchRef = useRef<(e: ProgramEvent) => void>(() => {});
   const device = useSpotifyDevice(clientId, {
-    onTrackListEnded: () => dispatchRef.current({ type: "ENDED" }),
-    onTrackChanged: (uri) => dispatchRef.current({ type: "TRACK_CHANGED", uri }),
+    onTrackListEnded: () => dispatchRef.current({ type: "TRACK_ENDED" }),
+    onTrackChanged: () => {},
     onLost: (error) => dispatchRef.current({ type: "HALT", error }),
   });
 
-  const { state, dispatch, talk, talkPlayback, toggle, prev, next, unlock } = useStation({
+  const { state, dispatch, station, clips, micClock, unlock, seekMic, open, resume, clear } = useProgram({
     device,
-    stationId,
     dj,
     getPrompt: () => promptRef.current,
-    onStation: setStationId,
   });
   useEffect(() => {
     dispatchRef.current = dispatch;
@@ -74,22 +72,11 @@ export function Station({
 
   // The roster arrives with the page; the pick is remembered per browser and applied after
   // hydration, so the first paint shows the default and the remembered DJ takes over at once.
-  // The station is not remembered: a page load is a fresh show — Stop/Run inside the page keeps
-  // the DJ's memory, a reload starts over.
+  // The station is not remembered: a page load is a fresh show unless one is picked below.
   useEffect(() => {
     const stored = loadDj(djs);
     queueMicrotask(() => setDj(stored)); // after hydration, not during it
   }, [djs]);
-
-  // Resume a past show: its prompt and blocks load into the show; tap any block, or Run at the tail.
-  const resume = async (id: string) => {
-    const res = await guarded(`/api/station/${id}`, { cache: "no-store" });
-    if (!res.ok) return;
-    const data = (await res.json()) as { stationId: string; prompt: string; segments: SegmentView[] };
-    setStationId(data.stationId);
-    setPrompt(data.prompt);
-    dispatch({ type: "LOAD_SHOW", segments: [...data.segments].sort((a, b) => a.seq - b.seq) });
-  };
 
   // The Guard cookie lasts 15 minutes; a show lasts hours. Keep it fresh without reloading.
   useEffect(keepGuardAlive, []);
@@ -101,18 +88,21 @@ export function Station({
 
   const ready = device.status.kind === "ready";
   const running = state.loop === "running";
-  const fresh = !running && state.segments.length === 0;
+  const fresh = !running && state.segments.length === 0 && !state.producing;
   const requestBox = useRef<HTMLTextAreaElement>(null);
   const [needRequest, setNeedRequest] = useState(false);
 
   // "Go on air" is one tap even when this tab isn't the Spotify device yet: it registers the tab
   // and runs the moment the device is ready. The unlock/activate calls must stay inside the tap.
-  // "Connecting" only ever happens from this tap now, so the button can read it straight off the device.
   const arming = device.status.kind === "connecting";
-  // What to dispatch the moment the tab becomes the device: Run from the button, or the row tapped.
-  const armed = useRef<StationEvent | null>(null);
+  /** What to dispatch the moment the tab becomes the device: Run from the button, or the row tapped. */
+  const armed = useRef<ProgramEvent | null>(null);
+  const arm = (e: ProgramEvent) => {
+    armed.current = e;
+    void device.connect();
+  };
   const goOnAir = () => {
-    if (prompt.trim() === "") {
+    if (!station && prompt.trim() === "") {
       // Not a disabled button: the tap says what's missing and puts the cursor there.
       setNeedRequest(true);
       requestBox.current?.focus();
@@ -120,22 +110,16 @@ export function Station({
     }
     unlock();
     device.activate();
-    if (ready) {
-      dispatch({ type: "RUN" });
-      return;
-    }
-    arm({ type: "RUN" });
+    // A fresh page: the request becomes a station; the show goes on air into the gap meanwhile.
+    if (!station) void open(prompt.trim());
+    if (ready) dispatch({ type: "RUN" });
+    else arm({ type: "RUN" });
   };
-  // A tapped row after a reload: same story, the tab registers first, then the show starts there.
-  const jump = (seg: number, item: number) => {
+  const jump = (index: number) => {
     unlock();
     device.activate();
-    if (ready) dispatch({ type: "JUMP", seg, item });
-    else arm({ type: "JUMP", seg, item });
-  };
-  const arm = (e: StationEvent) => {
-    armed.current = e;
-    void device.connect();
+    if (ready) dispatch({ type: "JUMP", index });
+    else arm({ type: "JUMP", index });
   };
   useEffect(() => {
     const e = armed.current;
@@ -147,53 +131,99 @@ export function Station({
       armed.current = null;
     }
   }, [ready, device.status.kind, dispatch]);
-  const cur = cursorSegment(state);
+
+  // Resume a past show: everything kept loads at once; tap any row, or go on air from the top.
+  const pick = async (id: string) => {
+    const info = await resume(id);
+    if (info) setPrompt(info.prompt);
+  };
+
+  const el = onAir(state);
   const cursor = state.cursor;
-  const talking = running && state.phase === "playing" && cursor?.item === 0;
+  const seg = segmentAt(state, cursor);
+  const talking = running && state.mic !== null;
+  const gap = inGap(state);
 
   const face: PlayerFace | null = (() => {
-    if (state.phase === "planning") return { kind: "planning", dj: dj.name };
-    if (!cur || !cursor) return null;
-    if (cursor.item === 0) {
+    if (gap && awaiting(state) && state.music.level === "off") return { kind: "planning", dj: dj.name };
+    if (gap) {
+      const r = nextRecord(state);
+      if (r)
+        return {
+          kind: "track",
+          name: r.name,
+          artists: r.artists,
+          album: r.album,
+          image: r.image,
+          playback: trackClock(r.uri, r.durationMs),
+        };
+    }
+    if (!el) return null;
+    if (el.kind === "break") {
       return {
         kind: "talk",
         dj: dj.name,
         initial: dj.name.charAt(0).toUpperCase(),
-        seq: cur.seq,
-        excerpt: firstSentence(cur.talk),
+        seq: seg?.seq ?? 0,
+        excerpt: el.label,
         playback: !running
           ? { paused: true, position: 0, duration: 0, at: 0 }
-          : talkPlayback && talkPlayback.duration > 0
-            ? talkPlayback
+          : micClock && micClock.duration > 0
+            ? micClock
             : null,
       };
     }
-    const t = cur.tracks[cursor.item - 1];
-    if (!t) return null;
-    const p = device.playback;
-    const live = p?.uri === t.uri ? p : null;
     return {
       kind: "track",
-      name: t.name,
-      artists: t.artists,
-      album: t.album,
-      image: live?.track?.image ?? null,
-      playback: live
-        ? { paused: live.paused, position: live.position, duration: live.duration, at: live.at }
-        : { paused: true, position: 0, duration: t.durationMs, at: 0 },
+      name: el.track.name,
+      artists: el.track.artists,
+      album: el.track.album,
+      image: el.track.image,
+      playback: trackClock(el.track.uri, el.track.durationMs),
     };
   })();
 
+  function trackClock(uri: string, durationMs: number) {
+    const p = device.playback;
+    const live = p?.uri === uri ? p : null;
+    return live
+      ? { paused: live.paused, position: live.position, duration: live.duration, at: live.at }
+      : { paused: true, position: 0, duration: durationMs, at: 0 };
+  }
+
   const status = (() => {
     if (!running) return state.segments.length > 0 ? "Stopped" : "Off air";
-    if (state.phase === "planning") return "The DJ is planning…";
-    if (talking && cur) return cur.seq === 1 ? "Opening" : "Bridge";
-    if (cur && cursor) return `Track ${cursor.item} of ${cur.tracks.length}`;
+    if (gap) return awaiting(state) ? "The DJ is producing…" : "On air";
+    if (el?.kind === "break") return el.label.split(" → ")[0] ?? "Break";
+    if (seg && cursor !== null) {
+      const songs = state.elements.slice(seg.from, seg.to);
+      const n = songs.slice(0, cursor - seg.from + 1).filter((e) => e.kind === "song").length;
+      return `Song ${n} of ${songs.filter((e) => e.kind === "song").length}${talking ? " · talk-up" : ""}`;
+    }
     return "On air";
   })();
 
-  const canPrev = cursor !== null && !(cursor.seg === 0 && cursor.item === 0);
-  const canNext = cursor !== null && state.phase === "playing";
+  // The transport. A break's clip and a song are the same three buttons; only what they touch differs.
+  const toggle = useCallback(() => {
+    if (!running) return;
+    if (state.mic && el?.kind === "break") {
+      const paused = micClock?.paused ?? true;
+      if (paused) seekMic(micClock?.position ?? 0);
+      return; // the voice element has no pause here: the clip plays through (seek restarts it)
+    }
+    void (device.playback?.paused ? device.resume() : device.pause()).catch(() => {});
+  }, [running, state.mic, el, micClock, seekMic, device]);
+  const prev = useCallback(() => {
+    if (cursor === null) return;
+    const p = device.playback;
+    const pos = p ? (p.paused ? p.position : p.position + (performance.now() - p.at)) : 0;
+    if (el?.kind === "song" && pos > RESTART_AFTER_MS) dispatch({ type: "JUMP", index: cursor });
+    else dispatch({ type: "PREV" });
+  }, [cursor, el, device.playback, dispatch]);
+  const next = useCallback(() => dispatch({ type: "NEXT" }), [dispatch]);
+
+  const canPrev = cursor !== null && cursor > 0;
+  const canNext = cursor !== null && !gap;
   useMediaSession({ face, running, canPrev, canNext, onToggle: toggle, onPrev: prev, onNext: next });
 
   return (
@@ -243,7 +273,7 @@ export function Station({
             setPrompt(e.target.value);
             if (needRequest && e.target.value.trim() !== "") setNeedRequest(false);
           }}
-          placeholder="What do you want to hear tonight? e.g. late-night soul with horns"
+          placeholder="What do you want to hear tonight? e.g. Saturday night 80s, hits-forward, keep it warm"
           maxLength={500}
           rows={3}
           aria-label="The request"
@@ -252,8 +282,8 @@ export function Station({
         {needRequest && prompt.trim() === "" && (
           <p className="-mt-2 text-xs text-lamp">Tell the DJ what you want to hear first.</p>
         )}
-        {running && prompt.trim() !== (cur?.prompt ?? prompt.trim()) && (
-          <p className="-mt-2 text-xs text-zinc-500">The new request reaches the DJ on the next block.</p>
+        {station && prompt.trim() !== "" && prompt.trim() !== station.prompt && (
+          <p className="-mt-2 text-xs text-zinc-500">The new request reaches the DJ on the next segment.</p>
         )}
         {!identity && (
           <p className="-mt-2 text-xs text-zinc-500">Playback needs a Spotify Premium account.</p>
@@ -263,17 +293,14 @@ export function Station({
             This tab couldn&rsquo;t become the player: {device.status.message}
           </p>
         )}
-        {fresh && !stationId && <ResumePicker stations={stations} onPick={(id) => void resume(id)} />}
-        {!running && stationId && cursor === null && state.segments.length > 0 && (
+        {fresh && !station && <ResumePicker stations={stations} onPick={(id) => void pick(id)} />}
+        {!running && station && cursor === null && state.segments.length > 0 && (
           <p className="text-xs text-zinc-500">
-            Resuming ({state.segments.length} block{state.segments.length === 1 ? "" : "s"}) — tap a block, or
-            go on air.{" "}
+            Resuming ({state.segments.length} segment{state.segments.length === 1 ? "" : "s"}, {station.dj} on
+            the mic) — tap a row, or go on air.{" "}
             <button
               type="button"
-              onClick={() => {
-                setStationId(null);
-                dispatch({ type: "CLEAR_SHOW" });
-              }}
+              onClick={clear}
               className="underline underline-offset-2 hover:text-zinc-300"
             >
               Start fresh
@@ -331,7 +358,7 @@ export function Station({
         </div>
       )}
 
-      {/* the player: mounted from the first block on, never unmounts */}
+      {/* the player: mounted from the first element on, never unmounts */}
       {face && (
         <Card className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3">
@@ -350,21 +377,8 @@ export function Station({
         </Card>
       )}
 
-      {/* the show */}
-      <Show
-        segments={state.segments}
-        cursor={cursor}
-        voiced={(id) => {
-          const t = talk(id);
-          return t !== undefined && "url" in t;
-        }}
-        onJump={jump}
-      />
+      {/* the show as produced */}
+      <Rundown state={state} clips={clips} onJump={jump} />
     </>
   );
-}
-
-function firstSentence(text: string): string {
-  const m = text.match(/^.*?[.!?…](\s|$)/);
-  return (m ? m[0] : text).trim();
 }

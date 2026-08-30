@@ -1,5 +1,6 @@
 "use client";
 
+import type { Identity } from "@radio/dj";
 import { useEffect, useState } from "react";
 import type { StationSummary } from "./resume-picker";
 import {
@@ -22,11 +23,14 @@ import type { Dj } from "./voice-store";
 export function Home({
   clientId,
   identity: initialIdentity,
+  station,
   djs,
   stations,
 }: {
   clientId: string;
   identity: SpotifyIdentity | null;
+  /** The station's call letters and name, or null until /settings has them. */
+  station: Identity | null;
   djs: Dj[];
   stations: StationSummary[];
 }) {
@@ -48,18 +52,26 @@ export function Home({
   }, [initialIdentity]);
 
   return (
-    <Station
-      clientId={clientId}
-      identity={identity}
-      account={account}
-      djs={djs}
-      stations={stations}
-      onConnect={() => void beginLogin(clientId)}
-      onDisconnect={() => {
-        clearAccount();
-        setAccount(null);
-        setIdentity(null);
-      }}
-    />
+    <>
+      {!station && (
+        <p className="text-xs text-amber-300/90">
+          The station has no identity yet — fill call letters, city and the on-air name on /settings before
+          going on air.
+        </p>
+      )}
+      <Station
+        clientId={clientId}
+        identity={identity}
+        account={account}
+        djs={djs}
+        stations={stations}
+        onConnect={() => void beginLogin(clientId)}
+        onDisconnect={() => {
+          clearAccount();
+          setAccount(null);
+          setIdentity(null);
+        }}
+      />
+    </>
   );
 }

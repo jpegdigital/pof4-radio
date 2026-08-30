@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { parseVoices, PROMPT_SLOTS, type PromptKey, type Voice, VOICES_KEY } from "@radio/dj";
+import { Identity, parseVoices, PROMPT_SLOTS, type PromptKey, type Voice, VOICES_KEY } from "@radio/dj";
 import { db } from "@/lib/db";
+import { IDENTITY_KEY } from "@/lib/prompts";
+import { IdentityEditor } from "./identity-editor";
 import { PromptEditor } from "./prompt-editor";
 import { VoiceEditor } from "./voice-editor";
 
@@ -10,11 +12,11 @@ export const metadata: Metadata = { title: "Settings · Radio" };
 export const dynamic = "force-dynamic";
 
 /**
- * /settings — the DJ's script and the DJs' voices, one at a time. A rail on the left — the four
- * prompt slots, then the voice roster — chosen by `?slot=` or `?voice=` so the page stays a
- * Server Component; the editor for the pick on the right. Everything is a `settings` row —
- * the only place it lives; a slot with no row is a fault the rail flags, a roster with no row
- * is empty. Saving applies to the next block planned / the next line voiced.
+ * /settings — the producer's script, the station's identity and the DJs' voices, one at a time.
+ * A rail on the left — the four prompt slots, the identity, then the voice roster — chosen by
+ * `?slot=` or `?voice=` so the page stays a Server Component; the editor for the pick on the
+ * right. Everything is a `settings` row — the only place it lives; a slot with no row is a fault
+ * the rail flags, a roster with no row is empty. Saving applies to the next segment produced.
  */
 const isKey = (s: unknown): s is PromptKey => PROMPT_SLOTS.some((p) => p.key === s);
 
@@ -45,9 +47,17 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
     typeof requestedVoice === "string" ? voices.find((v) => v.id === requestedVoice) : undefined;
   const newVoice = requestedVoice === "new";
   const showVoice = Boolean(openVoice) || newVoice;
+  const showIdentity = requestedSlot === IDENTITY_KEY;
   const key: PromptKey = isKey(requestedSlot) ? requestedSlot : PROMPT_SLOTS[0].key;
   const slot = PROMPT_SLOTS.find((s) => s.key === key)!;
   const row = byKey.get(key);
+  const identityRow = byKey.get(IDENTITY_KEY);
+  let identity: Identity | null = null;
+  try {
+    identity = identityRow ? Identity.parse(JSON.parse(identityRow.value)) : null;
+  } catch {
+    identity = null;
+  }
 
   return (
     <div className="grid items-start gap-8 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-12">
@@ -56,7 +66,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           <p className="mb-3 font-display text-sm uppercase tracking-[0.2em] text-zinc-500">DJ script</p>
           <ul className={railList}>
             {PROMPT_SLOTS.map((s) => {
-              const active = !showVoice && s.key === key;
+              const active = !showVoice && !showIdentity && s.key === key;
               const on = byKey.has(s.key);
               return (
                 <li key={s.key} className="shrink-0">
@@ -72,6 +82,17 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
                 </li>
               );
             })}
+            <li className="shrink-0">
+              <Link
+                href={`/settings?slot=${IDENTITY_KEY}`}
+                aria-current={showIdentity ? "page" : undefined}
+                className={railItem(showIdentity)}
+              >
+                <Lamp on={identity !== null} />
+                <span className="flex-1">Identity</span>
+                {identity === null && <Fault>missing</Fault>}
+              </Link>
+            </li>
           </ul>
         </div>
 
@@ -119,12 +140,18 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         </div>
 
         <p className="hidden text-xs leading-relaxed text-zinc-600 md:block">
-          This is the script and the roster themselves — there is no copy in code. A change reaches the next
-          block the DJ plans and the next line it voices; what&rsquo;s already buffered keeps its own.
+          This is the script, the identity and the roster themselves — there is no copy in code. A change
+          reaches the next segment produced; what&rsquo;s already kept keeps its own.
         </p>
       </nav>
 
-      {showVoice ? (
+      {showIdentity ? (
+        <IdentityEditor
+          key={identityRow?.updatedAt.toISOString() ?? "missing"}
+          value={identity}
+          updatedAt={identityRow?.updatedAt.toISOString() ?? null}
+        />
+      ) : showVoice ? (
         <VoiceEditor
           key={`${openVoice?.id ?? "new"}:${rosterRow?.updatedAt.toISOString() ?? ""}`}
           voice={openVoice ?? null}

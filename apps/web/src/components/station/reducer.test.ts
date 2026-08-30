@@ -1,271 +1,317 @@
+import type { SegmentView } from "@radio/dj";
 import { describe, expect, it } from "vitest";
 import {
-  atTail,
-  cursorSegment,
+  ahead,
+  awaiting,
+  type Element,
+  inGap,
   initialState,
-  MAX_SEGMENTS,
+  nextRecord,
+  type ProgramState,
   reducer,
-  type SegmentView,
-  type StationEvent,
-  type StationState,
-} from "./reducer.ts";
+  segmentAt,
+} from "./reducer";
 
-const seg = (n: number): SegmentView => ({
-  id: `s${n}`,
-  seq: n,
-  prompt: "soul",
-  talk: `talk ${n}`,
-  tracks: [1, 2, 3].map((i) => ({
-    id: `t${n}${i}`,
-    uri: `spotify:track:t${n}${i}`,
-    name: `song ${i}`,
-    artists: ["a"],
-    album: "b",
-    durationMs: 1000,
-  })),
+const track = (id: string, durationMs = 200_000) => ({
+  uri: `spotify:track:${id}`,
+  name: id,
+  artists: [id],
+  album: id,
+  image: null,
+  durationMs,
+});
+const elements: Element[] = [
+  { kind: "break", clip: "break-small", bed: "bed", leadMs: 0, label: "Break" },
+  { kind: "song", track: track("a") },
+  { kind: "song", track: track("b"), talk: { clip: "talkup-2", over: "intro" } },
+  { kind: "song", track: track("c"), talk: { clip: "outro-c", over: "outro" } },
+  { kind: "break", clip: "break-big", bed: "bed", bedInMs: 5000, leadMs: 6000, label: "Top" },
+  { kind: "song", track: track("d"), talk: { clip: "talkup-d", over: "intro" } },
+  { kind: "break", clip: "tail", leadMs: 0, label: "Dry" },
+];
+const loaded: ProgramState = { ...initialState, elements };
+const run = (s = loaded) => reducer(s, { type: "RUN" });
+const at = (index: number) => reducer(loaded, { type: "JUMP", index });
+
+const rec = (id: string) => ({ id, ...track(id), pick: 0 });
+/** The elements `landed` slots make: the break, then a song per slot. */
+const segElements = (seq: number, ids: string[]): Element[] =>
+  ids.length
+    ? [
+        { kind: "break", clip: `/api/clip/seg-${seq}/0`, bed: "/bed.mp3", leadMs: 0, label: "Break" },
+        ...ids.map((id): Element => ({ kind: "song", track: track(id) })),
+      ]
+    : [];
+/** A segment view with its first `landed` slots produced (all of them when omitted). */
+const view = (seq: number, ids: string[], landed = ids.length): SegmentView => ({
+  id: `seg-${seq}`,
+  seq,
+  prompt: "p",
+  complete: landed >= ids.length,
+  records: ids.map(rec),
+  lines: landed ? [{ seq: 0, treatment: "break", words: "hi" }] : [],
+  log: {
+    slots: ids.slice(0, landed).map((id, i) => ({ seq: i, id, intro: i ? "segue" : "break", why: "" })),
+    fallbacks: [],
+    topOfHour: seq === 1,
+  },
+  cards: {},
+  dropped: [],
+  elements: segElements(seq, ids.slice(0, landed)),
+  notes: [],
 });
 
-const run = (events: StationEvent[], from: StationState = initialState) => events.reduce(reducer, from);
-
-/** A running show with blocks 1 and 2 loaded, cursor on block 1's talk. */
-const twoBlocks = () =>
-  run([
-    { type: "RUN" },
-    { type: "SEGMENT_READY", segment: seg(1) },
-    { type: "SEGMENT_READY", segment: seg(2) },
-  ]);
-
-describe("run / segments", () => {
-  it("RUN from empty asks for a segment and waits", () => {
-    const s = run([{ type: "RUN" }]);
-    expect(s).toMatchObject({
-      loop: "running",
-      phase: "planning",
-      pending: true,
-      requestSeq: 1,
-      cursor: null,
-    });
+describe("run", () => {
+  it("starts element 0 with the lanes set: Spotify off, bed under, clip on the mic", () => {
+    const s = run();
+    expect(s.loop).toBe("running");
+    expect(s.cursor).toBe(0);
+    expect(s.music).toEqual({ uri: null, level: "off" });
+    expect(s.bed).toBe("bed");
+    expect(s.mic).toBe("break-small");
+    expect(s.playSeq).toBe(1);
+    expect(s.startedAt).not.toBeNull();
   });
-
-  it("SEGMENT_READY while planning goes on air at its talk and requests the next one", () => {
-    const s = run([{ type: "RUN" }, { type: "SEGMENT_READY", segment: seg(1) }]);
-    expect(s).toMatchObject({ phase: "playing", cursor: { seg: 0, item: 0 }, pending: true, requestSeq: 2 });
-    expect(cursorSegment(s)?.id).toBe("s1");
-    expect(atTail(s)).toBe(true);
+  it("restarts the element at the cursor after a stop", () => {
+    const s = run(reducer(at(1), { type: "STOP" }));
+    expect(s.cursor).toBe(1);
+    expect(s.music).toEqual({ uri: "spotify:track:a", level: "full" });
   });
-
-  it("SEGMENT_READY while playing is appended, cursor unmoved", () => {
-    const s = twoBlocks();
-    expect(s.segments.map((x) => x.id)).toEqual(["s1", "s2"]);
-    expect(s).toMatchObject({ cursor: { seg: 0, item: 0 }, pending: false });
-    expect(atTail(s)).toBe(false);
+  it("is a no-op while running, and on an empty show with nothing on its way", () => {
+    const s = run();
+    expect(run(s)).toBe(s);
+    expect(run(initialState)).toBe(initialState);
   });
-
-  it("the list is capped: the oldest block is trimmed and the cursor shifts with it", () => {
-    let s = run([{ type: "RUN" }]);
-    for (let i = 1; i <= MAX_SEGMENTS + 1; i++) s = reducer(s, { type: "SEGMENT_READY", segment: seg(i) });
-    expect(s.segments).toHaveLength(MAX_SEGMENTS);
-    expect(s.segments[0]?.id).toBe("s2");
-    expect(s.cursor).toEqual({ seg: 0, item: 0 }); // was on s1 (now gone) → clamped to the new head
-  });
-
-  it("a failure retries once, then stops with the error", () => {
-    let s = run([{ type: "RUN" }, { type: "SEGMENT_FAILED", error: "boom" }]);
-    expect(s).toMatchObject({ loop: "running", pending: true, retried: true, requestSeq: 2 });
-    s = reducer(s, { type: "SEGMENT_FAILED", error: "boom again" });
-    expect(s).toMatchObject({ loop: "stopped", phase: "planning", pending: false, error: "boom again" });
-  });
-
-  it("a successful retry clears the error", () => {
-    let s = run([{ type: "RUN" }, { type: "SEGMENT_FAILED", error: "boom" }]);
-    expect(s.error).toBe("boom");
-    s = reducer(s, { type: "SEGMENT_READY", segment: seg(1) });
-    expect(s.error).toBeNull();
-    expect(s.retried).toBe(false);
-  });
-
-  it("RUN while planning after a halt asks again", () => {
-    let s = run([
-      { type: "RUN" },
-      { type: "SEGMENT_FAILED", error: "a" },
-      { type: "SEGMENT_FAILED", error: "b" },
-    ]);
-    s = reducer(s, { type: "RUN" });
-    expect(s).toMatchObject({
-      loop: "running",
-      phase: "planning",
-      pending: true,
-      requestSeq: 3,
-      error: null,
-    });
+  it("on an empty show with a request in flight, goes on air into the gap", () => {
+    const s = run(reducer(initialState, { type: "PRODUCING" }));
+    expect(s.loop).toBe("running");
+    expect(inGap(s)).toBe(true);
+    expect(s.music.level).toBe("off");
   });
 });
 
-describe("walking the show", () => {
-  it("NEXT walks talk → tracks → next block's talk", () => {
-    let s = twoBlocks();
-    const seq0 = s.playSeq;
-    s = reducer(s, { type: "NEXT" });
-    expect(s.cursor).toEqual({ seg: 0, item: 1 });
-    expect(s.playSeq).toBe(seq0 + 1);
-    s = run([{ type: "NEXT" }, { type: "NEXT" }], s);
-    expect(s.cursor).toEqual({ seg: 0, item: 3 });
-    s = reducer(s, { type: "NEXT" });
-    expect(s.cursor).toEqual({ seg: 1, item: 0 });
+describe("lanes", () => {
+  it("a song without talk plays at full with the mic off", () => {
+    expect(at(1).music).toEqual({ uri: "spotify:track:a", level: "full" });
+    expect(at(1).mic).toBeNull();
   });
-
-  it("ENDED is NEXT", () => {
-    const s = reducer(twoBlocks(), { type: "ENDED" });
-    expect(s.cursor).toEqual({ seg: 0, item: 1 });
+  it("a song with an intro talk starts ducked with the clip on", () => {
+    expect(at(2).music).toEqual({ uri: "spotify:track:b", level: "duck" });
+    expect(at(2).mic).toBe("talkup-2");
   });
-
-  it("landing on the tail's talk asks for one more block, once", () => {
-    let s = twoBlocks();
-    s = run([{ type: "NEXT" }, { type: "NEXT" }, { type: "NEXT" }, { type: "NEXT" }], s);
-    expect(s.cursor).toEqual({ seg: 1, item: 0 });
-    expect(s).toMatchObject({ pending: true, requestSeq: 3 });
-    s = reducer(s, { type: "NEXT" }); // onto a track of the tail — no second request
-    expect(s.requestSeq).toBe(3);
+  it("a song with an outro talk starts full; TALK_DUE ducks and puts the clip on", () => {
+    const s = at(3);
+    expect(s.music.level).toBe("full");
+    expect(s.mic).toBeNull();
+    const due = reducer(s, { type: "TALK_DUE" });
+    expect(due.music.level).toBe("duck");
+    expect(due.mic).toBe("outro-c");
+    expect(reducer(due, { type: "TALK_DUE" })).toBe(due);
   });
-
-  it("NEXT past the last item of the tail waits on the DJ", () => {
-    let s = run([{ type: "RUN" }, { type: "SEGMENT_READY", segment: seg(1) }]);
-    s = run([{ type: "NEXT" }, { type: "NEXT" }, { type: "NEXT" }, { type: "NEXT" }], s);
-    expect(s).toMatchObject({ phase: "planning", pending: true, requestSeq: 2 });
-    expect(s.cursor).toEqual({ seg: 0, item: 3 }); // the cursor stays put until the block lands
-    s = reducer(s, { type: "SEGMENT_READY", segment: seg(2) });
-    expect(s).toMatchObject({ phase: "playing", cursor: { seg: 1, item: 0 }, requestSeq: 3 });
+  it("a break without a bed is dry: music off, clip on", () => {
+    expect(at(6).music).toEqual({ uri: null, level: "off" });
+    expect(at(6).mic).toBe("tail");
   });
-
-  it("PREV walks back across a block boundary and stops at the first talk", () => {
-    let s = twoBlocks();
-    s = run([{ type: "NEXT" }, { type: "NEXT" }, { type: "NEXT" }, { type: "NEXT" }], s);
-    expect(s.cursor).toEqual({ seg: 1, item: 0 });
-    s = reducer(s, { type: "PREV" });
-    expect(s.cursor).toEqual({ seg: 0, item: 3 });
-    s = run([{ type: "PREV" }, { type: "PREV" }, { type: "PREV" }], s);
-    expect(s.cursor).toEqual({ seg: 0, item: 0 });
-    const before = s;
-    s = reducer(s, { type: "PREV" });
-    expect(s).toBe(before);
-  });
-
-  it("rewinding never plans; playing through to the tail plans exactly once", () => {
-    let s = twoBlocks();
-    s = run([{ type: "NEXT" }, { type: "NEXT" }, { type: "NEXT" }, { type: "NEXT" }], s); // s2 talk → request #2
-    s = reducer(s, { type: "SEGMENT_READY", segment: seg(3) });
-    expect(s).toMatchObject({ pending: false, requestSeq: 3 });
-    s = reducer(s, { type: "JUMP", seg: 0, item: 0 });
-    expect(s).toMatchObject({ cursor: { seg: 0, item: 0 }, pending: false, requestSeq: 3 });
-    for (let i = 0; i < 8; i++) s = reducer(s, { type: "NEXT" }); // through s1 and s2 → s3 talk
-    expect(s.cursor).toEqual({ seg: 2, item: 0 });
-    expect(s).toMatchObject({ pending: true, requestSeq: 4 });
-  });
-
-  it("TRACK_CHANGED follows Spotify without restarting playback", () => {
-    let s = reducer(twoBlocks(), { type: "NEXT" });
-    const seq = s.playSeq;
-    s = reducer(s, { type: "TRACK_CHANGED", uri: "spotify:track:t12" });
-    expect(s.cursor).toEqual({ seg: 0, item: 2 });
-    expect(s.playSeq).toBe(seq);
-    const before = s;
-    expect(reducer(s, { type: "TRACK_CHANGED", uri: "spotify:track:nope" })).toBe(before);
-  });
-
-  it("TRACK_CHANGED during a talk is ignored", () => {
-    const s = twoBlocks();
-    expect(reducer(s, { type: "TRACK_CHANGED", uri: "spotify:track:t12" })).toBe(s);
-  });
-
-  it("TALK_FAILED under the cursor moves on to the first track", () => {
-    let s = twoBlocks();
-    s = reducer(s, { type: "TALK_FAILED", segmentId: "s1" });
-    expect(s.cursor).toEqual({ seg: 0, item: 1 });
-    const before = s;
-    expect(reducer(s, { type: "TALK_FAILED", segmentId: "s2" })).toBe(before);
+  it("a new element bumps both lanes' sequences", () => {
+    expect(at(1).playSeq).toBe(1);
+    expect(at(1).micSeq).toBe(1);
   });
 });
 
-describe("stop / run / jump", () => {
-  it("STOP keeps the cursor; RUN resumes there and restarts the item", () => {
-    let s = run([{ type: "NEXT" }, { type: "STOP" }], twoBlocks());
-    expect(s).toMatchObject({ loop: "stopped", phase: "playing", cursor: { seg: 0, item: 1 } });
-    const seq = s.playSeq;
-    s = reducer(s, { type: "RUN" });
-    expect(s).toMatchObject({ loop: "running", phase: "playing", cursor: { seg: 0, item: 1 } });
-    expect(s.playSeq).toBe(seq + 1);
-    expect(s.pending).toBe(false); // s2 is buffered — nothing to ask for
+describe("clip ended", () => {
+  it("on an intro talk: mic off, music to full, cursor stays", () => {
+    const s = reducer(at(2), { type: "CLIP_ENDED", clip: "talkup-2" });
+    expect(s.cursor).toBe(2);
+    expect(s.mic).toBeNull();
+    expect(s.music).toEqual({ uri: "spotify:track:b", level: "full" });
+    expect(s.playSeq).toBe(at(2).playSeq);
   });
+  it("on a break: next element", () => {
+    const s = reducer(run(), { type: "CLIP_ENDED", clip: "break-small" });
+    expect(s.cursor).toBe(1);
+    expect(s.music).toEqual({ uri: "spotify:track:a", level: "full" });
+  });
+  it("ignores a stale clip; CLIP_FAILED behaves like CLIP_ENDED", () => {
+    const s = at(2);
+    expect(reducer(s, { type: "CLIP_ENDED", clip: "break-small" })).toBe(s);
+    expect(reducer(run(), { type: "CLIP_FAILED", clip: "break-small" }).cursor).toBe(1);
+  });
+});
 
-  it("RUN at the tail with nothing buffered asks for the next block", () => {
-    let s = run([
-      { type: "RUN" },
-      { type: "SEGMENT_READY", segment: seg(1) },
-      { type: "SEGMENT_FAILED", error: "x" },
-    ]);
-    s = run([{ type: "SEGMENT_FAILED", error: "y" }], s); // halted, cursor on s1 talk
+describe("lead", () => {
+  it("LEAD_DUE on a break starts the next song ducked and keeps the clip on the mic", () => {
+    const s = reducer(at(4), { type: "LEAD_DUE" });
+    expect(s.cursor).toBe(5);
+    expect(s.music).toEqual({ uri: "spotify:track:d", level: "duck" });
+    expect(s.mic).toBe("break-big");
+    expect(s.bed).toBe("bed");
+    expect(s.playSeq).toBe(at(4).playSeq + 1);
+    expect(s.micSeq).toBe(at(4).micSeq);
+  });
+  it("then the break clip's end brings the song to full", () => {
+    const s = reducer(reducer(at(4), { type: "LEAD_DUE" }), { type: "CLIP_ENDED", clip: "break-big" });
+    expect(s.cursor).toBe(5);
+    expect(s.mic).toBeNull();
+    expect(s.music).toEqual({ uri: "spotify:track:d", level: "full" });
+  });
+});
+
+describe("the end of the kept show", () => {
+  it("with nothing on its way, stops and keeps the cursor", () => {
+    const s = reducer(at(6), { type: "CLIP_ENDED", clip: "tail" });
     expect(s.loop).toBe("stopped");
-    s = reducer(s, { type: "RUN" });
-    expect(s).toMatchObject({ loop: "running", pending: true, cursor: { seg: 0, item: 0 } });
+    expect(s.cursor).toBe(6);
+    expect(s.music.level).toBe("off");
   });
-
-  it("a segment landing while stopped is appended, not started", () => {
-    let s = run([{ type: "STOP" }], twoBlocks());
-    s = reducer(s, { type: "SEGMENT_READY", segment: seg(3) });
-    expect(s.segments).toHaveLength(3);
-    expect(s.cursor).toEqual({ seg: 0, item: 0 });
+  it("with a request in flight, waits in the gap in silence; an opened segment starts its segue", () => {
+    const waiting = reducer(reducer(at(6), { type: "PRODUCING" }), { type: "CLIP_ENDED", clip: "tail" });
+    expect(waiting.loop).toBe("running");
+    expect(inGap(waiting)).toBe(true);
+    expect(waiting.music.level).toBe("off");
+    const seg = reducer(waiting, { type: "SEGMENT_OPENED", view: view(2, ["x", "y", "z"], 0) });
+    expect(seg.music).toEqual({ uri: "spotify:track:x", level: "full" });
+    expect(seg.segments.at(-1)).toMatchObject({ id: "seg-2", from: 7, to: 7, complete: false });
+    expect(nextRecord(seg)?.id).toBe("x");
+    expect(seg.producing).toBe(false);
   });
-
-  it("HALT stops with the error and clears it on the next RUN", () => {
-    let s = reducer(twoBlocks(), { type: "HALT", error: "device gone" });
-    expect(s).toMatchObject({ loop: "stopped", error: "device gone" });
-    s = reducer(s, { type: "RUN" });
-    expect(s.error).toBeNull();
-  });
-
-  it("LOAD_SHOW then JUMP starts the show at that block's talk", () => {
-    let s = reducer(initialState, { type: "LOAD_SHOW", segments: [seg(1), seg(2), seg(3)] });
-    expect(s).toMatchObject({ loop: "stopped", phase: "idle", cursor: null });
-    expect(s.segments).toHaveLength(3);
-    s = reducer(s, { type: "JUMP", seg: 1, item: 0 });
-    expect(s).toMatchObject({
-      loop: "running",
-      phase: "playing",
-      cursor: { seg: 1, item: 0 },
-      pending: false,
+  it("with a segment opened, plays a clean segue into the record its next slot brings (R8)", () => {
+    const s = reducer(reducer(at(6), { type: "SEGMENT_OPENED", view: view(2, ["x", "y"], 0) }), {
+      type: "CLIP_ENDED",
+      clip: "tail",
     });
+    expect(s.loop).toBe("running");
+    expect(s.cursor).toBe(7);
+    expect(s.music).toEqual({ uri: "spotify:track:x", level: "full" });
+    expect(s.mic).toBeNull();
+    expect(reducer(s, { type: "TRACK_ENDED" }).music.level).toBe("off");
+    expect(reducer(s, { type: "NEXT" })).toBe(s);
   });
-
-  it("JUMP to the tail's talk on a loaded show plans the next block", () => {
-    let s = reducer(initialState, { type: "LOAD_SHOW", segments: [seg(1), seg(2)] });
-    s = reducer(s, { type: "JUMP", seg: 1, item: 0 });
-    expect(s).toMatchObject({ pending: true, requestSeq: 1 });
+  it("a fresh show waits in silence for its opening slot — never a segue before the first break", () => {
+    const s = reducer(reducer(initialState, { type: "PRODUCING" }), { type: "RUN" });
+    expect(s.loop).toBe("running");
+    expect(s.music.level).toBe("off");
+    const opened = reducer(s, { type: "SEGMENT_OPENED", view: view(1, ["a", "b"], 0) });
+    expect(opened.music.level).toBe("off");
+    expect(awaiting(opened)).toBe(true);
+    const landed = reducer(opened, { type: "SEGMENT_SLOT", view: view(1, ["a", "b"], 1) });
+    expect(landed.cursor).toBe(0);
+    expect(landed.mic).toBe("/api/clip/seg-1/0");
+    expect(landed.music.level).toBe("off");
   });
-
-  it("JUMP out of bounds is ignored", () => {
-    const s = twoBlocks();
-    expect(reducer(s, { type: "JUMP", seg: 5, item: 0 })).toBe(s);
-    expect(reducer(s, { type: "JUMP", seg: 0, item: 9 })).toBe(s);
+  it("RUN on an empty show with nothing on its way is a no-op", () => {
+    expect(reducer(initialState, { type: "RUN" })).toBe(initialState);
   });
+});
 
-  it("RUN on a loaded show with no cursor starts planning at the tail", () => {
-    let s = reducer(initialState, { type: "LOAD_SHOW", segments: [seg(1)] });
-    s = reducer(s, { type: "RUN" });
-    expect(s).toMatchObject({ phase: "planning", pending: true, cursor: null });
-    s = reducer(s, { type: "SEGMENT_READY", segment: seg(2) });
-    expect(s.cursor).toEqual({ seg: 1, item: 0 });
+describe("segments landing", () => {
+  it("LOAD_SHOW: every segment becomes an element range, the unfinished one still growing", () => {
+    const s = reducer(initialState, {
+      type: "LOAD_SHOW",
+      segments: [view(2, ["c", "d"]), view(1, ["a", "b", "x"]), view(3, ["e", "f"], 1)],
+    });
+    expect(s.elements).toHaveLength(9);
+    expect(s.segments.map((g) => [g.seq, g.from, g.to, g.complete])).toEqual([
+      [1, 0, 4, true],
+      [2, 4, 7, true],
+      [3, 7, 9, false],
+    ]);
+    expect(ahead(s).map((r) => r.id)).toEqual(["f"]);
+    expect(segmentAt(s, 5)?.seq).toBe(2);
+    expect(s.cursor).toBeNull();
   });
-
-  it("LOAD_SHOW and CLEAR_SHOW are ignored while running", () => {
-    const s = twoBlocks();
-    expect(reducer(s, { type: "LOAD_SHOW", segments: [seg(9)] })).toBe(s);
-    expect(reducer(s, { type: "CLEAR_SHOW" })).toBe(s);
-    const cleared = reducer(reducer(s, { type: "STOP" }), { type: "CLEAR_SHOW" });
-    expect(cleared).toMatchObject({ segments: [], cursor: null, phase: "idle" });
+  it("LOAD_SHOW is refused while running", () => {
+    const s = run();
+    expect(reducer(s, { type: "LOAD_SHOW", segments: [] })).toBe(s);
   });
+  it("SEGMENT_OPENED never touches the lanes while something is playing", () => {
+    const s = at(1);
+    const p = reducer(s, { type: "SEGMENT_OPENED", view: view(2, ["x"], 0) });
+    expect(p.music).toEqual(s.music);
+    expect(p.mic).toBe(s.mic);
+    expect(p.playSeq).toBe(s.playSeq);
+    expect(p.segments.at(-1)).toMatchObject({ id: "seg-2", from: 7, to: 7, complete: false });
+  });
+  it("SEGMENT_SLOT while playing grows the last segment, slot by slot, until it is complete", () => {
+    const s = reducer(at(1), { type: "SEGMENT_OPENED", view: view(2, ["x", "y"], 0) });
+    const one = reducer(s, { type: "SEGMENT_SLOT", view: view(2, ["x", "y"], 1) });
+    expect(one.elements).toHaveLength(9);
+    expect(one.segments.at(-1)).toMatchObject({ id: "seg-2", from: 7, to: 9, complete: false });
+    expect(one.cursor).toBe(1);
+    expect(nextRecord(one)?.id).toBe("y");
+    const two = reducer(one, { type: "SEGMENT_SLOT", view: view(2, ["x", "y"], 2) });
+    expect(two.elements).toHaveLength(10);
+    expect(two.segments.at(-1)).toMatchObject({ from: 7, to: 10, complete: true });
+    expect(awaiting(two)).toBe(false);
+    // the same slot again changes nothing
+    expect(reducer(two, { type: "SEGMENT_SLOT", view: view(2, ["x", "y"], 2) }).elements).toHaveLength(10);
+  });
+  it("SEGMENT_SLOT for a segment never opened opens it first", () => {
+    const s = reducer(at(1), { type: "SEGMENT_SLOT", view: view(2, ["x"], 1) });
+    expect(s.segments.at(-1)).toMatchObject({ id: "seg-2", from: 7, to: 9, complete: true });
+  });
+  it("SEGMENT_SLOT over its own segue keeps the song playing and moves the cursor onto it", () => {
+    const gap = reducer(reducer(at(6), { type: "SEGMENT_OPENED", view: view(2, ["x", "y"], 0) }), {
+      type: "CLIP_ENDED",
+      clip: "tail",
+    });
+    const a = reducer(gap, { type: "SEGMENT_SLOT", view: view(2, ["x", "y"], 1) });
+    expect(a.cursor).toBe(8); // the song after the break
+    expect(a.music).toEqual({ uri: "spotify:track:x", level: "full" });
+    expect(a.playSeq).toBe(gap.playSeq); // not restarted
+    expect(a.mic).toBeNull();
+  });
+  it("SEGMENT_SLOT in the silent gap (the segue ran out) resumes at the new elements", () => {
+    const gap = reducer(reducer(at(6), { type: "SEGMENT_OPENED", view: view(2, ["x", "y"], 0) }), {
+      type: "CLIP_ENDED",
+      clip: "tail",
+    });
+    const silent = reducer(gap, { type: "TRACK_ENDED" });
+    expect(silent.music.level).toBe("off");
+    const a = reducer(silent, { type: "SEGMENT_SLOT", view: view(2, ["x", "y"], 1) });
+    expect(a.cursor).toBe(7);
+    expect(a.mic).toBe("/api/clip/seg-2/0");
+  });
+  it("SEGMENT_FAILED in the silent gap stops; elsewhere it only reports", () => {
+    const waiting = reducer(reducer(at(6), { type: "PRODUCING" }), { type: "CLIP_ENDED", clip: "tail" });
+    const f = reducer(waiting, { type: "SEGMENT_FAILED", error: "busy" });
+    expect(f.loop).toBe("stopped");
+    expect(f.error).toBe("busy");
+    const playing = reducer(reducer(at(1), { type: "PRODUCING" }), { type: "SEGMENT_FAILED", error: "busy" });
+    expect(playing.loop).toBe("running");
+    expect(playing.producing).toBe(false);
+  });
+});
 
-  it("CLEAR_ERROR", () => {
-    const s = reducer(reducer(twoBlocks(), { type: "HALT", error: "x" }), { type: "CLEAR_ERROR" });
-    expect(s.error).toBeNull();
+describe("transport", () => {
+  it("STOP silences both lanes and keeps the cursor", () => {
+    const s = reducer(at(2), { type: "STOP" });
+    expect(s.loop).toBe("stopped");
+    expect(s.cursor).toBe(2);
+    expect(s.music).toEqual({ uri: null, level: "off" });
+    expect(s.mic).toBeNull();
+  });
+  it("NEXT/PREV move the cursor and restart", () => {
+    const n = reducer(at(1), { type: "NEXT" });
+    expect(n.cursor).toBe(2);
+    expect(n.playSeq).toBe(at(1).playSeq + 1);
+    expect(reducer(at(1), { type: "PREV" }).cursor).toBe(0);
+    const first = at(0);
+    expect(reducer(first, { type: "PREV" })).toBe(first);
+  });
+  it("JUMP onto a kept break re-asserts mic and bed and bumps both seqs", () => {
+    const s = reducer(at(1), { type: "JUMP", index: 4 });
+    expect(s.mic).toBe("break-big");
+    expect(s.bed).toBe("bed");
+    expect(s.playSeq).toBe(at(1).playSeq + 1);
+    expect(s.micSeq).toBe(at(1).micSeq + 1);
+  });
+  it("JUMP out of bounds is a no-op; JUMP while stopped starts the loop", () => {
+    expect(reducer(loaded, { type: "JUMP", index: 9 })).toBe(loaded);
+    expect(at(3).loop).toBe("running");
+  });
+  it("HALT stops with the error", () => {
+    const s = reducer(at(1), { type: "HALT", error: "device gone" });
+    expect(s.loop).toBe("stopped");
+    expect(s.error).toBe("device gone");
   });
 });

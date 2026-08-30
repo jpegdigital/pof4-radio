@@ -58,14 +58,14 @@ export function Player({
           {face.kind === "talk" && (
             <>
               <div className="truncate text-base font-medium">{face.dj} on the mic</div>
-              <div className="truncate text-sm text-zinc-400">Block {face.seq}</div>
+              <div className="truncate text-sm text-zinc-400">Segment {face.seq}</div>
               <div className="truncate font-mono text-xs text-zinc-500">{face.excerpt}</div>
             </>
           )}
           {face.kind === "planning" && (
             <>
-              <div className="truncate text-base font-medium">Next block</div>
-              <div className="truncate text-sm text-zinc-400">{face.dj} is picking the tracks…</div>
+              <div className="truncate text-base font-medium">Next segment</div>
+              <div className="truncate text-sm text-zinc-400">{face.dj} is producing the segment…</div>
             </>
           )}
         </div>

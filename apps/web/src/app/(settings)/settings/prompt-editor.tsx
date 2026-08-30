@@ -1,6 +1,6 @@
 "use client";
 
-import { fillVars, PROMPT_VAR_HELP, type PromptVar, turnVars } from "@radio/dj";
+import { fillVars, PROMPT_VAR_HELP, type PromptVar } from "@radio/dj";
 import { Fragment, useActionState, useRef, useState } from "react";
 import { type SaveState, savePrompt } from "./actions";
 
@@ -17,26 +17,33 @@ interface Slot {
   vars: readonly PromptVar[];
 }
 
-const SAMPLE = turnVars({
-  prompt: "late-night soul with horns",
+/** A sample segment, for the preview: what each placeholder looks like filled. */
+const SAMPLE: Record<PromptVar, string> = {
+  request: "Saturday night 80s, Dallas, hits-forward, keep it warm",
   dj: "David Wolfe",
-  promptChanged: false,
-  previous: {
-    talk: "That was Al Green with Simply Beautiful, cut in Memphis in seventy-two. Let's stay in that room a little longer.",
-    tracks: [
-      { id: "1", uri: "", name: "Simply Beautiful", artists: ["Al Green"], album: "", durationMs: 0 },
-      { id: "2", uri: "", name: "A Song for You", artists: ["Donny Hathaway"], album: "", durationMs: 0 },
-      {
-        id: "3",
-        uri: "",
-        name: "I'd Rather Be with You",
-        artists: ["Bootsy Collins"],
-        album: "",
-        durationMs: 0,
-      },
-    ],
-  },
-});
+  identity: 'WFAI, Dallas — said on air as "56.6, Claude Radio"',
+  clock: "8:43 pm",
+  played: [
+    "1. Duran Duran — Hungry Like the Wolf",
+    "2. Prince — When Doves Cry",
+    "3. Eurythmics — Sweet Dreams",
+  ].join("\n"),
+  record: 'Duran Duran — "Hungry Like the Wolf" (album: Rio; this version runs 221 s)',
+  slot: "record 2 of 4",
+  records: [
+    "  1. Duran Duran — Hungry Like the Wolf (221 s)",
+    "→ 2. Prince — When Doves Cry (351 s)  ← this slot",
+    "  3. Eurythmics — Sweet Dreams (216 s)",
+    "  4. Tears for Fears — Shout (390 s)",
+  ].join("\n"),
+  cards:
+    "Prince — When Doves Cry: intro 12 s (unsure), the vocal comes in on the first verse, no count-in; ends fade; energy 4/5, mid-tempo; stark, electric. Talking points: no bass on the record · 1984",
+  previous_words: [
+    "WFAI, Dallas. 56.6, Claude Radio. It's eight forty-three, and this is the hour the neon comes on. Let's go.",
+    "Duran Duran, Rio, and the single that put them on every wall in America.",
+  ].join("\n\n"),
+  legal_id: "WFAI, Dallas. 56.6, Claude Radio.",
+};
 
 export function PromptEditor({
   slot,
@@ -137,7 +144,7 @@ export function PromptEditor({
           )}
           {save.error && <span className="text-sm text-red-400">{save.error}</span>}
           {!dirty && save.savedAt && !save.error && (
-            <span className="text-sm text-zinc-500">Saved — applies to the next block.</span>
+            <span className="text-sm text-zinc-500">Saved — applies to the next segment.</span>
           )}
         </div>
       </form>
@@ -145,7 +152,7 @@ export function PromptEditor({
       {slot.vars.length > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="font-display text-sm uppercase tracking-[0.2em] text-zinc-500">
-            As the DJ reads it · sample block
+            As the DJ reads it · sample segment
           </h2>
           <Preview text={text} vars={slot.vars} />
         </section>

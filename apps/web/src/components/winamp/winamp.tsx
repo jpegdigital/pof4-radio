@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { guarded, keepGuardAlive } from "@/lib/guard-client";
+import { keepGuardAlive } from "@/lib/guard-client";
 import type { PlayerFace } from "../station/player";
-import { cursorSegment, type SegmentView, type StationEvent } from "../station/reducer";
+import { ahead, awaiting, inGap, nextRecord, onAir, type ProgramEvent, segmentAt } from "../station/reducer";
 import type { StationSummary } from "../station/resume-picker";
 import {
   beginLogin,
@@ -15,17 +15,17 @@ import {
   type SpotifyIdentity,
 } from "../station/spotify-account";
 import { useMediaSession } from "../station/use-media-session";
+import { useProgram } from "../station/use-program";
 import { USER_VOLUME, useSpotifyDevice } from "../station/use-spotify-device";
-import { useStation } from "../station/use-station";
 import { type Dj, findDj, loadDj, saveDj } from "../station/voice-store";
 import { type MainClock, MainWindow } from "./main-window";
-import { firstSentence, PlaylistWindow } from "./playlist-window";
+import { PlaylistWindow } from "./playlist-window";
 import { MAIN, SKIN } from "./skin";
 import { useZoom } from "./use-zoom";
 
 /**
  * The station wearing a Winamp skin. Same machinery as the home page — the account, the
- * browser as the Spotify device, the loop (use-station), the lock screen — with the skin's two
+ * browser as the Spotify device, the loop (use-program), the lock screen — with the skin's two
  * windows as the face: the main window is the transport (Play is "go on air" when off air),
  * the playlist is the show, and the request console is the head of the playlist.
  */
@@ -66,24 +66,31 @@ export function Winamp({
   const enabled = premium && account !== null;
   const [prompt, setPrompt] = useState("");
   const [dj, setDj] = useState<Dj>(() => findDj(djs, ""));
-  const [stationId, setStationId] = useState<string | null>(null);
   const promptRef = useRef(prompt);
   useEffect(() => {
     promptRef.current = prompt;
   }, [prompt]);
 
-  const dispatchRef = useRef<(e: StationEvent) => void>(() => {});
+  const dispatchRef = useRef<(e: ProgramEvent) => void>(() => {});
   const device = useSpotifyDevice(clientId, {
-    onTrackListEnded: () => dispatchRef.current({ type: "ENDED" }),
-    onTrackChanged: (uri) => dispatchRef.current({ type: "TRACK_CHANGED", uri }),
+    onTrackListEnded: () => dispatchRef.current({ type: "TRACK_ENDED" }),
+    onTrackChanged: () => {},
     onLost: (error) => dispatchRef.current({ type: "HALT", error }),
   });
-  const { state, dispatch, talkPlayback, toggle, prev, next, unlock } = useStation({
+  const {
+    state,
+    dispatch,
+    station,
+    micClock,
+    unlock,
+    seekMic,
+    open,
+    resume: resumeStation,
+    clear,
+  } = useProgram({
     device,
-    stationId,
     dj,
     getPrompt: () => promptRef.current,
-    onStation: setStationId,
   });
   useEffect(() => {
     dispatchRef.current = dispatch;
@@ -96,22 +103,18 @@ export function Winamp({
   useEffect(keepGuardAlive, []);
 
   const resume = async (id: string) => {
-    const res = await guarded(`/api/station/${id}`, { cache: "no-store" });
-    if (!res.ok) return;
-    const data = (await res.json()) as { stationId: string; prompt: string; segments: SegmentView[] };
-    setStationId(data.stationId);
-    setPrompt(data.prompt);
-    dispatch({ type: "LOAD_SHOW", segments: [...data.segments].sort((a, b) => a.seq - b.seq) });
+    const info = await resumeStation(id);
+    if (info) setPrompt(info.prompt);
   };
 
   const ready = device.status.kind === "ready";
   const running = state.loop === "running";
-  const fresh = !running && state.segments.length === 0;
+  const fresh = !running && state.segments.length === 0 && !state.producing;
   const requestBox = useRef<HTMLTextAreaElement>(null);
   const [needRequest, setNeedRequest] = useState(false);
   const arming = device.status.kind === "connecting";
-  const armed = useRef<StationEvent | null>(null);
-  const arm = (e: StationEvent) => {
+  const armed = useRef<ProgramEvent | null>(null);
+  const arm = (e: ProgramEvent) => {
     armed.current = e;
     void device.connect();
   };
@@ -127,62 +130,88 @@ export function Winamp({
   }, [ready, device.status.kind, dispatch]);
 
   const goOnAir = () => {
-    if (prompt.trim() === "") {
+    if (!station && prompt.trim() === "") {
       setNeedRequest(true);
       requestBox.current?.focus();
       return;
     }
     unlock();
     device.activate();
+    if (!station) void open(prompt.trim());
     if (ready) dispatch({ type: "RUN" });
     else arm({ type: "RUN" });
   };
-  const jump = (seg: number, item: number) => {
+  const jump = (index: number) => {
     unlock();
     device.activate();
-    if (ready) dispatch({ type: "JUMP", seg, item });
-    else arm({ type: "JUMP", seg, item });
+    if (ready) dispatch({ type: "JUMP", index });
+    else arm({ type: "JUMP", index });
   };
 
-  const cur = cursorSegment(state);
+  const el = onAir(state);
   const cursor = state.cursor;
-  const talking = running && state.phase === "playing" && cursor?.item === 0;
+  const seg = segmentAt(state, cursor);
+  const talking = running && state.mic !== null;
+  const gap = inGap(state);
+  const trackClock = (uri: string, durationMs: number) => {
+    const p = device.playback;
+    const live = p?.uri === uri ? p : null;
+    return live
+      ? { paused: live.paused, position: live.position, duration: live.duration, at: live.at }
+      : { paused: true, position: 0, duration: durationMs, at: 0 };
+  };
 
   // The face, as the home page builds it — the lock screen reads it, and the skin is cut from it.
   const face: PlayerFace | null = (() => {
-    if (state.phase === "planning") return { kind: "planning", dj: dj.name };
-    if (!cur || !cursor) return null;
-    if (cursor.item === 0) {
+    if (gap && awaiting(state) && state.music.level === "off") return { kind: "planning", dj: dj.name };
+    if (gap) {
+      const r = nextRecord(state);
+      if (r)
+        return {
+          kind: "track",
+          name: r.name,
+          artists: r.artists,
+          album: r.album,
+          image: r.image,
+          playback: trackClock(r.uri, r.durationMs),
+        };
+    }
+    if (!el) return null;
+    if (el.kind === "break") {
       return {
         kind: "talk",
         dj: dj.name,
         initial: dj.name.charAt(0).toUpperCase(),
-        seq: cur.seq,
-        excerpt: firstSentence(cur.talk),
+        seq: seg?.seq ?? 0,
+        excerpt: el.label,
         playback: !running
           ? { paused: true, position: 0, duration: 0, at: 0 }
-          : talkPlayback && talkPlayback.duration > 0
-            ? talkPlayback
+          : micClock && micClock.duration > 0
+            ? micClock
             : null,
       };
     }
-    const t = cur.tracks[cursor.item - 1];
-    if (!t) return null;
-    const p = device.playback;
-    const live = p?.uri === t.uri ? p : null;
     return {
       kind: "track",
-      name: t.name,
-      artists: t.artists,
-      album: t.album,
-      image: live?.track?.image ?? null,
-      playback: live
-        ? { paused: live.paused, position: live.position, duration: live.duration, at: live.at }
-        : { paused: true, position: 0, duration: t.durationMs, at: 0 },
+      name: el.track.name,
+      artists: el.track.artists,
+      album: el.track.album,
+      image: el.track.image,
+      playback: trackClock(el.track.uri, el.track.durationMs),
     };
   })();
-  const canPrev = cursor !== null && !(cursor.seg === 0 && cursor.item === 0);
-  const canNext = cursor !== null && state.phase === "playing";
+  const toggle = () => {
+    if (!running) return;
+    if (state.mic && el?.kind === "break") {
+      if (micClock?.paused) seekMic(micClock.position);
+      return;
+    }
+    void (device.playback?.paused ? device.resume() : device.pause()).catch(() => {});
+  };
+  const prev = () => dispatch({ type: "PREV" }); // Winamp's Play is the restart; Prev always goes back
+  const next = () => dispatch({ type: "NEXT" });
+  const canPrev = cursor !== null && cursor > 0;
+  const canNext = cursor !== null && !gap;
   useMediaSession({ face, running, canPrev, canNext, onToggle: toggle, onPrev: prev, onNext: next });
 
   // What the main window shows.
@@ -193,9 +222,9 @@ export function Winamp({
       if (arming) return "activating this tab as the player...";
       return state.segments.length > 0 ? "claude radio - stopped" : "claude radio - off air";
     }
-    if (!face || face.kind === "planning") return `${dj.name} is picking the tracks...`;
-    if (face.kind === "talk") return `${face.seq}. ${face.dj} on the mic - ${face.excerpt}`;
-    const n = cursor ? cursor.item : 0;
+    if (!face || face.kind === "planning") return `${dj.name} is producing the segment...`;
+    if (face.kind === "talk") return `${face.seq}. ${face.dj} on the mic - ${face.excerpt.toLowerCase()}`;
+    const n = cursor === null ? 0 : cursor + 1;
     return `${n}. ${face.artists.join(", ")} - ${face.name} (${fmt(face.playback.duration)})`;
   })();
 
@@ -205,7 +234,7 @@ export function Winamp({
       return;
     }
     if (clock?.paused) toggle();
-    else if (cursor) dispatch({ type: "JUMP", ...cursor }); // Winamp's Play restarts the track
+    else if (cursor !== null && !gap) dispatch({ type: "JUMP", index: cursor }); // Winamp's Play restarts the track
   };
   const eject = () => requestBox.current?.focus();
 
@@ -237,7 +266,8 @@ export function Winamp({
         onEject={eject}
       />
       <PlaylistWindow
-        segments={state.segments}
+        elements={state.elements}
+        ahead={ahead(state)}
         cursor={cursor}
         dj={dj.name}
         onJump={jump}
@@ -258,8 +288,8 @@ export function Winamp({
             {needRequest && prompt.trim() === "" && (
               <div className="wa-err">tell the DJ what you want to hear first</div>
             )}
-            {running && prompt.trim() !== (cur?.prompt ?? prompt.trim()) && (
-              <div className="wa-dim">the new request reaches the DJ on the next block</div>
+            {station && prompt.trim() !== "" && prompt.trim() !== station.prompt && (
+              <div className="wa-dim">the new request reaches the DJ on the next segment</div>
             )}
             <div className="wa-console-row">
               <span className="wa-dim">DJ</span>
@@ -311,7 +341,7 @@ export function Winamp({
                 </button>
               </div>
             )}
-            {fresh && !stationId && stations.length > 0 && (
+            {fresh && !station && stations.length > 0 && (
               <div className="wa-console-row">
                 <span className="wa-dim">resume</span>
                 <select
@@ -322,25 +352,18 @@ export function Winamp({
                   <option value="">a past show...</option>
                   {stations.map((s) => (
                     <option key={s.stationId} value={s.stationId}>
-                      {when(s.updatedAt)} · {s.segmentCount} block{s.segmentCount === 1 ? "" : "s"} ·{" "}
-                      {s.prompt}
+                      {when(s.updatedAt)} · {s.dj} · {s.segmentCount} segment{s.segmentCount === 1 ? "" : "s"}{" "}
+                      · {s.prompt}
                     </option>
                   ))}
                 </select>
               </div>
             )}
-            {!running && stationId && cursor === null && state.segments.length > 0 && (
+            {!running && station && cursor === null && state.segments.length > 0 && (
               <div className="wa-dim">
-                resuming ({state.segments.length} block{state.segments.length === 1 ? "" : "s"}) — tap a line,
-                or press play.{" "}
-                <button
-                  type="button"
-                  className="wa-link"
-                  onClick={() => {
-                    setStationId(null);
-                    dispatch({ type: "CLEAR_SHOW" });
-                  }}
-                >
+                resuming ({state.segments.length} segment{state.segments.length === 1 ? "" : "s"}) — tap a
+                line, or press play.{" "}
+                <button type="button" className="wa-link" onClick={clear}>
                   start fresh
                 </button>
               </div>

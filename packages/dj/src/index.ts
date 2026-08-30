@@ -1,19 +1,65 @@
-export { describeTrack, type DjDeps, type DjInput, type DjOutput, planSegment, resolveFinish } from "./dj.ts";
-export { capHistory, DEFAULT_MAX_SEGMENTS, MESSAGES_PER_SEGMENT, trimTurn, withCache } from "./history.ts";
 export {
-  buildUserTurn,
+  assemble,
+  type AssembleInput,
+  assembleSlot,
+  type SlotInput,
+  sweeperPicker,
+} from "./program/assemble.ts";
+export {
+  BEAT_MS,
+  BREAK_MS,
+  type CheckInput,
+  checkSegmentLog,
+  checkSlot,
+  hourTurnedBetween,
+  layBreaks,
+  LEAD_FALLBACK_MS,
+  MIN_TALKUP_INTRO_MS,
+  type RawSlot,
+  RULES_TEXT,
+  SEGMENT_MAX,
+  SEGMENT_MIN,
+  SKELETON_MAX,
+  SKELETON_MIN,
+  TALKUP_LATE_MS,
+} from "./program/clock-rules.ts";
+export {
+  CARD_TOOL,
+  clockOf,
+  DISCOVER_TOOL,
   fillVars,
-  type PreviousSegment,
   PROMPT_SLOTS,
   PROMPT_VAR_HELP,
   type PromptKey,
   type PromptTemplate,
   type PromptVar,
-  TOOLS,
   templateFrom,
-  type TurnInput,
-  turnVars,
-} from "./prompt.ts";
+  SLOT_TOOL,
+  type SlotLine,
+} from "./program/prompt.ts";
+export {
+  Card,
+  CardFacts,
+  Dropped,
+  type Element,
+  ElementShape,
+  Fallback,
+  Identity,
+  Intro,
+  Line,
+  LogFallback,
+  LogSlot,
+  Note,
+  Pick,
+  Record,
+  SegmentLog,
+  SegmentView,
+  Skeleton,
+  type Talk,
+  type Track,
+  Treatment,
+} from "./program/shapes.ts";
+export { type Alignment, type ClipInfo, textOf, timingsOf } from "./program/timings.ts";
 export {
   parseVoices,
   summarize,
