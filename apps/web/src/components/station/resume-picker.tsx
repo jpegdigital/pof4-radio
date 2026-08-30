@@ -2,7 +2,7 @@ import { ChevronDown, History } from "lucide-react";
 import { focusRing } from "./ui";
 
 /**
- * Pick up a past show. The list arrives with the page (app/(app)/page.tsx), so it is there on
+ * Pick up a past show. The list arrives with the page (app/old/page.tsx), so it is there on
  * first paint. Shown only on a fresh page, before anything is on air: choosing a station loads
  * every kept segment as it was produced — nothing is re-made; going on air plays it from the
  * top (or any tapped row), and past its end the next segment follows from it.

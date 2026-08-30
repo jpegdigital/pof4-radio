@@ -24,7 +24,7 @@ export interface SpotifyAccount extends SpotifyIdentity {
 }
 
 const ACCOUNT_KEY = "radio.spotify";
-/** The identity cookie the server page reads (app/(app)/page.tsx). */
+/** The identity cookie the server page reads (app/old/page.tsx). */
 export const IDENTITY_COOKIE = "radio.spotify.who";
 const FLOW_KEY = "radio.spotify.flow"; // sessionStorage: { state, verifier } across the redirect
 
