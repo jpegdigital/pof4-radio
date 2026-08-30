@@ -15,6 +15,9 @@ const RAMP_MS = 500;
 const RAMP_STEPS = 10;
 /** An outro talk ends this long before the track does. */
 export const TAIL_MS = 1000;
+/** A bed fades out over this long, ending where the next song starts. */
+export const BED_FADE_MS = 1500;
+const FADE_STEPS = 15;
 /** A few ms of silence (WAV); playing it inside a tap unlocks the element for later `play()`s on iOS. */
 const SILENCE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
 
@@ -83,16 +86,41 @@ export function useProgram({ device, elements }: { device: SpotifyDevice; elemen
     if (ramp.current) clearInterval(ramp.current);
     ramp.current = null;
   };
+  /** Step the device's volume to `target` over `ms` (the SDK has no fade of its own). */
+  const rampTo = (target: number, ms: number, steps: number) => {
+    stopRamp();
+    const d = dev.current;
+    const from = volume.current;
+    let step = 0;
+    ramp.current = setInterval(() => {
+      step += 1;
+      volume.current = from + ((target - from) * step) / steps;
+      void d.setVolume(volume.current).catch(() => {});
+      if (step >= steps) stopRamp();
+    }, ms / steps);
+  };
+
+  const el = onAir(state);
+  // A break's bed waits for `bedInMs` (the legal ID before it is dry).
+  const bedIn = el?.kind === "break" ? (el.bedInMs ?? 0) : 0;
   useEffect(() => {
     if (!running || !musicUri || level === "off") return;
     stopRamp();
     const d = dev.current;
-    volume.current = LEVELS[level];
-    void d.setVolume(volume.current).catch(() => {});
-    d.play([musicUri], 0).catch((err: unknown) =>
-      dispatch({ type: "HALT", error: err instanceof Error ? err.message : String(err) }),
-    );
-    // `level` is read for the starting volume only; a change of level is effect 2b's business.
+    const start = () => {
+      volume.current = LEVELS[level];
+      void d.setVolume(volume.current).catch(() => {});
+      d.play([musicUri], 0).catch((err: unknown) =>
+        dispatch({ type: "HALT", error: err instanceof Error ? err.message : String(err) }),
+      );
+    };
+    if (bedIn <= 0) {
+      start();
+      return;
+    }
+    const t = setTimeout(start, bedIn);
+    return () => clearTimeout(t);
+    // `level`/`bedIn` are read for the start only; a change of level is the next effect's business.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.playSeq, running, musicUri]);
 
@@ -109,21 +137,15 @@ export function useProgram({ device, elements }: { device: SpotifyDevice; elemen
       return;
     }
     const target = LEVELS[level];
-    const from = volume.current;
-    stopRamp();
-    if (target <= from) {
+    if (target <= volume.current) {
+      stopRamp();
       volume.current = target;
       void d.setVolume(target).catch(() => {});
       return;
     }
-    let step = 0;
-    ramp.current = setInterval(() => {
-      step += 1;
-      volume.current = from + ((target - from) * step) / RAMP_STEPS;
-      void d.setVolume(volume.current).catch(() => {});
-      if (step >= RAMP_STEPS) stopRamp();
-    }, RAMP_MS / RAMP_STEPS);
+    rampTo(target, RAMP_MS, RAMP_STEPS);
     return stopRamp;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [level, state.playSeq]);
 
   // 3. Mic lane.
@@ -141,35 +163,35 @@ export function useProgram({ device, elements }: { device: SpotifyDevice; elemen
       return;
     }
     if (!micUrl) return; // still loading; the lane shows it
-    const el = (audio.current ??= new Audio());
+    const a = (audio.current ??= new Audio());
     const report = () =>
       setMicClock({
-        paused: el.paused,
-        position: el.currentTime * 1000,
-        duration: Number.isFinite(el.duration) ? el.duration * 1000 : 0,
+        paused: a.paused,
+        position: a.currentTime * 1000,
+        duration: Number.isFinite(a.duration) ? a.duration * 1000 : 0,
         at: performance.now(),
       });
-    el.src = micUrl;
-    el.onended = () => dispatch({ type: "CLIP_ENDED", clip: mic });
-    el.onerror = () => dispatch({ type: "CLIP_FAILED", clip: mic });
-    el.onplay = report;
-    el.onpause = report;
-    el.play().catch(() => dispatch({ type: "CLIP_FAILED", clip: mic }));
+    a.src = micUrl;
+    a.onended = () => dispatch({ type: "CLIP_ENDED", clip: mic });
+    a.onerror = () => dispatch({ type: "CLIP_FAILED", clip: mic });
+    a.onplay = report;
+    a.onpause = report;
+    a.play().catch(() => dispatch({ type: "CLIP_FAILED", clip: mic }));
     const tick = setInterval(() => {
-      if (!el.paused) report();
+      if (!a.paused) report();
     }, 250);
     return () => {
       clearInterval(tick);
-      el.onended = null;
-      el.onerror = null;
-      el.onplay = null;
-      el.onpause = null;
-      el.pause();
+      a.onended = null;
+      a.onerror = null;
+      a.onplay = null;
+      a.onpause = null;
+      a.pause();
     };
-  }, [mic, micUrl, micError, state.playSeq]);
+    // micSeq, not playSeq: a lead restarts the music lane while this clip keeps talking.
+  }, [mic, micUrl, micError, state.micSeq]);
 
   // 4. Outro back-timer, re-armed on every playback report (a seek or a pause moves the due time).
-  const el = onAir(state);
   const outro =
     running && el?.kind === "song" && el.talk?.over === "outro" && !state.mic ? el.talk.clip : null;
   const outroEntry = outro ? clips.get(outro) : undefined;
@@ -183,7 +205,36 @@ export function useProgram({ device, elements }: { device: SpotifyDevice; elemen
     return () => clearTimeout(t);
   }, [outro, outroLen, pb, musicUri]);
 
-  // 5. Stopped → silence; unmount → the element goes quiet too.
+  // 5. A break's lead and its bed's fade, back-timed off the mic clock (re-armed on every report).
+  //    The fade ends where the lead starts (or where the clip ends, for a hard intro).
+  const brk = running && el?.kind === "break" && state.mic === el.clip ? el : null;
+  const micAt = micClock?.at;
+  const faded = useRef(-1); // the micSeq whose bed fade has started, so a re-arm never restarts it
+  useEffect(() => {
+    if (!brk || !micClock || micClock.paused || micClock.duration <= 0) return;
+    const pos = micClock.position + (performance.now() - micClock.at);
+    const handoff = micClock.duration - brk.leadMs;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    if (brk.leadMs > 0)
+      timers.push(setTimeout(() => dispatch({ type: "LEAD_DUE" }), Math.max(0, handoff - pos)));
+    if (brk.bed && faded.current !== state.micSeq) {
+      timers.push(
+        setTimeout(
+          () => {
+            faded.current = state.micSeq;
+            rampTo(0, BED_FADE_MS, FADE_STEPS);
+          },
+          Math.max(0, handoff - BED_FADE_MS - pos),
+        ),
+      );
+    }
+    return () => {
+      for (const t of timers) clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brk, micAt]);
+
+  // 6. Stopped → silence; unmount → the element goes quiet too.
   useEffect(() => {
     if (running) return;
     stopRamp();

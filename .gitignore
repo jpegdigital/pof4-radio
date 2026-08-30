@@ -12,3 +12,6 @@ out/
 
 # Claude Code local plugin settings
 .claude/
+
+# practice program, pre-generated locally (scripts/program-prep.mjs)
+apps/web/public/program/

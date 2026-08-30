@@ -84,15 +84,27 @@ function Row({
   onSeek: (lane: "music" | "mic", ms: number) => void;
 }) {
   const clipLen = clip && "url" in clip ? clip.durationMs : null;
-  const musicLen =
-    el.kind === "song" ? el.track.durationMs : el.kind === "break" ? (el.bed?.durationMs ?? 0) : 0;
-  const total = Math.max(musicLen, clipLen ?? 0, 1);
+  // A break's axis is its clip; the bed runs from `bedInMs` to the lead. A song's axis is the track.
+  const isBreak = el.kind === "break";
+  const musicStart = isBreak ? (el.bedInMs ?? 0) : 0;
+  const musicLen = isBreak
+    ? el.bed && clipLen !== null
+      ? Math.max(0, clipLen - el.leadMs - musicStart)
+      : 0
+    : el.track.durationMs;
+  const total = Math.max(isBreak ? (clipLen ?? 1) : musicLen, 1);
   const pct = (ms: number) => `${(ms / total) * 100}%`;
   const outro = el.kind === "song" && el.talk?.over === "outro";
   const micStart = outro && clipLen !== null ? Math.max(0, musicLen - clipLen - TAIL_MS) : 0;
   const musicLevel: Level = live ? state.music.level : restingLevel(el);
-  const musicPos = live && playback && playback.uri === state.music.uri ? playback.position : null;
   const micOn = live && state.mic !== null;
+  const musicPos = isBreak
+    ? micOn && micClock
+      ? micClock.position
+      : null
+    : live && playback && playback.uri === state.music.uri
+      ? playback.position
+      : null;
 
   /** Where on the row's time axis a click landed, in ms. */
   const at = (e: MouseEvent<HTMLElement>) => {
@@ -111,7 +123,7 @@ function Row({
           {title(el)}
         </button>
         <span className="shrink-0 font-mono text-xs text-zinc-500">
-          {musicLen > 0 && fmt(musicLen)}
+          {!isBreak && fmt(musicLen)}
           {clipLen !== null && ` · mic ${fmt(clipLen)}`}
           {clip && "error" in clip && " · no clip"}
         </span>
@@ -122,10 +134,13 @@ function Row({
         {/* biome-ignore lint/a11y/useKeyWithClickEvents: same */}
         <div
           className={`relative h-3 overflow-hidden rounded bg-zinc-800 ${musicLen > 0 ? "cursor-pointer" : ""}`}
-          onClick={(e) => musicLen > 0 && onSeek("music", Math.min(at(e), musicLen))}
+          onClick={(e) => !isBreak && musicLen > 0 && onSeek("music", Math.min(at(e), musicLen))}
         >
           {musicLen > 0 && (
-            <div className={`h-full ${LEVEL_CLASS[musicLevel]}`} style={{ width: pct(musicLen) }} />
+            <div
+              className={`h-full ${LEVEL_CLASS[musicLevel]}`}
+              style={{ width: pct(musicLen), marginLeft: pct(musicStart) }}
+            />
           )}
           {musicPos !== null && (
             <div className="absolute top-0 h-full w-0.5 bg-white" style={{ left: pct(musicPos) }} />
@@ -167,7 +182,8 @@ function title(el: Element): string {
     const talk = el.talk ? ` · talk-up over the ${el.talk.over}` : " · straight in";
     return `${el.track.artists.join(", ")} — ${el.track.name}${talk}`;
   }
-  return `${el.label}${el.kind === "break" && el.bed ? " · bed under" : " · dry"}`;
+  const bed = el.bed ? (el.bedInMs ? " · dry, then bed under" : " · bed under") : " · dry";
+  return `${el.label}${bed}${el.leadMs ? " · talks the next song in" : " · hard intro"}`;
 }
 
 function fmt(ms: number): string {
