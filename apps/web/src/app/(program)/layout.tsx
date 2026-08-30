@@ -15,12 +15,20 @@ export default function ProgramLayout({ children }: { children: ReactNode }) {
             Claude Radio · the program
           </span>
         </div>
-        <Link
-          href="/"
-          className="font-display text-sm uppercase tracking-[0.2em] text-zinc-500 transition hover:text-zinc-300"
-        >
-          ← the station
-        </Link>
+        <nav className="flex items-baseline gap-5">
+          <Link
+            href="/program/make"
+            className="font-display text-sm uppercase tracking-[0.2em] text-zinc-500 transition hover:text-zinc-300"
+          >
+            the maker
+          </Link>
+          <Link
+            href="/"
+            className="font-display text-sm uppercase tracking-[0.2em] text-zinc-500 transition hover:text-zinc-300"
+          >
+            ← the station
+          </Link>
+        </nav>
       </header>
       <main className="flex flex-1 flex-col gap-6">{children}</main>
     </div>

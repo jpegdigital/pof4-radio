@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The program — hot path and the dance</title>
+<style>
+  :root { color-scheme: light dark;
+    --bg:#fbfaf7; --fg:#1f1d1a; --muted:#6b665e; --line:#e4e0d8; --code:#f2efe8; --accent:#b4531a; --nav:#f5f2ec;
+    --music:#3b82f6; --duck:#1e3a8a; --mic:#d4a017; --bed:#8b5cf6; --amber:#b45309; --amberbg:#fdf3e2; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161513; --fg:#e8e4dc; --muted:#a09a90; --line:#2c2a26; --code:#211f1c; --accent:#f0a06a; --nav:#1c1a17;
+    --music:#60a5fa; --duck:#1e40af; --mic:#facc15; --bed:#a78bfa; --amber:#fbbf24; --amberbg:#3a2a10; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 16px/1.6 Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  .wrap { display:grid; grid-template-columns: 260px minmax(0,1fr); min-height:100vh; }
+  nav { position:sticky; top:0; height:100vh; overflow:auto; padding:28px 20px; background:var(--nav); border-right:1px solid var(--line);
+        font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  nav .t { font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:12px; font-size:11px; }
+  nav a { display:block; color:var(--fg); text-decoration:none; padding:3px 0; }
+  nav a.l3 { padding-left:14px; color:var(--muted); }
+  nav a:hover { color:var(--accent); }
+  main { padding: 48px 56px 96px; max-width: 960px; }
+  h1 { font-size:2.2rem; line-height:1.15; margin:0 0 .3em; letter-spacing:-.01em; }
+  h2 { font-size:1.5rem; margin:2.4em 0 .6em; padding-top:.6em; border-top:1px solid var(--line); }
+  h3 { font-size:1.15rem; margin:1.8em 0 .5em; }
+  h1+p { color:var(--muted); font-style:italic; }
+  p, li { max-width: 76ch; }
+  a { color:var(--accent); }
+  code { font: 0.86em/1.5 ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; background:var(--code); padding:.1em .35em; border-radius:4px; }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:14px 16px; overflow-x:auto; font-size:.8rem; line-height:1.45; position:relative; }
+  pre code { background:none; padding:0; font-size:inherit; }
+  pre[data-lang]::before { content: attr(data-lang); position:absolute; top:6px; right:10px; font: 10px ui-sans-serif, system-ui; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; font-size:.9rem; margin:1em 0; }
+  th, td { text-align:left; vertical-align:top; padding:8px 12px; border-bottom:1px solid var(--line); }
+  th { font: 600 .78rem ui-sans-serif, system-ui; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .note { border-left:3px solid var(--accent); padding:.4em 1em; margin:1.2em 0; background:var(--code); border-radius:0 8px 8px 0; }
+  .fb { display:inline-block; font: 12px ui-monospace, monospace; color:var(--amber); background:var(--amberbg); border:1px solid var(--amber); border-radius:999px; padding:0 .6em; }
+  /* lane diagrams */
+  .lanes { font: 12px ui-sans-serif, system-ui, sans-serif; margin:1.2em 0; border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:var(--code); }
+  .lanes .row { display:grid; grid-template-columns: 56px 1fr; align-items:center; gap:10px; margin:4px 0; }
+  .lanes .lbl { color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font-size:10px; }
+  .lanes .bar { position:relative; height:16px; background:var(--line); border-radius:3px; overflow:visible; }
+  .lanes .seg { position:absolute; top:0; height:100%; border-radius:3px; }
+  .lanes .music { background:var(--music); } .lanes .duck { background:var(--duck); } .lanes .mic { background:var(--mic); } .lanes .bed { background:var(--bed); }
+  .lanes .mark { position:absolute; top:-6px; height:28px; width:2px; background:var(--fg); }
+  .lanes .cap { color:var(--muted); font-size:11px; margin-top:8px; }
+  .lanes .ticks { display:grid; grid-template-columns: 56px 1fr; gap:10px; }
+  .lanes .ticks div { position:relative; height:14px; color:var(--muted); font-size:10px; }
+  .lanes .ticks span { position:absolute; transform:translateX(-50%); }
+  .legend span { display:inline-block; width:12px; height:12px; border-radius:2px; vertical-align:-1px; margin:0 4px 0 12px; }
+  .flow { display:grid; grid-template-columns: repeat(5, 1fr); gap:8px; font: 12px ui-sans-serif, system-ui; margin:1em 0; }
+  .flow .st { border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:var(--code); }
+  .flow .st b { display:block; font-size:13px; letter-spacing:.06em; text-transform:uppercase; }
+  .flow .st .io { color:var(--muted); margin-top:4px; }
+  .flow .st .m { margin-top:4px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } nav { position:static; height:auto; } main { padding:24px 20px 64px; } .flow { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <div class="t">The program</div>
+  <a href="#breath">In one breath</a>
+  <a href="#hotpath">1. The hot path (what should happen on air)</a>
+  <a class="l3" href="#hp-break">A break</a>
+  <a class="l3" href="#hp-talkup">A talk-up</a>
+  <a class="l3" href="#hp-hour">The top of the hour</a>
+  <a href="#maker">2. The maker's dance (program side)</a>
+  <a class="l3" href="#stages">Five stages, five files</a>
+  <a class="l3" href="#claude">How Claude is asked</a>
+  <a class="l3" href="#checklog">checkLog — the hard rules</a>
+  <a class="l3" href="#timings">Timings from alignment, never search</a>
+  <a class="l3" href="#assemble">assemble — the ladder</a>
+  <a href="#player">3. The player's dance (UI/UX side)</a>
+  <a class="l3" href="#lanes">Three lanes, one reducer</a>
+  <a class="l3" href="#tap">The tap: unlock, connect, run</a>
+  <a class="l3" href="#effects">The seven effects</a>
+  <a class="l3" href="#events">Who fires what</a>
+  <a class="l3" href="#timeline">The timeline (cue sheet)</a>
+  <a href="#constants">4. Constants</a>
+  <a href="#files">5. Where things live</a>
+  <a href="#open">6. What's open</a>
+</nav>
+<main>
+
+<h1>The program — hot path and the dance</h1>
+<p>Read from the code on 2026-08-30. What an hour of radio is supposed to sound like, what the maker does to get there, and what the player does to put it on air. Companion to <a href="handoff.html">handoff.html</a>, which covers the live station; this covers <code>app/(program)/</code>.</p>
+
+<h2 id="breath">In one breath</h2>
+<p>A request ("Saturday night 80s, Dallas, hits-forward") becomes a <em>pre-generated</em> hour: Claude picks the records, writes a card for each, lays out the clock, writes every word; ElevenLabs voices it with character timestamps; a pure function turns all of that into an ordered <code>Element[]</code> the player can run. The player is a reducer with three lanes — the Spotify device, the voice, a looped bed — and one effects hook that makes the lanes real. Every timing is <em>derived</em> (a clip's length, a card's intro, a known character offset in the alignment); nothing is guessed at runtime, and every place the good version couldn't be had takes the next rung of a ladder and says so.</p>
+
+<div class="note"><strong>The whole design in one rule.</strong> Optimistic and fail-safe: do the cool thing when the numbers support it (land the post, talk the song in under the bed's fade, dry legal ID then bed), otherwise start with the song. Nothing ever stalls the show — a failed clip is <code>CLIP_FAILED</code>, which is treated exactly like <code>CLIP_ENDED</code>.</div>
+
+<h2 id="hotpath">1. The hot path — what should happen on air</h2>
+<p>The player reads one file, <code>program.json</code>, whose <code>elements</code> are the reducer's own type (<code>reducer.ts</code>):</p>
+<pre data-lang="ts"><code>type Element =
+  | { kind: "song"; track: Track; talk?: { clip; over: "intro" | "outro"; atMs? } }
+  | { kind: "break"; clip; bed?; bedInMs?; leadMs; label }</code></pre>
+<p>Four treatments the log can give a record (<code>Intro</code> in <code>shapes.ts</code>) become those two kinds:</p>
+<table>
+<tr><th>Treatment</th><th>Elements it becomes</th><th>What you hear</th></tr>
+<tr><td><code>break</code></td><td><code>break</code> (bed) then <code>song</code></td><td>Voice over a bed; the last line "talks the next song in" — the song starts ducked under it, comes up full when the clip ends.</td></tr>
+<tr><td><code>talkup</code></td><td><code>song</code> with <code>talk.over = "intro"</code></td><td>The song starts full; the voice comes in <code>atMs</code> into the intro (ducking it) and ends a beat before the first sung word — or, when the card isn't sure, 1.5 s in.</td></tr>
+<tr><td><code>sweeper</code></td><td><code>break</code> (no bed, <code>leadMs = 0</code>) then <code>song</code></td><td>A short dry ID, then a hard intro.</td></tr>
+<tr><td><code>segue</code></td><td><code>song</code></td><td>Straight out of the last record.</td></tr>
+</table>
+
+<h3 id="hp-break">A break, the ideal version</h3>
+<p>This is the one with the most moving parts. Take the real opening from the last walk: a 40.6 s clip, <code>leadMs = 6848</code>, no legal ID (not the top of the hour), so the bed comes in at 0.</p>
+<div class="lanes">
+  <div class="row"><span class="lbl">music</span><div class="bar"><div class="seg duck" style="left:83%;width:17%"></div><div class="seg music" style="left:100%;width:12%"></div></div></div>
+  <div class="row"><span class="lbl">mic</span><div class="bar"><div class="seg mic" style="left:0;width:100%"></div></div></div>
+  <div class="row"><span class="lbl">bed</span><div class="bar"><div class="seg bed" style="left:0;width:1%;opacity:.4"></div><div class="seg bed" style="left:1%;width:78.3%"></div><div class="seg bed" style="left:79.3%;width:3.7%;opacity:.5"></div></div></div>
+  <div class="ticks"><span></span><div><span style="left:0">0</span><span style="left:79.3%">clip − lead − 1.5 s</span><span style="left:100%">clip end</span></div></div>
+  <div class="cap">Bed up over 400 ms from <code>bedInMs</code>; fades over <code>BED_FADE_MS</code> (1500) so it reaches zero exactly at <code>clip − leadMs</code>. The next song is started <code>PREROLL_MS</code> (350) before that moment at the duck level (0.3); when the clip ends, <code>CLIP_ENDED</code> ramps it to full (0.8) over 500 ms in 25 steps. <span class="legend"><span style="background:var(--music)"></span>full <span style="background:var(--duck)"></span>ducked <span style="background:var(--mic)"></span>voice <span style="background:var(--bed)"></span>bed</span></div>
+</div>
+<p>Three things had to line up for that picture: the script wrote a separate <code>leadLine</code>; ElevenLabs returned an alignment; <code>timingsOf()</code> found the lead line's first character at a sane offset. Any one missing → <span class="fb">lead → end</span>: <code>leadMs = 0</code>, the song starts when the clip ends (still fine, just a hard intro).</p>
+
+<h3 id="hp-talkup">A talk-up, the ideal version</h3>
+<div class="lanes">
+  <div class="row"><span class="lbl">music</span><div class="bar"><div class="seg music" style="left:0;width:30%"></div><div class="seg duck" style="left:30%;width:52%"></div><div class="seg music" style="left:82%;width:18%"></div></div></div>
+  <div class="row"><span class="lbl">mic</span><div class="bar"><div class="seg mic" style="left:30%;width:52%"></div><div class="mark" style="left:84%"></div></div></div>
+  <div class="ticks"><span></span><div><span style="left:0">0</span><span style="left:30%">atMs</span><span style="left:82%">− 400 ms beat</span><span style="left:84%">post (introMs)</span></div></div>
+  <div class="cap"><code>atMs = introMs − clipMs − BEAT_MS</code>, only when <code>card.sure</code> and that number is ≥ 0. The device plays the song full from 0; a timer fires <code>TALK_DUE</code> at <code>atMs</code>, the reducer ducks the music and puts the clip on the mic; <code>CLIP_ENDED</code> brings the music back to full.</div>
+</div>
+<p>In the last walk every card came back <code>sure: false</code> (Opus is honest about "within a second or two"), so every talk-up took <span class="fb">post → late</span>: same shape, but <code>atMs = TALKUP_LATE_MS</code> (1500) — the song is clearly under way, then the voice comes in, and a long intro (24–38 s on those records) absorbs it. The log still only requires <code>introMs ≥ 7000</code>; <code>sure</code> decides between the two rungs in assembly. There is no talk-up at all if the clip failed: <span class="fb">late → none</span>, a plain song.</p>
+
+<h3 id="hp-hour">The top of the hour</h3>
+<p>The clock starts at <code>PROGRAM_START_MS</code> (8:43 pm). <code>hourAtSeqOf()</code> walks the log — each break costs <code>BREAK_MS</code> (30 s) plus each record's length — and the first slot that <em>starts</em> past 9:00 is the top of the hour: forced to <code>break</code> with <code>topOfHour = true</code>, whatever the model said. Its script line gets a separate <code>legalId</code>; it is spoken <em>dry</em> and the bed comes in at the character right after it (<code>bedInMs</code>). No alignment there → <span class="fb">bedIn → start</span>: the bed simply runs from 0. If an earlier break is closer than 3 songs, it is the one demoted to a sweeper (<code>"2 songs before the top of the hour"</code>), never the legal ID.</p>
+
+<h2 id="maker">2. The maker's dance (program side)</h2>
+<p>Everything under <code>apps/web/src/app/(program)/program/make/</code>. Five stateless stages, each a <code>POST /program/make/&lt;stage&gt;</code> that reads the previous stage's file and writes its own under <code>apps/web/public/program/make/</code> (gitignored, hand-editable, served by Next as static files). Dev only — production answers 404, because they write into the app's own tree. <code>/program/make</code> is a desk that runs them: all (<b>Make</b>), one (<b>Run</b>), or "from here →".</p>
+
+<h3 id="stages">Five stages, five files</h3>
+<div class="flow">
+  <div class="st"><b>discover</b><div class="io">reads: body<br>writes: request.json, picks.json</div><div class="m">1 Opus call (effort high) → N picks; each resolved by Spotify search, first hit; dedupe; ≥ 6 records or 422</div></div>
+  <div class="st"><b>enrich</b><div class="io">reads: picks.json, cards/*<br>writes: cards/&lt;id&gt;.json, picks.json (dropped)</div><div class="m">1 Opus call per record (medium), 5 at a time; a valid card on disk is reused (0 tokens); refusal retried once, then the record is dropped</div></div>
+  <div class="st"><b>log</b><div class="io">reads: request, picks, cards<br>writes: log.json</div><div class="m">1 Opus call (high) → order + treatment per record; then <code>checkLog()</code> enforces the clock</div></div>
+  <div class="st"><b>script</b><div class="io">reads: request, picks, cards, log<br>writes: script.json</div><div class="m">1 Opus call (high) → every word; legalId and leadLine are separate fields, kept only where they apply</div></div>
+  <div class="st"><b>voice</b><div class="io">reads: all of the above<br>writes: clips/slot-&lt;seq&gt;.mp3, program.json</div><div class="m">ElevenLabs with-timestamps, 2 at a time; timings at known offsets; <code>assemble()</code> → Element[] + notes</div></div>
+</div>
+<p>First walk, 12 records: 24.6 s · 50.3 s · 14 s · 19 s · 33 s ≈ <b>2.4 min</b>. Re-running <code>enrich</code> reused all cards in 29 ms.</p>
+<p>The contract between stages is zod (<code>shapes.ts</code>). <code>readJson()</code> answers <code>409 missing: log.json</code> when the previous stage hasn't run and <code>400 log.json: slots[0].intro — Invalid option…</code> when you hand-edited it wrong — and writes nothing. That is the whole "iterate on a file, run from that stage" loop: <code>log.json</code> is the one you'll edit most (change a <code>talkup</code> to a <code>segue</code>, reorder), then Run <b>script</b> and <b>voice</b>.</p>
+
+<h3 id="claude">How Claude is asked</h3>
+<p><code>ask.ts</code>: one shape for all four calls — <code>SYSTEM</code> (a CHR/Top 40 PD, 80s–90s style) + a brief, a single <em>forced</em> strict tool (<code>tool_choice: {type: "tool"}</code>, <code>additionalProperties: false</code>, every property required so "" / 0 means "none"), adaptive thinking, <code>output_config.effort</code> per stage, <code>max_tokens 16000</code>, model from <code>env().CLAUDE_MODEL</code>. A <code>stop_reason === "refusal"</code> is a <code>MakeError 502</code> ("refused"). Prompts live in <code>prompts.ts</code>, not in the settings table — this is the sandbox, they iterate in code. The enrich tool puts a free-text <code>thinking</code> property <em>first</em> on purpose: the model reasons about the record's intro before it commits to <code>introMs</code>/<code>sure</code>.</p>
+<p>What each brief carries: discover gets the station line and the request and is told this is its room to be creative; enrich gets one record (artist, title, album, the resolved version's length); log gets every record with its card, <code>RULES_TEXT</code> verbatim, and how many minutes to the hour; script gets the log too and is told the lead line is a separate field never repeated in <code>words</code>.</p>
+
+<h3 id="checklog">checkLog — the hard rules (pure, tested)</h3>
+<p><code>clock-rules.ts</code> holds the constants, the same rules in prose (<code>RULES_TEXT</code>, inlined into the log brief so prompt and validator can't drift), and the check. Order of operations, because it matters:</p>
+<ol>
+<li>Unknown ids dropped, duplicates dropped, unplaced records appended as segues (warnings, not fallbacks).</li>
+<li>Slot 0 must be a <code>break</code> — <span class="fb">segue → break</span> "the first slot is the opening".</li>
+<li>A <code>talkup</code> needs a card with <code>introMs ≥ 7000</code> — else <span class="fb">talkup → segue</span>. (<code>sure</code> is <em>not</em> checked here; see the hot path.)</li>
+<li>The hour: the slot where 9:00 turns is promoted to the top-of-the-hour break; any other <code>topOfHour</code> is cleared with a warning.</li>
+<li>Spacing: breaks closer than 3 songs — the later one becomes a sweeper, unless the later one is the legal ID, in which case the earlier (non-opening) one gives way. Farther than 4 is only a warning.</li>
+</ol>
+<p>Every downgrade lands in <code>log.json.fallbacks</code> with its reason; the <code>/program/make</code> row summarises "12 slots: 3 break, 3 talkup … · 2 fallbacks".</p>
+
+<h3 id="timings">Timings from alignment, never search</h3>
+<p>The text sent to ElevenLabs is exactly <code>[legalId, words, leadLine].join(" ")</code> (<code>textOf()</code>), so two offsets are known before the audio exists:</p>
+<pre data-lang="ts"><code>bedInMs = start of character  legalId.length + 1            // the space after the ID
+leadAt  = start of character  text.length − leadLine.length // where the lead line begins
+leadMs  = clipMs − leadAt
+clipMs  = the last character's end time</code></pre>
+<p><code>timingsOf()</code> only accepts an offset whose start time is monotonic with its neighbour and inside the clip; anything odd is left out and assembly takes the rung below. Nothing is ever searched for in the text or the audio — that is the "optimistic, fail-safe" ask made concrete.</p>
+
+<h3 id="assemble">assemble — the ladder</h3>
+<p><code>assemble.ts</code> is pure: log + script + measured clips + the produced-sweeper list → <code>Program</code>. Each element that carries a clip gets a <code>Note</code> (<code>{element, seq, treatment, words, clip, clipMs?, bedInMs?, leadMs?, atMs?, fallback?}</code>); the player shows them. The full ladder:</p>
+<table>
+<tr><th>Treatment</th><th>Rung</th><th>Condition</th><th>Fallback recorded</th></tr>
+<tr><td rowspan="3">talkup</td><td>post landed: <code>atMs = introMs − clipMs − 400</code></td><td><code>card.sure</code> and that ≥ 0</td><td>—</td></tr>
+<tr><td>late: <code>atMs = 1500</code></td><td>clip exists</td><td><span class="fb">post → late</span> "card not sure" / "N ms clip over a M ms intro"</td></tr>
+<tr><td>plain song</td><td>no words / clip failed</td><td><span class="fb">late → none</span></td></tr>
+<tr><td rowspan="3">sweeper</td><td>voiced clip, dry, <code>leadMs 0</code></td><td>clip exists</td><td>—</td></tr>
+<tr><td>produced sweeper (<code>sweepers/&lt;name&gt;</code>, round-robin)</td><td>manifest has some</td><td><span class="fb">voice → produced</span> only if words existed</td></tr>
+<tr><td>segue</td><td>none produced</td><td><span class="fb">sweeper → segue</span></td></tr>
+<tr><td rowspan="4">break</td><td>bed + <code>bedInMs</code> from alignment + <code>leadMs</code> from alignment</td><td>all present</td><td>—</td></tr>
+<tr><td>bed from 0 / hard intro</td><td>an offset missing</td><td><span class="fb">bedIn → start</span> · <span class="fb">lead → end</span> (reasons joined with "; ")</td></tr>
+<tr><td>produced sweeper</td><td>no clip</td><td><span class="fb">break → sweeper</span></td></tr>
+<tr><td>segue</td><td>no clip, none produced</td><td><span class="fb">break → segue</span></td></tr>
+</table>
+<p>Because the ladder always bottoms out at "a song", <code>voice</code> writes <code>program.json</code> even with no <code>ELEVENLABS_KEY</code> — every clip rejected, every treatment on its last rung, still playable.</p>
+
+<h2 id="player">3. The player's dance (UI/UX side)</h2>
+<p><code>/program</code> (<code>program.tsx</code>) fetches <code>program.json</code>, validates it with the <code>Program</code> zod shape, and hands <code>elements</code> to <code>useProgram()</code>. The Spotify account is this browser's (same PKCE flow and cookie identity as the station's home page); the tab becomes the device through <code>useSpotifyDevice</code>.</p>
+
+<h3 id="lanes">Three lanes, one reducer</h3>
+<p><code>reducer.ts</code> is pure and says what each lane <em>should</em> be doing; it never touches audio:</p>
+<pre data-lang="ts"><code>music: { uri, level: off | duck | full }   // the Spotify device — songs only
+mic:   clip name | null                     // the voice, an &lt;audio&gt; element
+bed:   bed name | null                      // a looped instrumental under the voice
+playSeq / micSeq                            // bump = that lane must (re)start
+cursor, loop, startedAt, error</code></pre>
+<p><code>lanesFor(el)</code> is the whole "what does an element start with" table: a break → music off, mic = clip, bed = its bed; a song with an intro talk and no <code>atMs</code> → music ducked + mic; every other song → music full, mic silent. The two worlds are deliberately separate: the device's audio is DRM'd and can't enter Web Audio, so its only knob is <code>setVolume</code> stepped from a timer; the mic and the bed are ours, mixed in one <code>AudioContext</code>, with the bed a single looping buffer that starts at mount and only ever has its <em>gain</em> moved — scheduled on the audio clock, so it lands exactly and never clicks.</p>
+
+<h3 id="tap">The tap: unlock, connect, run</h3>
+<p>Browsers only let audio start inside a user gesture, and the device may not exist yet. <code>go(event)</code> in <code>program.tsx</code> does everything that must happen synchronously in the tap, then defers the rest:</p>
+<ol>
+<li><code>unlock()</code> — resume the <code>AudioContext</code>, and play a few ms of WAV silence through the mic <code>&lt;audio&gt;</code> so iOS lets later <code>play()</code>s through.</li>
+<li><code>device.activate()</code> — the SDK's own gesture requirement.</li>
+<li>If the device is <code>ready</code>, dispatch (<code>RUN</code> / <code>JUMP</code>) now; otherwise remember the event in <code>armed</code>, call <code>device.connect()</code>, and an effect dispatches it when <code>status</code> turns <code>ready</code> (or drops it on <code>error</code>).</li>
+</ol>
+<p><b>Run</b> is disabled until identity says <code>product === "premium"</code> and the stored account is loaded. <code>RUN</code> starts at the cursor (or 0) and stamps <code>startedAt</code>, which the on-screen clock reads from <code>PROGRAM_START_MS</code>. <b>Stop</b> silences all lanes but keeps the cursor.</p>
+
+<h3 id="effects">The seven effects (<code>use-program.ts</code>)</h3>
+<table>
+<tr><th>#</th><th>Watches</th><th>Does</th></tr>
+<tr><td>1</td><td><code>elements</code> (mount)</td><td>Fetches every clip → object URL, measures its length with a throw-away <code>&lt;audio&gt;</code> (Chrome reports a streamed mp3 through <code>durationchange</code>); fetches and decodes the bed, starts it looping at gain 0. The whole program is known up front.</td></tr>
+<tr><td>2</td><td><code>playSeq</code>, <code>musicUri</code></td><td>A new element: <code>setVolume(level)</code> then <code>device.play([uri], 0)</code>; a rejection is <code>HALT</code>. A separate effect on <code>level</code> ducks instantly (down) or ramps up over 500 ms / 25 steps (the SDK has no fade).</td></tr>
+<tr><td>3</td><td>the break on air + mic position</td><td><code>armBed(posMs, durMs)</code>: from wherever the voice is in its clip, schedule the bed's gain — up to 0.12 (≈ −18 dB) over 400 ms at <code>bedInMs</code>, flat, then down to 0 over 1500 ms landing at <code>clip − leadMs</code>. Re-armed on play and on seek.</td></tr>
+<tr><td>4</td><td><code>mic</code>, <code>micSeq</code></td><td>Tap the <code>&lt;audio&gt;</code> into the graph once, set <code>src</code>, <code>play()</code>; <code>onended → CLIP_ENDED</code>, <code>onerror</code>/rejected play → <code>CLIP_FAILED</code>; reports a <code>micClock</code> every 250 ms. Keyed on <code>micSeq</code>, not <code>playSeq</code>, so a lead can restart the music lane while the clip keeps talking.</td></tr>
+<tr><td>5</td><td>a waiting talk + device playback</td><td>Arms <code>TALK_DUE</code>: an intro talk at <code>atMs − pos</code>, an outro talk at <code>duration − clipLen − 1000 − pos</code>. Re-armed on every playback report (a seek moves the due time). More than 1 s overdue → skipped, never repeated.</td></tr>
+<tr><td>6</td><td>a break with a lead + <code>micClock</code></td><td>Arms <code>LEAD_DUE</code> at <code>clipLen − leadMs − 350 − pos</code>: the song is called 350 ms early so it <em>sounds</em> where the bed's fade lands.</td></tr>
+<tr><td>7</td><td><code>running</code></td><td>Stopped → pause everything, bed off, device paused; unmount → close the graph.</td></tr>
+</table>
+
+<h3 id="events">Who fires what, and what the reducer does</h3>
+<table>
+<tr><th>Event</th><th>From</th><th>Reducer</th></tr>
+<tr><td><code>CLIP_ENDED</code> / <code>CLIP_FAILED</code></td><td>the mic element</td><td>On a break: next element. On a song's intro talk (its own, or a break's lead that carried over): mic off, bed off, music → full. On an outro talk: mic off, wait for the track to end.</td></tr>
+<tr><td><code>TRACK_ENDED</code></td><td><code>useSpotifyDevice.onTrackListEnded</code></td><td>Next element.</td></tr>
+<tr><td><code>TALK_DUE</code></td><td>effect 5</td><td>Mic = the talk's clip, music → duck.</td></tr>
+<tr><td><code>LEAD_DUE</code></td><td>effect 6</td><td>Cursor moves to the next song, music = that uri, ducked, <code>playSeq++</code> — <code>micSeq</code> untouched, so the break's clip (and its fading bed) keep going.</td></tr>
+<tr><td><code>HALT</code></td><td>play() refused, device lost</td><td>Stop with an error line on the desk.</td></tr>
+<tr><td><code>JUMP</code> / <code>NEXT</code> / <code>PREV</code></td><td>the cue sheet, transport</td><td><code>moveTo(index)</code>: lanes from <code>lanesFor</code>, both seqs bumped.</td></tr>
+</table>
+<p>The subtle one is the lead hand-off: for ~7 s the cursor is on the <em>song</em> while the mic is still playing the <em>break's</em> clip. <code>CLIP_ENDED</code> then finds a song on air whose <code>mic</code> matches → "the clip was the song's intro", music comes back up. That is why the reducer checks <code>s.mic === e.clip</code> rather than the element's own clip.</p>
+
+<h3 id="timeline">The timeline (cue sheet)</h3>
+<p><code>timeline.tsx</code>: one row per element, two lane bars. A song's axis is the track (music bar = its level; mic bar = the clip's measured length, pushed to the end for an outro). A break's axis is its clip (the "music" bar shows the bed from <code>bedInMs</code> to the lead). A white hairline follows the device's reported position or the <code>micClock</code>. The title jumps there; a click on a bar scrubs — on the row on air it seeks at once (<code>device.seek</code> or <code>seekMic</code>, the bed following via <code>onseeked</code>); on another row it jumps first and the seek lands once that lane reports playing. Under the title, the maker's note: the treatment, an amber <span class="fb">from → to</span> badge with the reason on hover, and the words in a <code>&lt;details&gt;</code>.</p>
+
+<h2 id="constants">4. Constants (the knobs)</h2>
+<div class="scroll"><table>
+<tr><th>Name</th><th>Value</th><th>Where</th><th>Meaning</th></tr>
+<tr><td><code>MIN_TALKUP_INTRO_MS</code></td><td>7000</td><td>clock-rules</td><td>a talk-up needs this much instrumental intro</td></tr>
+<tr><td><code>BEAT_MS</code></td><td>400</td><td>clock-rules</td><td>a landed talk-up ends this long before the post</td></tr>
+<tr><td><code>TALKUP_LATE_MS</code></td><td>1500</td><td>clock-rules</td><td>the unsure talk-up: voice in this far into the song</td></tr>
+<tr><td><code>MIN/MAX_SONGS_BETWEEN_BREAKS</code></td><td>3 / 4</td><td>clock-rules</td><td>hard / soft spacing</td></tr>
+<tr><td><code>BREAK_MS</code></td><td>30000</td><td>clock-rules</td><td>a break's cost on the clock when placing the hour</td></tr>
+<tr><td><code>MIN_RECORDS</code></td><td>6</td><td>clock-rules</td><td>discover must resolve this many</td></tr>
+<tr><td><code>ENRICH_CONCURRENCY</code></td><td>5</td><td>clock-rules</td><td>cards made at once (TTS: 2, in voice.ts)</td></tr>
+<tr><td><code>LEVELS</code></td><td>full 0.8 · duck 0.3</td><td>use-program</td><td>device volume</td></tr>
+<tr><td><code>RAMP_MS / RAMP_STEPS</code></td><td>500 / 25</td><td>use-program</td><td>the up-ramp; down is instant</td></tr>
+<tr><td><code>BED_GAIN</code></td><td>0.12</td><td>use-program</td><td>≈ −18 dB under the voice</td></tr>
+<tr><td><code>BED_IN_MS / BED_FADE_MS</code></td><td>400 / 1500</td><td>use-program</td><td>bed in, bed out</td></tr>
+<tr><td><code>PREROLL_MS</code></td><td>350</td><td>use-program</td><td>the device's start latency; a lead is called this early</td></tr>
+<tr><td><code>TAIL_MS</code></td><td>1000</td><td>use-program</td><td>an outro talk ends this long before the track does</td></tr>
+<tr><td><code>TALK_GRACE_MS</code></td><td>1000</td><td>use-program</td><td>a talk found later than this past due is skipped</td></tr>
+<tr><td><code>PROGRAM_START_MS</code></td><td>8:43 pm</td><td>manifest</td><td>the program clock's start (so the hour turns mid-set)</td></tr>
+<tr><td><code>MIN_COUNT / MAX_COUNT</code></td><td>10 / 14</td><td>shapes</td><td>records asked for</td></tr>
+</table></div>
+
+<h2 id="files">5. Where things live</h2>
+<pre><code>apps/web/src/app/(program)/
+  layout.tsx                  nav: the program · the maker
+  program/
+    page.tsx                  server: client id + identity cookie → &lt;Program&gt;
+    program.tsx               client: account, fetch program.json, Desk (Run/Stop, clock, timeline)
+    reducer.ts (+test)        the state machine — pure
+    use-program.ts            the seven effects — device volume, Web Audio graph, timers
+    timeline.tsx              the cue sheet with lanes and notes
+    manifest.ts (+test)       PROGRAM_URL, clipUrl(), BED, PROGRAM_START_MS
+    make/
+      page.tsx · maker.tsx    the desk: Make / Run / from here →, lamps, links
+      [stage]/route.ts        POST /program/make/&lt;stage&gt;, GET /program/make/status (404 in prod)
+      stages.ts               dispatch
+      discover.ts enrich.ts log.ts script.ts voice.ts
+      assemble.ts (+test)     log + script + clips → Program — pure
+      clock-rules.ts (+test)  constants, RULES_TEXT, checkLog()
+      shapes.ts (+test)       zod for every file
+      prompts.ts · ask.ts · pool.ts · files.ts
+
+apps/web/public/program/      (gitignored below make/)
+  bed.mp3                     copied in by hand
+  sweepers/*.mp3 + manifest.json   from scripts/sweepers-prep.mjs
+  make/request.json picks.json cards/&lt;id&gt;.json log.json script.json clips/slot-&lt;seq&gt;.mp3 program.json
+
+specs/002-program-pipeline/   spec, plan, data-model, contracts/stages.md, quickstart (with "First walk")</code></pre>
+<p>Shared with the station, not duplicated: <code>components/station/spotify-account.ts</code> (PKCE, identity cookie), <code>use-spotify-device.ts</code> (the SDK device: <code>play</code>, <code>pause</code>, <code>seek</code>, <code>setVolume</code>, <code>playback</code> reports), <code>lib/spotify.ts</code> (<code>search</code>, client credentials), <code>lib/voices.ts</code> (the roster; the first voice is the DJ), <code>packages/dj</code>'s <code>ttsBody()</code>.</p>
+
+<h2 id="open">6. What's open</h2>
+<ul>
+<li><b>Not verified live:</b> Run on <code>/program</code> with a Premium account after the maker (the page loads and validates <code>program.json</code>; the audio dance above is what the code does — listen for the lead hand-off and the bed fade). The bad-<code>ELEVENLABS_KEY</code> run is covered by tests only.</li>
+<li><b>Discovery takes the first search hit</b> — two album/remaster versions crept in (6:14, 5:44). Preferring the shortest hit is an easy follow-up in <code>discover.ts</code>'s <code>resolve()</code>.</li>
+<li><b>Landing the post on unsure cards</b> when the margin is wide (e.g. a 30 s intro and a 12 s clip): today <code>sure: false</code> always means the late rung. A rule like "land it if <code>introMs − clipMs − BEAT ≥ some slack</code>" belongs in <code>assemble.ts</code>.</li>
+<li><b>Outro talks</b> exist in the reducer and the player (<code>over: "outro"</code>, back-timed with <code>TAIL_MS</code>) but the maker never writes one — the card's <code>outro</code>/<code>outroMs</code> are collected and unused.</li>
+<li><b>Produced sweepers</b> are optional; with none, a sweeper slot without words is a segue.</li>
+<li>Prompts are in code, not in <code>settings</code>; no provenance of which prompt made a program beyond <code>card.model</code> and <code>madeAt</code>.</li>
+</ul>
+
+</main>
+</div>
+</body>
+</html>

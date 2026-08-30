@@ -11,8 +11,10 @@ import {
   type SpotifyIdentity,
 } from "@/components/station/spotify-account";
 import { useSpotifyDevice } from "@/components/station/use-spotify-device";
-import { CLOCK_URL, type Clock, PROGRAM_START_MS, toClockElements } from "./manifest";
-import type { Element, ProgramEvent } from "./reducer";
+import Link from "next/link";
+import { type Program as ProgramFile, Program as ProgramShape } from "./make/shapes";
+import { PROGRAM_START_MS, PROGRAM_URL } from "./manifest";
+import type { ProgramEvent } from "./reducer";
 import { type Seek, Timeline } from "./timeline";
 import { useProgram } from "./use-program";
 
@@ -44,15 +46,15 @@ export function Program({
     });
   }, [initialIdentity]);
 
-  const [manifest, setManifest] = useState<Clock | null>(null);
-  const [elements, setElements] = useState<Element[] | null>(null);
+  const [program, setProgram] = useState<ProgramFile | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
-    fetch(CLOCK_URL, { cache: "no-store" })
-      .then((r) => (r.ok ? (r.json() as Promise<Clock>) : Promise.reject(new Error(`clock ${r.status}`))))
-      .then((m) => {
-        setManifest(m);
-        setElements(toClockElements(m));
+    fetch(PROGRAM_URL, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`program.json ${r.status}`))))
+      .then((j) => {
+        const p = ProgramShape.safeParse(j);
+        if (!p.success) throw new Error(`program.json: ${p.error.issues[0]?.message ?? "invalid"}`);
+        setProgram(p.data);
       })
       .catch((e: Error) => setLoadError(e.message));
   }, []);
@@ -60,17 +62,19 @@ export function Program({
   if (loadError) {
     return (
       <p className="text-sm text-red-400">
-        No program to play ({loadError}). Generate it:{" "}
-        <code>op run --env-file=.env.op -- node scripts/program-prep.mjs</code>
+        No program to play ({loadError}). Make one on{" "}
+        <Link href="/program/make" className="underline">
+          /program/make
+        </Link>
+        .
       </p>
     );
   }
-  if (!manifest || !elements) return <p className="text-sm text-zinc-500">Loading the program…</p>;
+  if (!program) return <p className="text-sm text-zinc-500">Loading the program…</p>;
   return (
     <Desk
       clientId={clientId}
-      manifest={manifest}
-      elements={elements}
+      program={program}
       identity={identity}
       account={account}
       onConnect={() => void beginLogin(clientId)}
@@ -80,19 +84,18 @@ export function Program({
 
 function Desk({
   clientId,
-  manifest,
-  elements,
+  program,
   identity,
   account,
   onConnect,
 }: {
   clientId: string;
-  manifest: Clock;
-  elements: Element[];
+  program: ProgramFile;
   identity: SpotifyIdentity | null;
   account: SpotifyAccount | null;
   onConnect: () => void;
 }) {
+  const { elements } = program;
   const dispatchRef = useRef<(e: ProgramEvent) => void>(() => {});
   const device = useSpotifyDevice(clientId, {
     onTrackListEnded: () => dispatchRef.current({ type: "TRACK_ENDED" }),
@@ -169,7 +172,7 @@ function Desk({
           className={`lamp ${running ? "on" : ""} ${state.mic ? "talking" : ""} size-3 rounded-full`}
         />
         <span className="font-display text-4xl font-semibold tabular-nums tracking-wider">{clock}</span>
-        <span className="text-sm text-zinc-400">{manifest.dj} on the mic</span>
+        <span className="text-sm text-zinc-400">{program.dj} on the mic</span>
         <span className="flex-1" />
         {identity ? (
           <span className="truncate text-sm text-zinc-400">
@@ -210,6 +213,7 @@ function Desk({
       {device.status.kind === "error" && <p className="text-sm text-red-400">{device.status.message}</p>}
       <Timeline
         elements={elements}
+        notes={program.notes}
         state={state}
         clips={clips}
         micClock={micClock}

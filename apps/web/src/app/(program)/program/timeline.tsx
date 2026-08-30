@@ -1,5 +1,6 @@
 import type { MouseEvent } from "react";
 import type { Playback } from "@/components/station/use-spotify-device";
+import type { Note } from "./make/shapes";
 import { clipOf, type Element, type Level, type ProgramState } from "./reducer";
 import { type ClipEntry, type MicClock, TAIL_MS } from "./use-program";
 
@@ -24,6 +25,7 @@ export interface Seek {
 
 export function Timeline({
   elements,
+  notes = [],
   state,
   clips,
   micClock,
@@ -32,6 +34,8 @@ export function Timeline({
   onSeek,
 }: {
   elements: Element[];
+  /** The maker's notes: what each clip is, what it says, how it was timed (by element index). */
+  notes?: Note[];
   state: ProgramState;
   clips: ReadonlyMap<string, ClipEntry>;
   micClock: MicClock | null;
@@ -39,12 +43,14 @@ export function Timeline({
   onJump: (index: number) => void;
   onSeek: (seek: Seek) => void;
 }) {
+  const noteOf = new Map(notes.map((n) => [n.element, n]));
   return (
     <ol className="flex flex-col gap-2">
       {elements.map((el, i) => (
         <Row
           key={`${i}-${clipOf(el) ?? el.kind}`}
           el={el}
+          note={noteOf.get(i) ?? null}
           live={state.cursor === i}
           state={state}
           clip={clipEntry(el, clips)}
@@ -65,6 +71,7 @@ function clipEntry(el: Element, clips: ReadonlyMap<string, ClipEntry>): ClipEntr
 
 function Row({
   el,
+  note,
   live,
   state,
   clip,
@@ -74,6 +81,7 @@ function Row({
   onSeek,
 }: {
   el: Element;
+  note: Note | null;
   live: boolean;
   state: ProgramState;
   clip: ClipEntry | null;
@@ -127,6 +135,7 @@ function Row({
           {clip && "error" in clip && " · no clip"}
         </span>
       </div>
+      {note && <NoteLine note={note} />}
       <div className="mt-2 grid grid-cols-[3rem_1fr] items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase text-zinc-500">
         <span>music</span>
         {/* biome-ignore lint/a11y/noStaticElementInteractions: a scrub strip; the title is the keyboard path */}
@@ -167,6 +176,31 @@ function Row({
         </div>
       </div>
     </li>
+  );
+}
+
+/** The maker's note under a row: the treatment, a fallback badge (the reason on hover), the words. */
+function NoteLine({ note }: { note: Note }) {
+  return (
+    <div className="mt-1 flex flex-wrap items-baseline gap-2 text-xs text-zinc-500">
+      <span className="font-mono uppercase tracking-widest text-zinc-400">{note.treatment}</span>
+      {note.fallback && (
+        <span
+          title={note.fallback.reason}
+          className="rounded-full border border-amber-700/60 bg-amber-900/30 px-2 py-0.5 font-mono text-amber-300"
+        >
+          {note.fallback.from} → {note.fallback.to}
+        </span>
+      )}
+      {note.words && (
+        <details className="min-w-0 flex-1">
+          <summary className="cursor-pointer truncate text-zinc-500 hover:text-zinc-300">
+            {note.words}
+          </summary>
+          <p className="mt-1 whitespace-pre-line leading-relaxed text-zinc-300">{note.words}</p>
+        </details>
+      )}
+    </div>
   );
 }
 

@@ -13,5 +13,5 @@ out/
 # Claude Code local plugin settings
 .claude/
 
-# practice program, pre-generated locally (scripts/program-prep.mjs)
+# the program maker's output (/program/make writes public/program/make/) and the sweeper bench's
 apps/web/public/program/

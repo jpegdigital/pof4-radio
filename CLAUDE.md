@@ -83,6 +83,22 @@ miss. No provenance yet: a station doesn't record which prompt text planned it.
 **Two shells, route groups.** `app/(app)` is the station, phone-wide, the page as it was; `app/(settings)`
 is the control room, desktop-wide. The root layout holds only fonts and the ground colour.
 
+**The program is a sandbox, all in one route group.** `app/(program)/program/` is a pre-generated hour played
+by its own state machine (`reducer.ts`, `use-program.ts`: three lanes — the Spotify device, the voice, a
+looped bed — and an `Element[]` of songs, talk-ups and breaks). `program/make/` is the maker: a request
+becomes that hour in five stages, each a stateless `POST /program/make/<stage>` that reads the previous
+stage's file and writes its own under `apps/web/public/program/make/` (gitignored) — `discover`
+(request → picks → records, one Opus call + Spotify search), `enrich` (one Opus call per record → a card:
+intro length, post, ending, energy; cached as `cards/<id>.json`), `log` (order + treatments, one call,
+then `checkLog()` enforces the clock rules in `clock-rules.ts`), `script` (every word, one call; a break's
+legal ID and lead line are separate fields), `voice` (ElevenLabs with alignment → `clips/slot-<seq>.mp3`;
+`assemble.ts` derives every timing from clip length, the card and known character offsets, never by
+searching, and records a fallback on each element that took the next rung). `/program/make` runs the
+stages (all, one, or "from here") and links every file; `/program` plays `program.json`. Prompts live in
+`make/prompts.ts`, not in settings. **Dev only**: the routes and the page answer 404 in production —
+they write into the app's own tree. The bed (`public/program/bed.mp3`) is copied in by hand; produced
+sweepers come from `scripts/sweepers-prep.mjs`.
+
 ## Working here
 
 - Line endings are LF everywhere, in the repo and the working tree, on every machine: `.gitattributes`

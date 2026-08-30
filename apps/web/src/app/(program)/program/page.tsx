@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * The program. The server contributes the Spotify client id and who is connected (the identity
- * cookie — never a token); the program itself is read from /program/manifest.json in the browser.
+ * cookie — never a token); the program itself is read from /program/make/program.json in the browser.
  */
 export default async function Page() {
   const jar = await cookies();
