@@ -1,0 +1,10 @@
+{
+  "name": "base",
+  "text": {
+    "normal": "#00FF00",
+    "current": "#FFFFFF",
+    "normalBg": "#000000",
+    "selectedBg": "#0000C6",
+    "font": "Arial"
+  }
+}

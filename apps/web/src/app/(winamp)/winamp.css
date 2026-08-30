@@ -1,0 +1,256 @@
+/*
+  The Winamp view's own stylesheet. Everything is prefixed `wa-`; the sprites themselves are
+  inline styles from components/winamp/skin.ts, this only lays them out. Colours for the
+  playlist come from the skin's pledit.txt, set as custom properties on .wa-root.
+*/
+
+.wa-page {
+  background: #000;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.wa-root {
+  position: relative;
+  width: 275px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  image-rendering: pixelated;
+  font-family: var(--wa-font), Arial, Helvetica, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.wa-abs {
+  position: absolute;
+  background-repeat: no-repeat;
+  display: block;
+}
+.wa-row-flex {
+  display: flex;
+}
+.wa-glyph {
+  display: block;
+  flex: none;
+  background-repeat: no-repeat;
+}
+
+/* the main window */
+.wa-main {
+  position: relative;
+  flex: none;
+  background-repeat: no-repeat;
+}
+.wa-btn {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.wa-btn .wa-up,
+.wa-btn .wa-down {
+  left: 0;
+  top: 0;
+}
+.wa-btn .wa-down {
+  display: none;
+}
+.wa-btn:active .wa-up {
+  display: none;
+}
+.wa-btn:active .wa-down {
+  display: block;
+}
+.wa-blink {
+  animation: wa-blink 2s step-start 1s infinite;
+}
+@keyframes wa-blink {
+  50% {
+    visibility: hidden;
+  }
+}
+
+/* the playlist window */
+.wa-pl {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 80px;
+}
+.wa-pl > * > span {
+  display: block;
+  flex: none;
+  background-repeat: no-repeat;
+}
+.wa-pl-top {
+  display: flex;
+  height: 20px;
+  flex: none;
+}
+.wa-pl-fill {
+  flex: 1 !important;
+  height: 20px;
+}
+.wa-pl-mid {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.wa-pl-left {
+  width: 12px;
+}
+.wa-pl-right {
+  width: 20px;
+}
+.wa-pl-body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  background: var(--wa-bg);
+  color: var(--wa-normal);
+  padding: 3px 0;
+  -webkit-overflow-scrolling: touch;
+}
+.wa-pl-body::-webkit-scrollbar {
+  display: none;
+}
+.wa-pl-bottom {
+  display: flex;
+  height: 38px;
+  flex: none;
+}
+.wa-pl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.wa-pl-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  height: 13px;
+  line-height: 13px;
+  padding: 0 3px;
+  border: 0;
+  background: none;
+  color: var(--wa-normal);
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wa-pl-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wa-pl-time {
+  flex: none;
+}
+.wa-pl-row.wa-on {
+  color: var(--wa-current);
+  background: var(--wa-sel);
+}
+.wa-pl-row.wa-played {
+  opacity: 0.55;
+}
+
+/* the console at the top of the list: the request, the DJ, the account — in the list's colours */
+.wa-console {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 1px 3px 4px;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  line-height: 13px;
+}
+.wa-console-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+.wa-field,
+.wa-console select,
+.wa-console textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 1px 3px;
+  border: 1px solid color-mix(in srgb, var(--wa-normal) 45%, var(--wa-bg));
+  border-radius: 0;
+  background: var(--wa-bg);
+  color: var(--wa-normal);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  line-height: 13px;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.wa-console textarea {
+  resize: none;
+  display: block;
+}
+.wa-console textarea::placeholder {
+  color: color-mix(in srgb, var(--wa-normal) 45%, var(--wa-bg));
+}
+.wa-console select {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1;
+}
+.wa-console select:focus,
+.wa-console textarea:focus {
+  border-color: var(--wa-current);
+}
+.wa-console .wa-cbtn {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--wa-normal);
+  background: var(--wa-bg);
+  color: var(--wa-normal);
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  line-height: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wa-console .wa-cbtn:active {
+  background: var(--wa-sel);
+  color: var(--wa-current);
+}
+.wa-console .wa-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--wa-current);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.wa-dim {
+  opacity: 0.6;
+}
+.wa-err {
+  color: #ff5a5a;
+}
+.wa-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
