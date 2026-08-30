@@ -204,14 +204,23 @@ export function useProgram({ device, elements }: { device: SpotifyDevice; elemen
   }, []);
 
   // The element's last report is only meaningful while a clip is on the mic.
-  return { state, dispatch, clips, micClock: mic ? micClock : null, unlock };
+  /** Scrub the clip on the mic. */
+  const seekMic = useCallback((ms: number) => {
+    const a = audio.current;
+    if (a?.src) a.currentTime = Math.max(0, ms) / 1000;
+  }, []);
+
+  return { state, dispatch, clips, micClock: mic ? micClock : null, unlock, seekMic };
 }
 
+/** Chrome reports a streamed mp3's length through `durationchange` (finite), not `loadedmetadata`. */
 function measure(url: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    const a = new Audio();
-    a.preload = "metadata";
-    a.onloadedmetadata = () => resolve(a.duration * 1000);
+    const a = document.createElement("audio");
+    a.preload = "auto";
+    a.ondurationchange = () => {
+      if (Number.isFinite(a.duration)) resolve(a.duration * 1000);
+    };
     a.onerror = () => reject(new Error("could not read the clip's length"));
     a.src = url;
   });

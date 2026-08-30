@@ -13,7 +13,7 @@ import {
 import { useSpotifyDevice } from "@/components/station/use-spotify-device";
 import { MANIFEST_URL, type Manifest, PROGRAM_START_MS, toElements } from "./manifest";
 import type { Element, ProgramEvent } from "./reducer";
-import { Timeline } from "./timeline";
+import { type Seek, Timeline } from "./timeline";
 import { useProgram } from "./use-program";
 
 /**
@@ -101,7 +101,7 @@ function Desk({
     onTrackChanged: () => {},
     onLost: (error) => dispatchRef.current({ type: "HALT", error }),
   });
-  const { state, dispatch, clips, micClock, unlock } = useProgram({ device, elements });
+  const { state, dispatch, clips, micClock, unlock, seekMic } = useProgram({ device, elements });
   useEffect(() => {
     dispatchRef.current = dispatch;
   }, [dispatch]);
@@ -133,6 +133,33 @@ function Desk({
       armed.current = null;
     }
   }, [ready, device.status.kind, dispatch]);
+
+  // A scrub on the row on air seeks at once; on another row it goes there first, and the seek
+  // lands as soon as that lane is playing (the device reports the uri; the mic reports a clock).
+  const pendingSeek = useRef<Seek | null>(null);
+  const seek = (sk: Seek) => {
+    if (running && state.cursor === sk.index) {
+      if (sk.lane === "music") void device.seek(sk.ms).catch(() => {});
+      else seekMic(sk.ms);
+      return;
+    }
+    pendingSeek.current = sk;
+    go({ type: "JUMP", index: sk.index });
+  };
+  const playingUri = device.playback && !device.playback.paused ? device.playback.uri : null;
+  const micUp = micClock !== null && !micClock.paused;
+  useEffect(() => {
+    const sk = pendingSeek.current;
+    if (!sk || state.cursor !== sk.index) return;
+    if (sk.lane === "music" && playingUri && playingUri === state.music.uri) {
+      pendingSeek.current = null;
+      void device.seek(sk.ms).catch(() => {});
+    } else if (sk.lane === "mic" && micUp) {
+      pendingSeek.current = null;
+      seekMic(sk.ms);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.cursor, state.music.uri, playingUri, micUp]);
 
   const clock = useProgramClock(state.startedAt, running);
 
@@ -190,6 +217,7 @@ function Desk({
         micClock={micClock}
         playback={device.playback}
         onJump={(index) => go({ type: "JUMP", index })}
+        onSeek={seek}
       />
     </>
   );

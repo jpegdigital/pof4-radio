@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import type { Playback } from "@/components/station/use-spotify-device";
 import { clipOf, type Element, type Level, type ProgramState } from "./reducer";
 import { type ClipEntry, type MicClock, TAIL_MS } from "./use-program";
@@ -5,7 +6,8 @@ import { type ClipEntry, type MicClock, TAIL_MS } from "./use-program";
 /**
  * The cue sheet as a timeline: one row per element, two lane bars — music (width = the track or
  * bed's length, colour = its level) and mic (width = the clip's measured length, pushed to the
- * end for an outro) — a live hairline on each lane for the element on air, and any row tappable.
+ * end for an outro) — a live hairline on each lane for the element on air. The title puts the
+ * element on air; a click on a lane bar scrubs to that point (on another row: goes there first).
  */
 
 const LEVEL_CLASS: Record<Level, string> = {
@@ -15,6 +17,12 @@ const LEVEL_CLASS: Record<Level, string> = {
   full: "bg-sky-500",
 };
 
+export interface Seek {
+  index: number;
+  lane: "music" | "mic";
+  ms: number;
+}
+
 export function Timeline({
   elements,
   state,
@@ -22,6 +30,7 @@ export function Timeline({
   micClock,
   playback,
   onJump,
+  onSeek,
 }: {
   elements: Element[];
   state: ProgramState;
@@ -29,6 +38,7 @@ export function Timeline({
   micClock: MicClock | null;
   playback: Playback | null;
   onJump: (index: number) => void;
+  onSeek: (seek: Seek) => void;
 }) {
   return (
     <ol className="flex flex-col gap-2">
@@ -42,6 +52,7 @@ export function Timeline({
           micClock={micClock}
           playback={playback}
           onTap={() => onJump(i)}
+          onSeek={(lane, ms) => onSeek({ index: i, lane, ms })}
         />
       ))}
     </ol>
@@ -61,6 +72,7 @@ function Row({
   micClock,
   playback,
   onTap,
+  onSeek,
 }: {
   el: Element;
   live: boolean;
@@ -69,6 +81,7 @@ function Row({
   micClock: MicClock | null;
   playback: Playback | null;
   onTap: () => void;
+  onSeek: (lane: "music" | "mic", ms: number) => void;
 }) {
   const clipLen = clip && "url" in clip ? clip.durationMs : null;
   const musicLen =
@@ -76,54 +89,69 @@ function Row({
   const total = Math.max(musicLen, clipLen ?? 0, 1);
   const pct = (ms: number) => `${(ms / total) * 100}%`;
   const outro = el.kind === "song" && el.talk?.over === "outro";
+  const micStart = outro && clipLen !== null ? Math.max(0, musicLen - clipLen - TAIL_MS) : 0;
   const musicLevel: Level = live ? state.music.level : restingLevel(el);
   const musicPos = live && playback && playback.uri === state.music.uri ? playback.position : null;
   const micOn = live && state.mic !== null;
 
+  /** Where on the row's time axis a click landed, in ms. */
+  const at = (e: MouseEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return ((e.clientX - r.left) / r.width) * total;
+  };
+
   return (
-    <li>
-      <button
-        type="button"
-        onClick={onTap}
-        className={`w-full rounded-xl border p-3 text-left transition ${
-          live ? "border-lamp/60 bg-zinc-900" : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700"
-        }`}
-      >
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="truncate font-medium">{title(el)}</span>
-          <span className="shrink-0 font-mono text-xs text-zinc-500">
-            {musicLen > 0 && fmt(musicLen)}
-            {clipLen !== null && ` · mic ${fmt(clipLen)}`}
-            {clip && "error" in clip && " · no clip"}
-          </span>
+    <li
+      className={`rounded-xl border p-3 transition ${
+        live ? "border-lamp/60 bg-zinc-900" : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700"
+      }`}
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <button type="button" onClick={onTap} className="truncate text-left font-medium hover:text-lamp">
+          {title(el)}
+        </button>
+        <span className="shrink-0 font-mono text-xs text-zinc-500">
+          {musicLen > 0 && fmt(musicLen)}
+          {clipLen !== null && ` · mic ${fmt(clipLen)}`}
+          {clip && "error" in clip && " · no clip"}
+        </span>
+      </div>
+      <div className="mt-2 grid grid-cols-[3rem_1fr] items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase text-zinc-500">
+        <span>music</span>
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: a scrub strip; the title is the keyboard path */}
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: same */}
+        <div
+          className={`relative h-3 overflow-hidden rounded bg-zinc-800 ${musicLen > 0 ? "cursor-pointer" : ""}`}
+          onClick={(e) => musicLen > 0 && onSeek("music", Math.min(at(e), musicLen))}
+        >
+          {musicLen > 0 && (
+            <div className={`h-full ${LEVEL_CLASS[musicLevel]}`} style={{ width: pct(musicLen) }} />
+          )}
+          {musicPos !== null && (
+            <div className="absolute top-0 h-full w-0.5 bg-white" style={{ left: pct(musicPos) }} />
+          )}
         </div>
-        <div className="mt-2 grid grid-cols-[3rem_1fr] items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase text-zinc-500">
-          <span>music</span>
-          <div className="relative h-2 overflow-hidden rounded bg-zinc-800">
-            {musicLen > 0 && (
-              <div className={`h-full ${LEVEL_CLASS[musicLevel]}`} style={{ width: pct(musicLen) }} />
-            )}
-            {musicPos !== null && (
-              <div className="absolute top-0 h-full w-px bg-white" style={{ left: pct(musicPos) }} />
-            )}
-          </div>
-          <span>mic</span>
-          <div className="relative h-2 overflow-hidden rounded bg-zinc-800">
-            {clipLen !== null && (
-              <div
-                className={`h-full bg-lamp ${micOn ? "opacity-100" : "opacity-50"}`}
-                style={{
-                  width: pct(clipLen),
-                  marginLeft: outro ? pct(Math.max(0, musicLen - clipLen - TAIL_MS)) : 0,
-                }}
-              />
-            )}
-            {micOn && micClock && (
-              <div className="absolute top-0 h-full w-px bg-white" style={{ left: pct(micClock.position) }} />
-            )}
-          </div>
+        <span>mic</span>
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: a scrub strip */}
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: same */}
+        <div
+          className={`relative h-3 overflow-hidden rounded bg-zinc-800 ${clipLen !== null ? "cursor-pointer" : ""}`}
+          onClick={(e) => clipLen !== null && onSeek("mic", Math.min(Math.max(0, at(e) - micStart), clipLen))}
+        >
+          {clipLen !== null && (
+            <div
+              className={`h-full bg-lamp ${micOn ? "opacity-100" : "opacity-50"}`}
+              style={{ width: pct(clipLen), marginLeft: pct(micStart) }}
+            />
+          )}
+          {micOn && micClock && (
+            <div
+              className="absolute top-0 h-full w-0.5 bg-white"
+              style={{ left: pct(micStart + micClock.position) }}
+            />
+          )}
         </div>
-      </button>
+      </div>
     </li>
   );
 }

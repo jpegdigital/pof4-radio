@@ -14,6 +14,7 @@ interface SdkPlayer {
   setVolume(v: number): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
+  seek(ms: number): Promise<void>;
   /** Mobile Safari: must be called inside a user gesture before the SDK may make sound. */
   activateElement(): Promise<void>;
 }
@@ -80,6 +81,8 @@ export interface SpotifyDevice {
   play(uris: string[], position: number): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
+  /** Move within the current track. */
+  seek(ms: number): Promise<void>;
   setVolume(v: number): Promise<void>;
 }
 
@@ -232,11 +235,14 @@ export function useSpotifyDevice(
   const resume = useCallback(async () => {
     if (loaded.current) await player.current?.resume();
   }, []);
+  const seek = useCallback(async (ms: number) => {
+    if (loaded.current) await player.current?.seek(Math.max(0, Math.round(ms)));
+  }, []);
   const setVolume = useCallback(async (v: number) => player.current?.setVolume(v), []);
   const activate = useCallback(() => {
     void player.current?.activateElement().catch(() => {});
   }, []);
 
-  const device: SpotifyDevice = { status, playback, connect, activate, play, pause, resume, setVolume };
+  const device: SpotifyDevice = { status, playback, connect, activate, play, pause, resume, seek, setVolume };
   return device;
 }
