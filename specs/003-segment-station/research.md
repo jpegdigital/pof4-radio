@@ -43,7 +43,7 @@ alignment and kept with the segment — FR-006/FR-008).
 
 ## R3. Clips live in the Railway bucket, served by the app
 
-**Decision**: Every clip is `PUT` to the `clips` bucket at `stations/<stationId>/<segmentId>/<seq>.mp3`
+**Decision**: Every clip is `PUT` to the `radio-clips` bucket at `stations/<stationId>/<segmentId>/<seq>.mp3`
 at voice time and streamed back by `GET /api/clip/<segmentId>/<seq>` with immutable caching.
 Railway buckets are private, so the app serves them — the same pattern dreamweaver uses
 (`/media/<key>`).

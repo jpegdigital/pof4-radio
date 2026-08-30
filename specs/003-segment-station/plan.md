@@ -26,7 +26,7 @@ Clips are signed into the Railway bucket by hand (SigV4 over `fetch`) and served
 (the bucket client is Web Crypto + `fetch`, R4).
 
 **Storage**: Postgres (`radio` database, shared dev/prod): `station` (changed), `segment`
-(changed), `card` (new), `settings` (new rows). Railway bucket `clips` for mp3s (keys per
+(changed), `card` (new), `settings` (new rows). Railway bucket `radio-clips` for mp3s (keys per
 station/segment/seq). Static: `public/bed.mp3`, optional `public/sweepers/`.
 
 **Testing**: Vitest, pure logic only: shapes, per-segment clock rules, timings from alignment,

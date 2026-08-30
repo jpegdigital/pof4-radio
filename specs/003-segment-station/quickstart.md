@@ -1,7 +1,7 @@
 # Quickstart: the segment station, live
 
 Live verification against the dev server. Nothing here touches Railway except the shared
-database and the `clips` bucket, which dev and prod share on purpose.
+database and the `radio-clips` bucket, which dev and prod share on purpose.
 
 ## Prerequisites
 
