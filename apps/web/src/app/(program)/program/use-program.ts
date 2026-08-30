@@ -18,6 +18,8 @@ export const TAIL_MS = 1000;
 /** A bed fades out over this long, ending where the next song starts. */
 export const BED_FADE_MS = 1500;
 const FADE_STEPS = 15;
+/** The fade lands this long before the handoff: room to pause the bed before the next song plays. */
+const FADE_SETTLE_MS = 300;
 /** A few ms of silence (WAV); playing it inside a tap unlocks the element for later `play()`s on iOS. */
 const SILENCE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
 
@@ -87,7 +89,7 @@ export function useProgram({ device, elements }: { device: SpotifyDevice; elemen
     ramp.current = null;
   };
   /** Step the device's volume to `target` over `ms` (the SDK has no fade of its own). */
-  const rampTo = (target: number, ms: number, steps: number) => {
+  const rampTo = (target: number, ms: number, steps: number, onDone?: () => void) => {
     stopRamp();
     const d = dev.current;
     const from = volume.current;
@@ -96,9 +98,16 @@ export function useProgram({ device, elements }: { device: SpotifyDevice; elemen
       step += 1;
       volume.current = from + ((target - from) * step) / steps;
       void d.setVolume(volume.current).catch(() => {});
-      if (step >= steps) stopRamp();
+      if (step >= steps) {
+        stopRamp();
+        onDone?.();
+      }
     }, ms / steps);
   };
+  const playSeq = useRef(state.playSeq);
+  useEffect(() => {
+    playSeq.current = state.playSeq;
+  });
 
   const el = onAir(state);
   // A break's bed waits for `bedInMs` (the legal ID before it is dry).
@@ -222,9 +231,14 @@ export function useProgram({ device, elements }: { device: SpotifyDevice; elemen
         setTimeout(
           () => {
             faded.current = state.micSeq;
-            rampTo(0, BED_FADE_MS, FADE_STEPS);
+            const seq = playSeq.current;
+            // Faded out, the bed is paused: the next song then starts from silence at its own
+            // level, instead of the play effect's setVolume popping the bed back up first.
+            rampTo(0, BED_FADE_MS, FADE_STEPS, () => {
+              if (playSeq.current === seq) void dev.current.pause().catch(() => {});
+            });
           },
-          Math.max(0, handoff - BED_FADE_MS - pos),
+          Math.max(0, handoff - FADE_SETTLE_MS - BED_FADE_MS - pos),
         ),
       );
     }
