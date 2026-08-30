@@ -11,7 +11,7 @@ import {
   type SpotifyIdentity,
 } from "@/components/station/spotify-account";
 import { useSpotifyDevice } from "@/components/station/use-spotify-device";
-import { MANIFEST_URL, type Manifest, PROGRAM_START_MS, toElements } from "./manifest";
+import { CLOCK_URL, type Clock, PROGRAM_START_MS, toClockElements } from "./manifest";
 import type { Element, ProgramEvent } from "./reducer";
 import { type Seek, Timeline } from "./timeline";
 import { useProgram } from "./use-program";
@@ -44,17 +44,15 @@ export function Program({
     });
   }, [initialIdentity]);
 
-  const [manifest, setManifest] = useState<Manifest | null>(null);
+  const [manifest, setManifest] = useState<Clock | null>(null);
   const [elements, setElements] = useState<Element[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
-    fetch(MANIFEST_URL, { cache: "no-store" })
-      .then((r) =>
-        r.ok ? (r.json() as Promise<Manifest>) : Promise.reject(new Error(`manifest ${r.status}`)),
-      )
+    fetch(CLOCK_URL, { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<Clock>) : Promise.reject(new Error(`clock ${r.status}`))))
       .then((m) => {
         setManifest(m);
-        setElements(toElements(m));
+        setElements(toClockElements(m));
       })
       .catch((e: Error) => setLoadError(e.message));
   }, []);
@@ -89,7 +87,7 @@ function Desk({
   onConnect,
 }: {
   clientId: string;
-  manifest: Manifest;
+  manifest: Clock;
   elements: Element[];
   identity: SpotifyIdentity | null;
   account: SpotifyAccount | null;

@@ -10,11 +10,11 @@ const track = (id: string, durationMs = 200_000) => ({
   durationMs,
 });
 const elements: Element[] = [
-  { kind: "break", clip: "break-small", bed: track("bed"), leadMs: 0, label: "Break" },
+  { kind: "break", clip: "break-small", bed: "bed", leadMs: 0, label: "Break" },
   { kind: "song", track: track("a") },
   { kind: "song", track: track("b"), talk: { clip: "talkup-2", over: "intro" } },
   { kind: "song", track: track("c"), talk: { clip: "outro-c", over: "outro" } },
-  { kind: "break", clip: "break-big", bed: track("bed"), bedInMs: 5000, leadMs: 6000, label: "Top" },
+  { kind: "break", clip: "break-big", bed: "bed", bedInMs: 5000, leadMs: 6000, label: "Top" },
   { kind: "song", track: track("d"), talk: { clip: "talkup-d", over: "intro" } },
   { kind: "break", clip: "tail", leadMs: 0, label: "Dry" },
 ];
@@ -23,11 +23,12 @@ const run = (s = loaded) => reducer(s, { type: "RUN" });
 const at = (index: number) => reducer(loaded, { type: "JUMP", index });
 
 describe("run", () => {
-  it("starts element 0 with both lanes set: bed under, clip on the mic", () => {
+  it("starts element 0 with the lanes set: Spotify off, bed under, clip on the mic", () => {
     const s = run();
     expect(s.loop).toBe("running");
     expect(s.cursor).toBe(0);
-    expect(s.music).toEqual({ uri: "spotify:track:bed", level: "bed" });
+    expect(s.music).toEqual({ uri: null, level: "off" });
+    expect(s.bed).toBe("bed");
     expect(s.mic).toBe("break-small");
     expect(s.playSeq).toBe(1);
     expect(s.startedAt).not.toBeNull();
@@ -52,18 +53,18 @@ describe("lanes", () => {
     expect(at(2).music).toEqual({ uri: "spotify:track:b", level: "duck" });
     expect(at(2).mic).toBe("talkup-2");
   });
-  it("a song with an outro talk starts full; OUTRO_DUE ducks and puts the clip on", () => {
+  it("a song with an outro talk starts full; TALK_DUE ducks and puts the clip on", () => {
     const s = at(3);
     expect(s.music.level).toBe("full");
     expect(s.mic).toBeNull();
-    const due = reducer(s, { type: "OUTRO_DUE" });
+    const due = reducer(s, { type: "TALK_DUE" });
     expect(due.music.level).toBe("duck");
     expect(due.mic).toBe("outro-c");
-    expect(reducer(due, { type: "OUTRO_DUE" })).toBe(due);
+    expect(reducer(due, { type: "TALK_DUE" })).toBe(due);
   });
-  it("OUTRO_DUE is ignored off an outro song", () => {
+  it("TALK_DUE is ignored off a waiting talk", () => {
     const s = at(2);
-    expect(reducer(s, { type: "OUTRO_DUE" })).toBe(s);
+    expect(reducer(s, { type: "TALK_DUE" })).toBe(s);
   });
   it("a break without a bed is dry: music off, clip on", () => {
     expect(at(6).music).toEqual({ uri: null, level: "off" });
@@ -90,7 +91,7 @@ describe("clip ended", () => {
     expect(s.mic).toBeNull();
   });
   it("on an outro talk: mic off only", () => {
-    const s = reducer(reducer(at(3), { type: "OUTRO_DUE" }), { type: "CLIP_ENDED", clip: "outro-c" });
+    const s = reducer(reducer(at(3), { type: "TALK_DUE" }), { type: "CLIP_ENDED", clip: "outro-c" });
     expect(s.cursor).toBe(3);
     expect(s.mic).toBeNull();
     expect(s.music.level).toBe("duck");
@@ -110,6 +111,7 @@ describe("lead", () => {
     expect(s.cursor).toBe(5);
     expect(s.music).toEqual({ uri: "spotify:track:d", level: "duck" });
     expect(s.mic).toBe("break-big");
+    expect(s.bed).toBe("bed");
     expect(s.playSeq).toBe(at(4).playSeq + 1);
     expect(s.micSeq).toBe(at(4).micSeq);
   });
@@ -117,6 +119,7 @@ describe("lead", () => {
     const s = reducer(reducer(at(4), { type: "LEAD_DUE" }), { type: "CLIP_ENDED", clip: "break-big" });
     expect(s.cursor).toBe(5);
     expect(s.mic).toBeNull();
+    expect(s.bed).toBeNull();
     expect(s.music).toEqual({ uri: "spotify:track:d", level: "full" });
   });
   it("is ignored on a hard-intro break or off a break", () => {

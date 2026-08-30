@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radio — build handoff</title>
+<style>
+  :root { color-scheme: light dark;
+    --bg:#fbfaf7; --fg:#1f1d1a; --muted:#6b665e; --line:#e4e0d8; --code:#f2efe8; --accent:#b4531a; --nav:#f5f2ec; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161513; --fg:#e8e4dc; --muted:#a09a90; --line:#2c2a26; --code:#211f1c; --accent:#f0a06a; --nav:#1c1a17; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 16px/1.6 Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  .wrap { display:grid; grid-template-columns: 260px minmax(0,1fr); min-height:100vh; }
+  nav { position:sticky; top:0; height:100vh; overflow:auto; padding:28px 20px; background:var(--nav); border-right:1px solid var(--line);
+        font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  nav .t { font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:12px; font-size:11px; }
+  nav a { display:block; color:var(--fg); text-decoration:none; padding:3px 0; }
+  nav a.l3 { padding-left:14px; color:var(--muted); }
+  nav a:hover { color:var(--accent); }
+  main { padding: 48px 56px 96px; max-width: 900px; }
+  h1 { font-size:2.2rem; line-height:1.15; margin:0 0 .3em; letter-spacing:-.01em; }
+  h2 { font-size:1.5rem; margin:2.4em 0 .6em; padding-top:.6em; border-top:1px solid var(--line); }
+  h3 { font-size:1.15rem; margin:1.8em 0 .5em; }
+  h1+p { color:var(--muted); font-style:italic; }
+  p, li { max-width: 72ch; }
+  a { color:var(--accent); }
+  code { font: 0.86em/1.5 ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; background:var(--code); padding:.1em .35em; border-radius:4px; }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:14px 16px; overflow-x:auto; font-size:.82rem; line-height:1.5; position:relative; }
+  pre code { background:none; padding:0; font-size:inherit; }
+  pre[data-lang]::before { content: attr(data-lang); position:absolute; top:6px; right:10px; font: 10px ui-sans-serif, system-ui; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; font-size:.9rem; margin:1em 0; }
+  th, td { text-align:left; vertical-align:top; padding:8px 12px; border-bottom:1px solid var(--line); }
+  th { font: 600 .78rem ui-sans-serif, system-ui; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  hr { border:0; border-top:1px solid var(--line); margin:2em 0; }
+  blockquote { margin:1em 0; padding-left:1em; border-left:3px solid var(--accent); color:var(--muted); }
+  ul, ol { padding-left:1.4em; }
+  li { margin:.35em 0; }
+  li ul, li ol { margin:.3em 0; }
+  @media (max-width: 860px) { .wrap { grid-template-columns:1fr; } nav { position:static; height:auto; border-right:0; border-bottom:1px solid var(--line); } main { padding:28px 20px 64px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav><div class="t">Contents</div><a class="l2" href="#1-what-it-is-in-one-breath">1. What it is, in one breath</a><a class="l2" href="#2-the-three-ideas-that-make-it-work">2. The three ideas that make it work</a><a class="l3" href="#2-1-the-browser-is-the-state-machine-the-server-is-stateless-functions">2.1 The browser is the state machine; the server is stateless functions</a><a class="l3" href="#2-2-spotify-gives-you-control-not-audio">2.2 Spotify gives you control, not audio</a><a class="l3" href="#2-3-the-dj-is-one-long-conversation-per-station-kept-cheap">2.3 The DJ is one long conversation per station, kept cheap</a><a class="l2" href="#3-architecture">3. Architecture</a><a class="l3" href="#3-1-repo-shape">3.1 Repo shape</a><a class="l2" href="#4-data-model">4. Data model</a><a class="l2" href="#5-the-server-two-functions">5. The server: two functions</a><a class="l3" href="#5-1-post-api-station-next-plan-the-next-segment">5.1 POST /api/station/next — plan the next segment</a><a class="l3" href="#5-2-get-api-tts-text-voiceid-voice-a-line">5.2 GET /api/tts?text=&amp;voiceId= — voice a line</a><a class="l3" href="#5-3-reads">5.3 Reads</a><a class="l2" href="#6-the-dj-loop-packages-dj">6. The DJ loop (packages/dj)</a><a class="l3" href="#6-1-trimming-capping-caching-history-ts">6.1 Trimming, capping, caching (history.ts)</a><a class="l2" href="#7-prompts-are-data">7. Prompts are data</a><a class="l2" href="#8-voices-are-data">8. Voices are data</a><a class="l2" href="#9-the-browser-the-reducer-and-the-effects">9. The browser: the reducer and the effects</a><a class="l3" href="#9-1-the-show-is-a-list-of-metatracks-one-cursor-walks-it">9.1 The show is a list of metatracks; one cursor walks it</a><a class="l3" href="#9-2-the-effects-hook-each-effect-does-one-thing">9.2 The effects hook — each effect does one thing</a><a class="l3" href="#9-3-the-spotify-device-hook">9.3 The Spotify device hook</a><a class="l3" href="#9-4-ios-and-the-lock-screen-you-will-hit-these">9.4 iOS and the lock screen (you will hit these)</a><a class="l3" href="#9-5-resume-and-lifecycle">9.5 Resume and lifecycle</a><a class="l2" href="#10-the-supporting-cast">10. The supporting cast</a><a class="l2" href="#11-building-it-on-supabase-railway">11. Building it on Supabase + Railway</a><a class="l2" href="#12-live-acceptance-scenarios">12. Live acceptance scenarios</a><a class="l2" href="#13-traps-collected">13. Traps, collected</a></nav>
+<main>
+<h1 id="radio-build-handoff">Radio — build handoff</h1>
+<p><em>How to build an AI radio station over Spotify from scratch. Written for an agent (with a human steering) that will make its own implementation choices on Supabase + Railway. This is the architecture, the reasons, the traps, and the contracts — not the source.</em></p>
+<hr>
+<h2 id="1-what-it-is-in-one-breath">1. What it is, in one breath</h2>
+<p>A listener types a mood. A Claude DJ plans a <strong>segment</strong>: one piece of spoken talk (an opening on the first segment, a bridge from the previous block after that) plus <strong>3–4 real Spotify tracks</strong> it found by searching. ElevenLabs voices the talk. The browser plays it all — the voice clip through an <code>&lt;audio&gt;</code> element, the tracks through Spotify's Web Playback SDK (the browser tab <em>is</em> the Spotify device). While a block plays, the DJ is already planning the next one. It goes on for as long as someone listens.</p>
+<p>Stack as built: Next.js (App Router, route handlers), React 19, plain <code>pg</code> + SQL, <code>@anthropic-ai/sdk</code>, ElevenLabs streaming TTS, Spotify Web API + Web Playback SDK, Tailwind, Vitest, pnpm workspaces.</p>
+<h2 id="2-the-three-ideas-that-make-it-work">2. The three ideas that make it work</h2>
+<p>Everything else is detail. If you keep these, the app will work; if you drop one, you'll fight it.</p>
+<h3 id="2-1-the-browser-is-the-state-machine-the-server-is-stateless-functions">2.1 The browser is the state machine; the server is stateless functions</h3>
+<p>Nothing runs when nobody is listening. There is no worker, no queue, no scheduler, no websocket. The server exposes exactly two real functions — <em>plan the next segment</em> and <em>voice this text</em> — and a couple of reads. The browser holds the show, the cursor, the loop, the audio, the Spotify device, and decides when to call the server. A closed tab is a stopped station; nothing leaks.</p>
+<p>Consequences you get for free: one cheap service, no orchestration bugs, trivially resumable (the DB holds the conversation, the browser holds the position), and the whole playback logic is a pure reducer you can unit-test without any I/O.</p>
+<h3 id="2-2-spotify-gives-you-control-not-audio">2.2 Spotify gives you control, not audio</h3>
+<p>You never get Spotify's audio bytes. Instead the browser registers itself as a Spotify Connect device (Web Playback SDK, <strong>Premium account required</strong>) and you tell Spotify "play these URIs on that device" via <code>PUT /me/player/play?device_id=…</code>. Playback state comes back through the SDK's <code>player_state_changed</code>. Your own audio (the DJ's voice) plays through a normal <code>&lt;audio&gt;</code> element you control. The "radio" is the interleaving of those two sources: pause/duck Spotify → play voice → on <code>ended</code>, start the block.</p>
+<h3 id="2-3-the-dj-is-one-long-conversation-per-station-kept-cheap">2.3 The DJ is one long conversation per station, kept cheap</h3>
+<p>Each station is a single Claude conversation stored as <code>messages</code> JSON on a row. Every segment is one more user turn ("here's the request, here's what you just played, program the next block") that the DJ answers by calling tools: <code>search_spotify</code> as many times as it likes, then <code>finish_segment</code> once. Three things keep it cheap and coherent over hours:</p>
+<ul>
+<li><strong>Trim each finished turn</strong> down to three messages (request → the accepted <code>finish_segment</code> call → its result). The searches and their result listings are thrown away once the decision is made. The DJ still sees exactly what it said and played in every earlier segment.
+</li>
+<li><strong>Cap history</strong> at the last 20 segments (60 messages).
+</li>
+<li><strong>Prompt-cache</strong> with a 1-hour TTL: one breakpoint on the system prompt, one on the last message. Segments are ~15 minutes apart, so the default 5-minute cache would miss every time.
+</li>
+</ul>
+<h2 id="3-architecture">3. Architecture</h2>
+<pre><code>┌──────────────────────────── browser (the state machine) ────────────────────────────┐
+│  reducer (pure)  ←events─  effects hook  ─→  &lt;audio&gt; (talk)   Spotify SDK (device)  │
+│      │                          │                                    ▲              │
+│  cursor {seg,item}         fetch talk audio                   PUT /me/player/play   │
+│  segments[≤20]             ask for next segment              (user's PKCE token,    │
+│                                                               lives in localStorage)│
+└───────────────┬──────────────────────┬──────────────────────────────────────────────┘
+                │ POST /api/station/next│ GET /api/tts?text&amp;voiceId
+                ▼                      ▼
+┌──────────────────── Railway: one Next.js service (stateless) ───────────────────────┐
+│  /api/station/next: lock station row → build user turn from prompt templates        │
+│      → Claude tool loop (search_spotify via app token, finish_segment)               │
+│      → validate ids → trim + cap messages → insert segment → commit                  │
+│  /api/tts: look up voice in roster → stream ElevenLabs → pipe to browser            │
+│  /api/station/:id, page loader: reads                                                │
+└──────────────┬────────────────────────────────┬─────────────────────┬───────────────┘
+               ▼                                ▼                     ▼
+      Supabase Postgres                  Anthropic API           ElevenLabs API
+   station · segment · settings                                 Spotify Web API (search)</code></pre>
+<p><strong>Token flows, kept apart on purpose:</strong></p>
+<div class="scroll"><table><thead><tr><th>Purpose</th><th>Token</th><th>Where it lives</th><th>How</th></tr></thead><tbody><tr><td>Playback (SDK, <code>/me/player/*</code>)</td><td>The listener's user token</td><td><strong>Browser only</strong>, localStorage, refreshed in place</td><td>Authorization Code + <strong>PKCE</strong> — no secret, so the browser runs the whole flow. Scopes: <code>streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state</code></td></tr><tr><td>Search (inside the DJ loop)</td><td>App token</td><td>Server process memory</td><td>Client Credentials with the client secret</td></tr></tbody></table></div>
+<p>Every visitor plays through their <em>own</em> Premium account; the server never sees a user token. (Spotify apps in Development mode must list each tester's account under User Management.)</p>
+<h3 id="3-1-repo-shape">3.1 Repo shape</h3>
+<pre><code>apps/web            Next.js: the gate, the station page, /settings, the API routes. Owns process.env.
+packages/dj         The DJ: prompt assembly, tool schemas, the Claude loop, trimming/caching. Pure, tested.
+packages/spotify    Spotify auth (client-credentials + PKCE helpers) and API calls. Pure fetch + Web Crypto.
+packages/db         Declarative schema (schema/*.sql) + typed query functions over pg.</code></pre>
+<p>The rule: <code>packages/*</code> never read <code>process.env</code> and never import Next. That split is what makes the DJ and the reducer unit-testable, and it costs nothing. One app, but keep the split.</p>
+<p><strong>Always minimize dependencies.</strong> The runtime tree is Next/React, <code>pg</code>, <code>@anthropic-ai/sdk</code>, <code>zod</code>, an icon set, and Tailwind — that's it. Spotify auth is <code>fetch</code> + Web Crypto (PKCE by hand, ~80 lines), not an SDK or an auth library; playback is the SDK script Spotify serves plus one <code>PUT</code>; state is a <code>useReducer</code>; TTS is a <code>fetch</code> piped through. Before adding a package, ask whether the platform or thirty lines of your own would do. The same rule applies to services: if the browser can do it (tokens, playback, audio), the server doesn't.</p>
+<h2 id="4-data-model">4. Data model</h2>
+<p>Three tables. No user table (auth is a gate in front, not a concept inside). No status columns — the browser is the state machine, so a row exists only once a thing is done.</p>
+<pre data-lang="sql"><code>-- One listener's show and the DJ's memory of it.
+create table station (
+  id            uuid primary key default gen_random_uuid(),
+  prompt        text not null,                 -- the listener's current ask
+  messages      jsonb not null default '[]',   -- the Claude conversation, already trimmed + capped
+  segment_count integer not null default 0,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+-- Append-only log: one row per segment the DJ finished.
+create table segment (
+  id          uuid primary key default gen_random_uuid(),
+  station_id  uuid not null references station (id) on delete cascade,
+  seq         integer not null,               -- 1-based within the station
+  prompt      text not null,                  -- the ask in force when planned
+  talk        text not null,                  -- the one spoken piece
+  tracks      jsonb not null,                 -- [{id, uri, name, artists[], album, durationMs}]
+  model       text not null,
+  created_at  timestamptz not null default now(),
+  unique (station_id, seq)
+);
+create index on segment (station_id, seq desc);
+
+-- What /settings edits and the server reads per request. Prompt text and the voice roster live ONLY here.
+create table settings (
+  key         text primary key,   -- prompt.system | prompt.opening | prompt.bridge | prompt.shift | voices
+  value       text not null,
+  updated_at  timestamptz not null default now()
+);</code></pre>
+<p><code>segment.tracks</code> is denormalised on purpose: it's exactly what the player needs, no joins, no track table.</p>
+<h2 id="5-the-server-two-functions">5. The server: two functions</h2>
+<h3 id="5-1-post-api-station-next-plan-the-next-segment">5.1 <code>POST /api/station/next</code> — plan the next segment</h3>
+<p>Request <code>{ stationId: uuid | null, prompt: string (1–500), dj?: string }</code>. <code>stationId: null</code> creates a station. Response <code>{ stationId, segment: { id, seq, prompt, talk, tracks[] } }</code>. Typical latency 20–60 s; the client uses no timeout shorter than 120 s.</p>
+<p>The shape of the handler:</p>
+<ol>
+<li>Create the station if needed. Take the row lock: <code>select … from station where id = $1 for update skip locked</code> inside a transaction. No row back but the station exists → <strong>409 busy</strong> (a second tab pressed Run; it must not start a second billed run). Hold the lock for the whole plan.
+</li>
+<li>Load the last segment and the four prompt slots from <code>settings</code>. Build the user turn (§7).
+</li>
+<li>Run the DJ loop (§6) with <code>history = station.messages</code>.
+</li>
+<li><code>messages = capHistory([...history, ...trimTurn(turn)])</code>.
+</li>
+<li>In the same transaction: insert the <code>segment</code> row (<code>seq = segment_count + 1</code>), update <code>station.prompt/messages/segment_count</code>. Commit. Always release in a <code>finally</code>.
+</li>
+<li>Log usage per segment (<code>input / cache_read / cache_write / output</code>, request count) — it's how you'll know the cache is working.
+</li>
+</ol>
+<p>Errors: 400 invalid body · 404 unknown station · 409 busy · 502 with the DJ's failure message (refusal, turn cap, no tracks). The browser retries a 502 once, then halts with the error.</p>
+<h3 id="5-2-get-api-tts-text-voiceid-voice-a-line">5.2 <code>GET /api/tts?text=&amp;voiceId=</code> — voice a line</h3>
+<p>The browser names a voice by id; the server looks it up in the roster (<code>settings.voices</code>), builds the ElevenLabs body from that voice's model + settings, and pipes the streaming response straight through:</p>
+<pre data-lang="ts"><code>const upstream = await fetch(
+  `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128`,
+  { method: "POST",
+    headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+    body: JSON.stringify({ text, model_id, voice_settings: { stability, similarity_boost, style, speed, use_speaker_boost } }) });
+return new Response(upstream.body, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" } });</code></pre>
+<p>No storage, no bucket. The browser fetches the clip as a Blob and holds it. Only <code>ELEVENLABS_KEY</code> lives on the server; the tuning is data in the DB, so a voice tweak reaches the next line without a redeploy.</p>
+<h3 id="5-3-reads">5.3 Reads</h3>
+<p><code>GET /api/station/:id</code> → <code>{ stationId, prompt, segmentCount, segments: [last 20] }</code> for resuming a past show. The station page's server component also loads the voice roster (ids + names only, never the tuning) and the list of recent stations, so the page paints whole on first load.</p>
+<h2 id="6-the-dj-loop-packages-dj">6. The DJ loop (<code>packages/dj</code>)</h2>
+<p>Two tools, frozen in code (their schema is what the validator checks):</p>
+<pre data-lang="ts"><code>{ name: "search_spotify", strict: true,
+  description: "Search Spotify's catalog for tracks. Supports Spotify search syntax, e.g. 'artist:Khruangbin', 'year:1971-1975 genre:soul'. Returns up to `limit` tracks with ids, artists, album, year, duration.",
+  input_schema: { type: "object", properties: { query: {type:"string"}, limit: {type:"integer", description:"1 to 20. Use 8 unless you need more."} }, required: ["query","limit"], additionalProperties: false } }
+
+{ name: "finish_segment", strict: true,
+  description: "Deliver the finished segment. Every id in track_ids must have come back from a search_spotify call in this conversation.",
+  input_schema: { type: "object", properties: { talk: {type:"string"}, track_ids: {type:"array", items:{type:"string"}, description:"Spotify track ids in play order, 3 to 4 of them."} }, required: ["talk","track_ids"], additionalProperties: false } }</code></pre>
+<p>The loop is manual (no helper), and this is the part to get exactly right:</p>
+<pre data-lang="ts"><code>async function planSegment({ system, history, userTurn }, { client, model, search }) {
+  const seen = new Map&lt;string, Track&gt;();          // every track any search returned this turn
+  const turn = [{ role: "user", content: userTurn }];
+  for (let i = 0; i &lt; 12; i++) {                  // runaway guard, not a budget
+    const res = await client.messages.create({
+      model, max_tokens: 4096,
+      system: [{ type: "text", text: system, cache_control: { type: "ephemeral", ttl: "1h" } }],
+      tools: TOOLS,
+      messages: withCache([...history, ...turn]), // one 1h breakpoint on the last block of the last message
+    });
+    if (res.stop_reason === "refusal" || res.stop_reason === "max_tokens") throw …;
+    turn.push({ role: "assistant", content: res.content });
+    const uses = res.content.filter(b =&gt; b.type === "tool_use");
+    if (!uses.length) { turn.push({ role:"user", content:"Use the tools: search, then finish_segment." }); continue; }
+
+    const results = []; let finished = null;
+    for (const use of uses) {
+      if (use.name === "search_spotify") {
+        const tracks = await search(use.input.query, use.input.limit);
+        for (const t of tracks) seen.set(t.id, t);
+        results.push({ type:"tool_result", tool_use_id: use.id,
+                       content: tracks.map(describeTrack).join("\n") || "No results." });
+      } else if (use.name === "finish_segment") {
+        const check = resolveFinish(use.input, seen);   // ids ⊆ seen, 3–4 of them, no dupes, talk non-empty
+        if (check.ok) { finished = {...}; results.push({ …, content: "Segment accepted." }); }
+        else results.push({ …, is_error: true, content: check.error });  // the DJ tries again
+      }
+    }
+    // With 3 calls left, append a text block: "Call finish_segment now with 3 or 4 tracks you have seen."
+    turn.push({ role: "user", content: results });
+    if (finished) return { ...finished, turn, usage };
+  }
+  throw new Error("the DJ did not finish within 12 turns");
+}</code></pre>
+<p>Key details:</p>
+<ul>
+<li><strong>The DJ can only play what it searched.</strong> <code>resolveFinish</code> rejects any id not in <code>seen</code> with a tool error naming the offending ids; Claude corrects itself on the next turn. This single check is what makes "never invent a track" true rather than hoped-for. Spotify's Recommendations/Audio Features endpoints are closed to new apps — the DJ picks, Spotify resolves.
+</li>
+<li><code>describeTrack</code> gives the model one line per hit: <code>Artists — Name [Album (year), 252s] id=…</code>. Duration and year matter to a DJ.
+</li>
+<li>Tracks are resolved from <code>seen</code> server-side (name, uri, artists, album, durationMs) — the model returns ids only.
+</li>
+</ul>
+<h3 id="6-1-trimming-capping-caching-history-ts">6.1 Trimming, capping, caching (<code>history.ts</code>)</h3>
+<pre data-lang="ts"><code>// After a segment is accepted, the whole turn becomes three messages:
+trimTurn(turn) =&gt; [
+  { role: "user",      content: &lt;the request text&gt; },
+  { role: "assistant", content: [{ type:"tool_use", id, name:"finish_segment", input }] },
+  { role: "user",      content: [{ type:"tool_result", tool_use_id: id, content:"Segment accepted." }] },
+]
+capHistory(messages, 20)   // keep the last 20×3, dropping whole turns from the front
+withCache(messages)        // strip any old cache_control, put one {ephemeral, ttl:"1h"} on the last block of the last message</code></pre>
+<p>Verify it live: <code>select jsonb_array_length(messages), segment_count from station</code> should give ≈ 3×count, never above 60; <code>cache_read_input_tokens &gt; 0</code> from the second segment on.</p>
+<h2 id="7-prompts-are-data">7. Prompts are data</h2>
+<p>Four slots in <code>settings</code>, placeholders <code>{request}</code>, <code>{previous_talk}</code>, <code>{previous_tracks}</code>, <code>{dj}</code>. Code knows the slot names and which placeholders each may use; <strong>no prompt text in code, no fallback</strong> — a missing slot throws. Edit on a <code>/settings</code> page (or in the table). Editing the system prompt costs one cache miss, nothing more.</p>
+<p>Assembly per segment:</p>
+<pre><code>opening  (first segment)  = fill(prompt.opening)
+bridge   (later)          = fill(prompt.bridge) + (request changed since last segment ? "\n" + fill(prompt.shift) : "")</code></pre>
+<p><code>{dj}</code> is the picked voice's <em>name</em>, sent by the browser with each request and baked into the <strong>user turn</strong> ("On the mic: …"), never into the system prompt — so switching DJ mid-show is a handoff on air, not a cache miss.</p>
+<p>The text that works today (start here, then tune):</p>
+<p><strong>prompt.system</strong></p>
+<pre><code>You are the on-air host of Claude Radio — a small personal station with one listener, listening right now,
+who told you what they're in the mood for. Each segment's brief names who's on the mic; that's you for that
+segment, and you speak as them. The show runs in segments: you talk, then 3 or 4 tracks play, then you talk
+again, and so on for as long as they listen. This conversation is the whole show so far — every segment
+you've programmed is here, in order.
+
+Each segment has exactly one piece of talk:
+- On the first segment it's an opening: the station ident and your name, the way a real host signs on
+  ("You're listening to Claude Radio, I'm DJ so-and-so" — in your own words), then set the mood and lead
+  into the first track.
+- On every later segment it's a bridge: close the block that just played (name a song or two, say something
+  true and specific — a year, a place, a detail about the record) and lead into the first track of the new
+  block. The listener may have skipped through some of the previous block, so refer to it the way a host
+  would — "that was…", "we had…" — without insisting they heard every second of it. Every few bridges, not
+  every one, drop a station ident — "this is Claude Radio", "you're on Claude Radio with &lt;your name&gt;" — the
+  classic way, in passing.
+- Hosts change sometimes. When the brief names a different host than the previous segment's brief did, that
+  bridge is a handoff: you're the new host picking up the mic — give the outgoing host a nod, say who you
+  are, and carry the show on without missing a beat. Otherwise there's no need to keep repeating your name.
+
+How you program:
+- Use search_spotify to find real tracks. Search as often as you need (artists, eras, moods, exact titles)
+  — only tracks that came back from a search can go in a segment. Never invent an id.
+- Pick for flow: an arc across the 3–4 tracks and a link from the previous block. Don't repeat anything
+  from earlier segments, and don't repeat an artist within a segment unless the listener asked for that artist.
+- If the listener's request changes, acknowledge the shift on air and follow it.
+
+How you talk:
+- It's spoken, not read. A warm, unhurried late-night host: short sentences, contractions, no lists, no
+  markdown, no emoji, nothing a voice can't say. Keep it tight: 3 short sentences, 60 to 70 words, never
+  more; a couple of details, not three.
+- You may use at most two bracketed delivery tags where it genuinely helps, like [sighs] or [laughs].
+
+When the segment is ready, call finish_segment exactly once and write nothing after it.</code></pre>
+<p><strong>prompt.opening</strong></p>
+<pre><code>Listener's request: {request}
+On the mic: {dj}
+
+This is the first segment of the show. Sign on, open the show and program the first block.</code></pre>
+<p><strong>prompt.bridge</strong></p>
+<pre><code>Listener's request: {request}
+On the mic: {dj}
+
+The previous segment (your talk and its tracks):
+{previous_talk}
+{previous_tracks}
+
+Program the next segment. Your talk is the bridge: close the previous block and open this one. The listener
+may have skipped some of it — write so it reads naturally either way.</code></pre>
+<p><strong>prompt.shift</strong></p>
+<pre><code>The listener changed the mood to: {request}. Acknowledge the shift on air and follow it.</code></pre>
+<h2 id="8-voices-are-data">8. Voices are data</h2>
+<p><code>settings.voices</code> is a JSON array; order is picker order, first is the default:</p>
+<pre data-lang="json"><code>[{ "id": "&lt;elevenlabs voice id&gt;", "name": "Vera", "gender": "female",
+   "modelId": "eleven_v3", "stability": 0.5, "similarityBoost": 0.75, "style": 0, "speed": 1, "speakerBoost": true }]</code></pre>
+<p>Measured facts about the models: <code>eleven_v3</code> is the expressive one, reads <code>[audio tags]</code> in the talk, stability is a <em>mode</em> (only 0 / 0.5 / 1 are accepted), and it <strong>ignores</strong> <code>speed</code> and <code>style</code>. <code>eleven_multilingual_v2</code> is steadier and cheaper, continuous knobs, <code>speed</code> works, ignores tags. The <code>/settings</code> page edits the roster with a "preview this unsaved form" button (same TTS function, voice passed in rather than looked up). The station page gets <code>{id, name, gender}</code> only.</p>
+<h2 id="9-the-browser-the-reducer-and-the-effects">9. The browser: the reducer and the effects</h2>
+<h3 id="9-1-the-show-is-a-list-of-metatracks-one-cursor-walks-it">9.1 The show is a list of metatracks; one cursor walks it</h3>
+<p>A segment is a <em>metatrack</em>: item 0 is its talk, items 1..n its tracks. The whole show is <code>segments[]</code> (oldest first, capped at 20) and one <code>cursor {seg, item}</code>. One transport (prev · play/pause · next) moves the cursor through talk and tracks alike; the show is rendered as a tappable cue sheet where any row jumps to it. "Skip the talk" is just <em>next</em>.</p>
+<pre data-lang="ts"><code>interface StationState {
+  loop: "stopped" | "running";        // Run/Stop. Absolute. Stop keeps the cursor and the DJ's memory.
+  phase: "idle" | "planning" | "playing";
+  segments: SegmentView[];            // {id, seq, prompt, talk, tracks[]}
+  cursor: { seg: number; item: number } | null;
+  pending: boolean; requestSeq: number; retried: boolean;   // one /next in flight at most; one retry
+  playSeq: number;                    // bumps whenever the item under the cursor must (re)start
+  error: string | null;
+}</code></pre>
+<p>Events: <code>RUN</code> <code>STOP</code> <code>HALT{error}</code> <code>LOAD_SHOW{segments}</code> <code>CLEAR_SHOW</code> <code>SEGMENT_READY{segment}</code> <code>SEGMENT_FAILED{error}</code> <code>TALK_FAILED{segmentId}</code> <code>ENDED</code> <code>TRACK_CHANGED{uri}</code> <code>NEXT</code> <code>PREV</code> <code>JUMP{seg,item}</code> <code>CLEAR_ERROR</code>.</p>
+<p>The one rule that makes "one segment ahead" fall out of the state: <strong>planning is requested in exactly one place</strong> — whenever the cursor lands on a <em>talk</em> and that segment is the <em>tail</em> (plus RUN with nothing in the list). So the DJ is asked the moment the last block's talk starts, the answer lands 20–60 s later while the block is still playing, and rewinding never plans.</p>
+<pre data-lang="ts"><code>function moveTo(s, cursor) {
+  const moved = { ...s, phase: "playing", cursor, playSeq: s.playSeq + 1 };
+  const plans = s.loop === "running" &amp;&amp; cursor.item === 0 &amp;&amp; cursor.seg === s.segments.length - 1;
+  return plans ? requestNext(moved) : moved;
+}
+// NEXT/ENDED: after(cursor) ?? (phase "planning" + requestNext)    — outran the DJ: wait, then start when it lands
+// SEGMENT_READY: append (trim head to 20, shift cursor); if phase was "planning", moveTo its talk
+// SEGMENT_FAILED: retry once, then halt with the error
+// TALK_FAILED on the cursor's talk: moveTo item 1 — a broken voice never stalls the show
+// TRACK_CHANGED: Spotify moved within the block on its own → cursor follows, no playSeq bump
+// JUMP: cursor there, loop running (tapping a row starts the show)</code></pre>
+<p>Write the reducer first, pure, with tests: next/prev across a segment boundary; prev on the first talk is a no-op; jump back then play to the tail issues exactly one request; SEGMENT_READY while planning starts it, while playing appends; stop then run resumes at the same cursor; the 20-cap shifts the cursor; TALK_FAILED advances; TRACK_CHANGED follows without a playSeq bump.</p>
+<h3 id="9-2-the-effects-hook-each-effect-does-one-thing">9.2 The effects hook — each effect does one thing</h3>
+<p>Talk <strong>audio</strong> is not reducer state. The hook keeps a per-session cache <code>voiceId:segmentId → blob URL</code> and fetches by <em>position</em>: the segment under the cursor and the one after it. Never by arrival. That's why a resumed show's past blocks are voiced the instant they're tapped and a rewind is instant. Blobs are dropped only when their segment leaves the list.</p>
+<ol>
+<li><strong>Plan</strong> — when <code>pending</code>: <code>POST /api/station/next</code> with <code>{stationId, prompt (read at request time), dj: name}</code>, 120 s abort. 409 → <code>HALT "another tab is running this station"</code>. Else <code>SEGMENT_READY</code> / <code>SEGMENT_FAILED</code>.
+</li>
+<li><strong>Voice</strong> — for <code>segments[cursor.seg]</code> and <code>[cursor.seg+1]</code>: if no cached URL and not in flight, <code>GET /api/tts</code> → <code>URL.createObjectURL(blob)</code>. A failed fetch is stored as an error (and retried later).
+</li>
+<li><strong>Talk on air</strong> — cursor on item 0 and URL ready: <code>device.pause()</code>, <code>device.setVolume(0.15)</code> (duck), <code>audio.src = url; audio.play()</code>. <code>ended</code> → <code>ENDED</code>; error → <code>TALK_FAILED</code>. Cleanup pauses the element and restores volume (0.8) but does <strong>not</strong> revoke the blob. Cached error → dispatch <code>TALK_FAILED</code>.
+</li>
+<li><strong>Tracks on air</strong> — when <code>playSeq</code> bumps with the cursor on a track: <code>device.play(block uris, item-1)</code> — i.e. <code>PUT /me/player/play</code> with <code>{ uris, offset: { position } }</code>. Spotify then plays through the rest of the block by itself; you follow along via <code>TRACK_CHANGED</code>.
+</li>
+<li><strong>Stop</strong> — pause both.
+</li>
+</ol>
+<p>The transport: <code>toggle()</code> pauses/plays whichever source is under the cursor; <code>prev()</code> restarts the current track if more than 3 s in (the Spotify convention), else <code>PREV</code>; <code>next()</code> → <code>NEXT</code>.</p>
+<h3 id="9-3-the-spotify-device-hook">9.3 The Spotify device hook</h3>
+<pre data-lang="ts"><code>const p = new Spotify.Player({ name: "Radio", volume: 0.8,
+  getOAuthToken: cb =&gt; accessToken(clientId).then(cb) });   // your PKCE token from localStorage, refreshed in place
+p.addListener("ready", e =&gt; setDeviceId(e.device_id));
+p.addListener("not_ready", …);                               // device went offline → HALT
+p.addListener("player_state_changed", s =&gt; {
+  // current_track changed → onTrackChanged(uri)
+  // end of the list: s.paused &amp;&amp; s.position === 0 &amp;&amp; s.track_window.next_tracks.length === 0
+  //   &amp;&amp; current uri === the last uri you handed it &amp;&amp; &gt;1.5 s since your play() call  → onTrackListEnded()
+});
+await p.connect();</code></pre>
+<p>"List finished" is not an event Spotify gives you — it's that <em>pattern</em> in <code>player_state_changed</code>, and the same pattern appears briefly right after a <code>play()</code> call, hence the 1.5 s guard. <code>pause()/resume()</code> on a player that has never loaded a list is a <code>playback_error</code>; gate on a <code>loaded</code> flag. <code>playback_error</code> is per-operation — log it, don't halt.</p>
+<h3 id="9-4-ios-and-the-lock-screen-you-will-hit-these">9.4 iOS and the lock screen (you will hit these)</h3>
+<ul>
+<li><strong>Two media elements, both must be unlocked inside a tap.</strong> iOS lets an <code>HTMLMediaElement</code> play later only if <em>that element</em> first played inside a user gesture. On the Run tap, synchronously: create your talk <code>&lt;audio&gt;</code>, play a few ms of silent WAV (data URI), pause; and call the SDK player's <code>activateElement()</code>. Fetch the SDK script at page mount, not in the tap — a cold script fetch can eat the activation window.
+</li>
+<li><strong>Media Session.</strong> iOS pins Now Playing to whichever element played last, and the SDK writes its own metadata on every state change. So set <code>navigator.mediaSession.metadata</code>, <code>playbackState</code>, <code>setPositionState</code> and the play/pause/prev/next handlers from the <em>player face</em> on every render after a handoff, re-asserting your metadata over the SDK's. Register <code>previoustrack</code>/<code>nexttrack</code> only when the cursor can move that way.
+</li>
+<li>Form controls under 16px zoom the page on focus in Safari: <code>@media (pointer: coarse) { textarea, select, input { font-size: 16px } }</code>. Do not use <code>maximum-scale=1</code>.
+</li>
+</ul>
+<h3 id="9-5-resume-and-lifecycle">9.5 Resume and lifecycle</h3>
+<p>A page load is a fresh show (new station) unless the listener picks a past station from a "Resume a show" list → <code>GET /api/station/:id</code> → <code>LOAD_SHOW</code>. Tapping any row or pressing Run continues <em>that</em> conversation (the server's history for that station). Stop inside a page keeps the cursor and the DJ's memory. The DJ pick is remembered in localStorage; the station is not.</p>
+<h2 id="10-the-supporting-cast">10. The supporting cast</h2>
+<ul>
+<li><strong>Auth.</strong> The original is private behind a passkey gate implemented as a single Next.js middleware (<code>proxy.ts</code>): every request except <code>api/health</code> and static assets needs a valid JWT cookie; navigations are redirected to the login, API calls get 401. There is deliberately <strong>no user table</strong> — the gate is the whole auth story. On Supabase you could use Supabase Auth with a middleware that checks the session instead; keep it to one gate, exempt nothing but health + static, and consider leaving <code>/settings</code> guarded while the station itself is open for friends.
+</li>
+<li><strong>Env</strong> (server only, parsed lazily with zod so <code>next build</code> needs no values): <code>DATABASE_URL</code>, <code>SPOTIFY_CLIENT_ID</code>, <code>SPOTIFY_CLIENT_SECRET</code>, <code>CLAUDE_KEY</code>, <code>CLAUDE_MODEL</code> (default a top-tier model — the DJ's taste is the product), <code>ELEVENLABS_KEY</code> (optional: the station runs with talk skipped until set). The Spotify client id is public and also handed to the browser for PKCE.
+</li>
+<li><strong>Settings page</strong> (<code>/settings</code>, desktop-wide, separate route group and layout from the phone-wide station): four prompt textareas with the allowed placeholders listed, and the voice roster editor with preview. Server actions write <code>settings</code> rows.
+</li>
+<li><strong>Segment log.</strong> <code>segment</code> rows are history; nothing reads them except "last segment" (for the bridge) and the resume list. No provenance yet (a station doesn't record which prompt text planned it) — an easy improvement.
+</li>
+<li><strong>Tests:</strong> pure logic only — the reducer, trimming/capping/caching, prompt assembly, <code>resolveFinish</code>, the voice schema, the lock-screen mapping. Anything touching Postgres/Spotify/Claude/ElevenLabs is verified live with a written quickstart (§12).
+</li>
+</ul>
+<h2 id="11-building-it-on-supabase-railway">11. Building it on Supabase + Railway</h2>
+<p><strong>Supabase</strong> = Postgres only. Nothing here needs Auth, Storage, Realtime, or Edge Functions; the design is stateless functions in one Next.js service. Notes:</p>
+<ul>
+<li>Connect with plain <code>pg</code> over the <strong>session pooler</strong> (or direct connection) — <code>for update skip locked</code> inside an explicit transaction needs a real session, not transaction-mode pooling. Keep the pool small (<code>max: 5</code>); Railway runs one instance.
+</li>
+<li>Schema: the original diffs a declarative <code>schema/*.sql</code> against the live DB (pg-delta) and needs to create a shadow database, which Supabase may not allow. Supabase's own migrations (<code>supabase db diff</code> / <code>db push</code>) are the natural replacement; or keep declarative SQL and diff against a local shadow.
+</li>
+<li>Dev and prod sharing one database is fine here (it's what the original does) — there's no user data beyond stations and settings, and it means the prompts you tune in dev are the prompts on air.
+</li>
+<li>Seed the four prompt rows and one voice by hand (or a seed script) — the code has no fallback text on purpose.
+</li>
+</ul>
+<p><strong>Railway</strong> = one service, <code>radio-web</code>, building the monorepo root with <code>pnpm --filter web build</code>, health check on <code>/api/health</code>, secrets as service variables, deploy on push to main. No worker, no cron.</p>
+<p><strong>Spotify app</strong> (developer.spotify.com): register the exact redirect URIs for dev and prod (<code>https://&lt;host&gt;/spotify/callback</code>). Dev must be HTTPS for the SDK and the PKCE callback — <code>next dev --experimental-https</code> with a hosts entry works. While the app is in Development mode, add every listener's Spotify account under User Management; each needs Premium.</p>
+<p><strong>Order of work that paid off:</strong> schema + settings rows → <code>packages/dj</code> with tests (loop, trimming, prompt assembly) → <code>/api/station/next</code> verified with curl (watch the usage log) → Spotify PKCE + device in the browser, playing a hard-coded block → reducer with tests → the effects hook → TTS + ducking → transport, cue sheet, resume → iOS/lock screen → settings page.</p>
+<h2 id="12-live-acceptance-scenarios">12. Live acceptance scenarios</h2>
+<ol>
+<li><strong>Cold start</strong> — pick a voice, type a mood, Run: "planning…" → spoken opening within 60 s → first song on this tab's device. The cue sheet gains segment 1.
+</li>
+<li><strong>One ahead</strong> — while the opening plays, a second <code>/api/station/next</code> is in flight. Let the block play out: bridge 2 starts &lt; 1 s after the last song and refers to the block that just played.
+</li>
+<li><strong>Stop / Run</strong> — Stop mid-song: silence, no new <code>/next</code>. Run: resumes at the same cursor. Reload, resume the station from the list, Run: the DJ continues the same conversation (<code>segment_count</code> keeps climbing).
+</li>
+<li><strong>Transport</strong> — next during talk → first song. Pause/play a song → still "running". ⏭ on the last song → next talk, or "planning…" if you outran the DJ, then it starts by itself. The following bridge still reads naturally after heavy skipping. Tap an earlier row → it plays, no planning request.
+</li>
+<li><strong>DJ switch</strong> — change the voice mid-show: the next bridge is a handoff on air, no cache miss (usage log).
+</li>
+<li><strong>Failure paths</strong> — bogus voice id: talk skipped, songs play, error shown. Break <code>CLAUDE_KEY</code>: one retry, then the station halts with the error.
+</li>
+<li><strong>Two tabs</strong> — Run in a second tab while the first is planning → 409 shown as "another tab is running this station".
+</li>
+<li><strong>Phone</strong> — lock the screen: Now Playing shows the track / "&lt;DJ&gt; on the mic", play/pause and skip work, the talk→track handoff happens with the screen locked.
+</li>
+</ol>
+<h2 id="13-traps-collected">13. Traps, collected</h2>
+<ul>
+<li>Trusting the model's track ids. Validate against what search returned, always.
+</li>
+<li>Default 5-minute prompt cache: misses every segment. Use <code>ttl: "1h"</code> on both breakpoints, and strip old <code>cache_control</code> markers so the prefix stays byte-identical.
+</li>
+<li>Putting the DJ name (or anything per-segment) in the system prompt: cache miss per switch.
+</li>
+<li>Planning from more than one place in the reducer: double requests, or none. One rule (§9.1).
+</li>
+<li>Fetching talk audio by arrival instead of position: rewinds and resumes go silent.
+</li>
+<li>Revoking blob URLs on effect cleanup: the rewind you just made plays nothing.
+</li>
+<li>Two racing PKCE refreshes: the refresh token rotates, the loser is logged out. Share one in-flight promise.
+</li>
+<li>Creating the SDK player or the talk <code>&lt;audio&gt;</code> outside the tap on iOS: silent forever.
+</li>
+<li>Reading "end of list" too early after <code>play()</code>: the state looks identical for a moment.
+</li>
+<li>A second tab hitting <code>/next</code> without the row lock: two billed plans, a corrupted conversation.
+</li>
+<li>Prompt text with a fallback in code: two sources of truth; the one on <code>/settings</code> silently loses.
+</li>
+</ul>
+</main>
+</div>
+</body>
+</html>

@@ -1,11 +1,13 @@
 /**
  * The program's state machine. Pure. A program is an ordered list of elements; each element says
- * what happens on two lanes — `music` (the Spotify device) and `mic` (one <audio> element). The
- * reducer emits the *desired* lane state; use-program.ts makes the device and the element match it.
+ * what happens on three lanes — `music` (the Spotify device: songs only), `mic` (the voice) and
+ * `bed` (a looped instrumental under the voice; mic and bed are mixed in a Web Audio graph). The
+ * reducer emits the *desired* lane state; use-program.ts makes the device and the graph match it.
  *
  *   cursor    — the element on air
- *   music     — what the device should play and how loud: off | bed | duck | full
- *   mic       — the clip the <audio> should be playing, or null
+ *   music     — what the device should play and how loud: off | duck | full
+ *   mic       — the clip the voice should be playing, or null
+ *   bed       — the bed under it, or null (when it comes in and fades out is timing, in the hook)
  *   playSeq   — bumps whenever the music lane must (re)start
  *   micSeq    — bumps whenever the mic lane must (re)start (a lead keeps the clip running)
  *   startedAt — wall ms when RUN was first pressed; the program clock reads from it
@@ -25,18 +27,23 @@ export interface Talk {
   clip: string;
   /** Over the song's first seconds (ducked from the start) or back-timed over its last. */
   over: "intro" | "outro";
+  /**
+   * An intro talk that waits: the song starts full and the voice comes in this far into it (ducking
+   * it), timed so the clip ends at the post. Absent or 0: the voice starts with the song.
+   */
+  atMs?: number;
 }
 
 export type Element =
   | { kind: "song"; track: Track; talk?: Talk }
   /**
-   * The clip over a bed (a quiet instrumental) or dry. `bedInMs`: the bed waits this long (the
-   * words before it — a legal ID — are dry). `leadMs`: the next song starts this long before the
-   * clip ends, ducked under it, so the clip's last line is its talk-up; 0 = a hard intro.
+   * The clip over a bed (a looped instrumental, by name) or dry. `bedInMs`: the bed waits this
+   * long (the words before it — a legal ID — are dry). `leadMs`: the next song starts this long
+   * before the clip ends, ducked under it, so the clip's last line is its talk-up; 0 = a hard intro.
    */
-  | { kind: "break"; clip: string; bed?: Track; bedInMs?: number; leadMs: number; label: string };
+  | { kind: "break"; clip: string; bed?: string; bedInMs?: number; leadMs: number; label: string };
 
-export type Level = "off" | "bed" | "duck" | "full";
+export type Level = "off" | "duck" | "full";
 
 export interface ProgramState {
   loop: "stopped" | "running";
@@ -44,6 +51,7 @@ export interface ProgramState {
   cursor: number | null;
   music: { uri: string | null; level: Level };
   mic: string | null;
+  bed: string | null;
   playSeq: number;
   micSeq: number;
   startedAt: number | null;
@@ -60,8 +68,8 @@ export type ProgramEvent =
   | { type: "CLIP_FAILED"; clip: string }
   /** The device ran out of list. */
   | { type: "TRACK_ENDED" }
-  /** The back-timer for an outro talk fired. */
-  | { type: "OUTRO_DUE" }
+  /** The timer for a waiting talk fired: an outro's back-timer, or a delayed intro's. */
+  | { type: "TALK_DUE" }
   /** A break's lead is due: the next song starts under the clip's last line. */
   | { type: "LEAD_DUE" }
   | { type: "NEXT" }
@@ -76,6 +84,7 @@ export const initialState: ProgramState = {
   cursor: null,
   music: SILENT,
   mic: null,
+  bed: null,
   playSeq: 0,
   micSeq: 0,
   startedAt: null,
@@ -92,21 +101,21 @@ export function clipOf(el: Element): string | null {
 }
 
 /** The lanes as an element wants them the moment it starts. */
-function lanesFor(el: Element): Pick<ProgramState, "music" | "mic"> {
+function lanesFor(el: Element): Pick<ProgramState, "music" | "mic" | "bed"> {
   switch (el.kind) {
     case "song":
-      return el.talk?.over === "intro"
-        ? { music: { uri: el.track.uri, level: "duck" }, mic: el.talk.clip }
-        : { music: { uri: el.track.uri, level: "full" }, mic: null };
+      return el.talk?.over === "intro" && !el.talk.atMs
+        ? { music: { uri: el.track.uri, level: "duck" }, mic: el.talk.clip, bed: null }
+        : { music: { uri: el.track.uri, level: "full" }, mic: null, bed: null };
     case "break":
-      return { music: el.bed ? { uri: el.bed.uri, level: "bed" } : SILENT, mic: el.clip };
+      return { music: SILENT, mic: el.clip, bed: el.bed ?? null };
   }
 }
 
 /** Put the cursor on an element and start it; past the end, the program is over. */
 function moveTo(s: ProgramState, index: number): ProgramState {
   const el = s.elements[index];
-  if (!el) return { ...s, loop: "stopped", music: SILENT, mic: null };
+  if (!el) return { ...s, loop: "stopped", music: SILENT, mic: null, bed: null };
   return {
     ...s,
     loop: "running",
@@ -125,10 +134,10 @@ export function reducer(s: ProgramState, e: ProgramEvent): ProgramState {
       return moveTo({ ...s, startedAt: s.startedAt ?? Date.now() }, s.cursor ?? 0);
 
     case "STOP":
-      return s.loop === "stopped" ? s : { ...s, loop: "stopped", music: SILENT, mic: null };
+      return s.loop === "stopped" ? s : { ...s, loop: "stopped", music: SILENT, mic: null, bed: null };
 
     case "HALT":
-      return { ...s, loop: "stopped", music: SILENT, mic: null, error: e.error };
+      return { ...s, loop: "stopped", music: SILENT, mic: null, bed: null, error: e.error };
 
     case "CLIP_ENDED":
     case "CLIP_FAILED": {
@@ -136,16 +145,18 @@ export function reducer(s: ProgramState, e: ProgramEvent): ProgramState {
       if (s.loop !== "running" || s.cursor === null || !el || s.mic !== e.clip) return s;
       if (el.kind !== "song") return moveTo(s, s.cursor + 1);
       // The clip was the song's intro (its own, or a break's lead): the music comes back up.
-      if (el.talk?.over !== "outro") return { ...s, mic: null, music: { ...s.music, level: "full" } };
+      if (el.talk?.over !== "outro")
+        return { ...s, mic: null, bed: null, music: { ...s.music, level: "full" } };
       return { ...s, mic: null }; // an outro: the track's end moves the cursor
     }
 
     case "TRACK_ENDED":
       return s.loop !== "running" || s.cursor === null ? s : moveTo(s, s.cursor + 1);
 
-    case "OUTRO_DUE": {
+    case "TALK_DUE": {
       const el = onAir(s);
-      if (s.loop !== "running" || el?.kind !== "song" || el.talk?.over !== "outro" || s.mic) return s;
+      if (s.loop !== "running" || el?.kind !== "song" || !el.talk || s.mic) return s;
+      if (el.talk.over === "intro" && !el.talk.atMs) return s; // that talk started with the song
       return { ...s, mic: el.talk.clip, music: { ...s.music, level: "duck" } };
     }
 
@@ -158,7 +169,7 @@ export function reducer(s: ProgramState, e: ProgramEvent): ProgramState {
         ...s,
         cursor: s.cursor + 1,
         music: { uri: next.track.uri, level: "duck" },
-        playSeq: s.playSeq + 1, // the mic keeps the break's clip: micSeq stays
+        playSeq: s.playSeq + 1, // the mic keeps the break's clip (and its fading bed): micSeq stays
       };
     }
 

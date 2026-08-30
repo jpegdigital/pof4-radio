@@ -14,6 +14,10 @@ doubt, do what dreamweaver does (its `CLAUDE.md` is the fuller philosophy).
 - One database, on purpose: `pnpm dev` talks to the same Railway Postgres as prod over its public proxy.
 - Fewest moving parts: route handlers, plain `pg` + SQL (no ORM), declarative schema diffed and applied
   from the dev machine (`pnpm db:plan` / `db:apply`, no migration files).
+- **Always minimize dependencies.** Before adding a package, ask whether `fetch`, Web Crypto, the
+  platform, or thirty lines of our own would do — that is how `packages/spotify` is plain `fetch` + PKCE
+  by hand and there is no Spotify SDK, auth library, or state-management library in the tree. Same rule
+  for services: if the browser can do it (tokens, playback, audio), the server doesn't.
 - `packages/*` own pure logic and never read `process.env`; `apps/*` own process/env concerns. There is
   one app now, but the split stays: it's what keeps the DJ (`packages/dj`) and the queries unit-testable
   without Next in the way, not a sharing mechanism.
@@ -25,13 +29,15 @@ doubt, do what dreamweaver does (its `CLAUDE.md` is the fuller philosophy).
 ## How it works (the shape)
 
 **Spotify gives us control, not audio.** The browser tab *is* the playback device (Web Playback SDK,
-Premium account required); the web app drives it with the station's user token. Two token flows, kept apart:
+Premium account required); each visitor plays through their *own* account. Two token flows, kept apart:
 
-- **playback** → the user's authorization-code token. One connected account, one row:
-  `spotify_account`. `/api/spotify/login` → consent → `/api/spotify/callback` stores it;
-  `/api/spotify/token` hands the player a fresh access token (refreshing server-side). Playback is
-  `PUT /me/player/play?device_id=…` from the browser with that token.
-- **search** → the app's client-credentials token, used only inside `/api/station/next`.
+- **playback** → the user's token, **browser only**. PKCE needs no secret, so the whole flow lives in
+  `components/station/spotify-account.ts`: consent → `/spotify/callback` (a page, not an API route) →
+  tokens in localStorage, refreshed in place (one shared in-flight refresh — PKCE rotates the refresh
+  token, racing refreshes log you out). No account table, no token route; the server never sees a user
+  token. Who is connected (id, name, product — never a token) also goes in a cookie so the page paints the
+  name and the Premium gate on first load. Playback is `PUT /me/player/play?device_id=…` from the browser.
+- **search** → the app's client-credentials token (needs the secret), used only inside `/api/station/next`.
 
 **The loop lives in the browser** (`apps/web/src/components/station/`): a pure reducer (`reducer.ts`,
 tested) and one effects hook (`use-station.ts`) that carries out what the state says. The show is an

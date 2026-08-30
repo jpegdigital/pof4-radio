@@ -12,7 +12,6 @@ import { type ClipEntry, type MicClock, TAIL_MS } from "./use-program";
 
 const LEVEL_CLASS: Record<Level, string> = {
   off: "bg-zinc-800",
-  bed: "bg-sky-900",
   duck: "bg-sky-700",
   full: "bg-sky-500",
 };
@@ -138,7 +137,7 @@ function Row({
         >
           {musicLen > 0 && (
             <div
-              className={`h-full ${LEVEL_CLASS[musicLevel]}`}
+              className={`h-full ${isBreak ? "bg-sky-900" : LEVEL_CLASS[musicLevel]}`}
               style={{ width: pct(musicLen), marginLeft: pct(musicStart) }}
             />
           )}
@@ -173,13 +172,15 @@ function Row({
 
 /** The level a row shows when it isn't on air: what its music lane will do first. */
 function restingLevel(el: Element): Level {
-  if (el.kind === "song") return el.talk?.over === "intro" ? "duck" : "full";
-  return el.kind === "break" && el.bed ? "bed" : "off";
+  if (el.kind === "song") return el.talk?.over === "intro" && !el.talk.atMs ? "duck" : "full";
+  return "off";
 }
 
 function title(el: Element): string {
   if (el.kind === "song") {
-    const talk = el.talk ? ` · talk-up over the ${el.talk.over}` : " · straight in";
+    const talk = el.talk
+      ? ` · talk-up over the ${el.talk.over}${el.talk.atMs ? ` from ${(el.talk.atMs / 1000).toFixed(1)} s` : ""}`
+      : " · straight in";
     return `${el.track.artists.join(", ")} — ${el.track.name}${talk}`;
   }
   const bed = el.bed ? (el.bedInMs ? " · dry, then bed under" : " · bed under") : " · dry";
