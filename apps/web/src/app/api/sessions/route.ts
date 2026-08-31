@@ -129,19 +129,35 @@ export async function POST(req: Request) {
         { status: 502 },
       );
 
-    const { rows } = await db().pool.query<{ id: string }>(
-      "insert into session (prompt, voice_id, rationale, proposed, candidates, tracks, dropped) values ($1, $2, $3, $4, $5, $6, $7) returning id",
-      [
-        prompt,
-        voiceId,
-        rationale,
-        JSON.stringify({ rationale: proposeOut.rationale, picks }),
-        JSON.stringify(candidates),
-        JSON.stringify(kept),
-        JSON.stringify(dropped),
-      ],
-    );
-    const sessionId = rows[0].id;
+    // The session row is identity only; the playlist lands whole on segment 1 — one transaction,
+    // a session never exists without its first segment.
+    const client = await db().pool.connect();
+    let sessionId: string;
+    try {
+      await client.query("begin");
+      const { rows } = await client.query<{ id: string }>(
+        "insert into session (prompt, voice_id) values ($1, $2) returning id",
+        [prompt, voiceId],
+      );
+      sessionId = rows[0].id;
+      await client.query(
+        "insert into session_segment (session_id, num, rationale, proposed, candidates, tracks, dropped) values ($1, 1, $2, $3, $4, $5, $6)",
+        [
+          sessionId,
+          rationale,
+          JSON.stringify({ rationale: proposeOut.rationale, picks }),
+          JSON.stringify(candidates),
+          JSON.stringify(kept),
+          JSON.stringify(dropped),
+        ],
+      );
+      await client.query("commit");
+    } catch (err) {
+      await client.query("rollback");
+      throw err;
+    } finally {
+      client.release();
+    }
     console.log(
       `[session ${sessionId.slice(0, 8)}] ${kept.length} kept of ${candidates.length} candidates (${picks.length} picks, ${dropped.length} dropped): ${prompt}`,
     );
