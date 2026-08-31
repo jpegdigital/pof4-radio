@@ -1,0 +1,117 @@
+import { z } from "zod";
+import { db } from "@/lib/db";
+import { Knobs } from "../../../../params";
+import { PlaylistError, producePlaylist } from "../../../../playlist";
+
+/**
+ * POST /api/sessions/:id/segments/:num/playlist — one rung, idempotent: ensure this segment's
+ * playlist exists and return the segment document. Already playlisted returns the kept row
+ * instantly; otherwise the pipeline runs inside the request (the response is the product, no
+ * polling). The session row is locked nowait for the duration — a second producer gets 409.
+ * Body is optional: a partial Knobs object as a debugging pass-through; the knobs are global
+ * defaults otherwise (they belong to the station later, not the session).
+ */
+
+interface SegmentRow {
+  id: string;
+  rationale: string | null;
+  tracks: unknown;
+  dropped: unknown;
+}
+
+const LOCK_NOT_AVAILABLE = "55P03";
+
+export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[id]/segments/[num]/playlist">) {
+  const { id, num } = await ctx.params;
+  if (!z.uuid().safeParse(id).success) return Response.json({ error: "unknown session" }, { status: 404 });
+  const n = Number(num);
+  if (!Number.isInteger(n) || n < 1) return Response.json({ error: "unknown segment" }, { status: 404 });
+  const body = await req.text();
+  let override: unknown = {};
+  if (body.trim() !== "") {
+    try {
+      override = JSON.parse(body);
+    } catch {
+      return Response.json({ error: "body is not JSON" }, { status: 400 });
+    }
+  }
+  const knobsParsed = Knobs.safeParse(override);
+  if (!knobsParsed.success)
+    return Response.json({ error: z.prettifyError(knobsParsed.error) }, { status: 400 });
+
+  const client = await db().pool.connect();
+  try {
+    await client.query("begin");
+    let session: { prompt: string } | undefined;
+    try {
+      const { rows } = await client.query<{ prompt: string }>(
+        "select prompt from session where id = $1 for update nowait",
+        [id],
+      );
+      session = rows[0];
+    } catch (err) {
+      if (err instanceof Error && "code" in err && err.code === LOCK_NOT_AVAILABLE) {
+        await client.query("rollback");
+        return Response.json({ error: "session is already producing" }, { status: 409 });
+      }
+      throw err;
+    }
+    if (!session) {
+      await client.query("rollback");
+      return Response.json({ error: "unknown session" }, { status: 404 });
+    }
+    const { rows: segs } = await client.query<SegmentRow>(
+      "select id, rationale, tracks, dropped from session_segment where session_id = $1 and num = $2",
+      [id, n],
+    );
+    if (!segs.length) {
+      await client.query("rollback");
+      return Response.json({ error: "unknown segment" }, { status: 404 });
+    }
+    const seg = segs[0];
+
+    // Idempotent: already playlisted returns the kept row, no production.
+    if (seg.tracks) {
+      await client.query("rollback");
+      return Response.json({
+        num: n,
+        status: "playlisted",
+        rationale: seg.rationale,
+        tracks: seg.tracks,
+        dropped: seg.dropped ?? [],
+      });
+    }
+
+    const made = await producePlaylist(session.prompt, knobsParsed.data);
+    await client.query(
+      "update session_segment set rationale = $1, proposed = $2, candidates = $3, tracks = $4, dropped = $5 where id = $6",
+      [
+        made.rationale,
+        JSON.stringify(made.proposed),
+        JSON.stringify(made.candidates),
+        JSON.stringify(made.tracks),
+        JSON.stringify(made.dropped),
+        seg.id,
+      ],
+    );
+    await client.query("commit");
+    console.log(
+      `[session ${id.slice(0, 8)}] segment ${n} playlisted: ${made.tracks.length} kept of ${made.candidates.length} candidates (${made.dropped.length} dropped)`,
+    );
+    return Response.json({
+      num: n,
+      status: "playlisted",
+      rationale: made.rationale,
+      tracks: made.tracks,
+      dropped: made.dropped,
+    });
+  } catch (err) {
+    await client.query("rollback");
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[sessions] segment ${n} playlist failed: ${message}`);
+    const dropped = err instanceof PlaylistError ? err.dropped : [];
+    return Response.json({ error: message, dropped }, { status: 502 });
+  } finally {
+    client.release();
+  }
+}

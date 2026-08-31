@@ -25,8 +25,7 @@ interface SegmentRow {
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[id]">) {
   const { id } = await ctx.params;
-  if (!z.uuid().safeParse(id).success)
-    return Response.json({ error: "unknown session" }, { status: 404 });
+  if (!z.uuid().safeParse(id).success) return Response.json({ error: "unknown session" }, { status: 404 });
   const { rows } = await db().pool.query<SessionRow>(
     "select id, prompt, voice_id, created_at from session where id = $1",
     [id],
