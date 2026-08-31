@@ -1,0 +1,21 @@
+# The inverse of ci.yml's paths-ignore. Same workflow and job name, so a docs-only
+# change reports the "check" status instantly green instead of never — required
+# checks (if ever enabled) don't hang on a check that was filtered out.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "**.md"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "**.md"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "docs-only change, nothing to check"
