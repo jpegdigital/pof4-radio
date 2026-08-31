@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sessions — the data model</title>
+<style>
+  :root { color-scheme: light dark;
+    --bg:#fbfaf7; --fg:#1f1d1a; --muted:#6b665e; --line:#e4e0d8; --code:#f2efe8; --accent:#b4531a; --nav:#f5f2ec;
+    --amber:#b45309; --amberbg:#fdf3e2; --good:#166534; --goodbg:#e8f3e8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161513; --fg:#e8e4dc; --muted:#a09a90; --line:#2c2a26; --code:#211f1c; --accent:#f0a06a; --nav:#1c1a17;
+    --amber:#fbbf24; --amberbg:#3a2a10; --good:#86efac; --goodbg:#122a17; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 16px/1.6 Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  .wrap { display:grid; grid-template-columns: 260px minmax(0,1fr); min-height:100vh; }
+  nav { position:sticky; top:0; height:100vh; overflow:auto; padding:28px 20px; background:var(--nav); border-right:1px solid var(--line);
+        font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  nav .t { font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:12px; font-size:11px; }
+  nav a { display:block; color:var(--fg); text-decoration:none; padding:3px 0; }
+  nav a.l3 { padding-left:14px; color:var(--muted); }
+  nav a:hover { color:var(--accent); }
+  main { padding: 48px 56px 96px; max-width: 960px; }
+  h1 { font-size:2.2rem; line-height:1.15; margin:0 0 .3em; letter-spacing:-.01em; }
+  h2 { font-size:1.5rem; margin:2.4em 0 .6em; padding-top:.6em; border-top:1px solid var(--line); }
+  h3 { font-size:1.15rem; margin:1.8em 0 .5em; }
+  h1+p { color:var(--muted); font-style:italic; }
+  p, li { max-width: 76ch; }
+  a { color:var(--accent); }
+  code { font: 0.86em/1.5 ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; background:var(--code); padding:.1em .35em; border-radius:4px; }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:14px 16px; overflow-x:auto; font-size:.8rem; line-height:1.45; position:relative; }
+  pre code { background:none; padding:0; font-size:inherit; }
+  pre[data-lang]::before { content: attr(data-lang); position:absolute; top:6px; right:10px; font: 10px ui-sans-serif, system-ui; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; font-size:.9rem; margin:1em 0; }
+  th, td { text-align:left; vertical-align:top; padding:8px 12px; border-bottom:1px solid var(--line); }
+  th { font: 600 .78rem ui-sans-serif, system-ui; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .note { border-left:3px solid var(--accent); padding:.4em 1em; margin:1.2em 0; background:var(--code); border-radius:0 8px 8px 0; }
+  .tag { display:inline-block; font: 11px/1.6 ui-sans-serif, system-ui; border-radius:999px; padding:0 .7em; vertical-align:2px; letter-spacing:.04em; }
+  .built { color:var(--good); background:var(--goodbg); border:1px solid var(--good); }
+  .decided { color:var(--amber); background:var(--amberbg); border:1px solid var(--amber); }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } nav { position:static; height:auto; } main { padding:24px 20px 64px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <div class="t">Sessions — data model</div>
+  <a href="#breath">In one breath</a>
+  <a href="#session">1. session</a>
+  <a href="#segment">2. session_segment</a>
+  <a class="l3" href="#seg-status">Status is derived</a>
+  <a class="l3" href="#seg-telemetry">Telemetry columns</a>
+  <a href="#slot">3. session_slot (decided, not built)</a>
+  <a class="l3" href="#slot-shape">The row</a>
+  <a class="l3" href="#slot-halves">Two halves, two writers</a>
+  <a class="l3" href="#slot-ready">Readiness</a>
+  <a class="l3" href="#slot-kinds">The four kinds</a>
+  <a href="#card">4. card — carried over</a>
+  <a href="#outside">5. What lives outside the database</a>
+  <a href="#old">6. The old world next door</a>
+  <div class="t" style="margin-top:24px">Companion</div>
+  <a href="sessions.html">sessions.html — the API dance</a>
+</nav>
+<main>
+
+<h1>Sessions — the data model</h1>
+<p>Read from the code on 2026-08-31, mid-refactor. <code>session</code> and <code>session_segment</code> are in the schema and live; <code>session_slot</code> is the decision this document records — the database will be brought to match it. Companion to <a href="sessions.html">sessions.html</a>, which covers the API dance over this model.</p>
+
+<h2 id="breath">In one breath</h2>
+<p>A <strong>session</strong> is one listening: the ask, verbatim, and the voice — nothing else. It owns <strong>segments</strong>, numbered from 1, each one sweep of the show: a DJ break and its songs. A segment is produced in rungs, each rung landing a column set whole — the <em>playlist</em> (tracks), then the <em>program</em> (slot rows: every word the DJ will say, one slot per track), then the <em>voice</em> (each slot's clip, one at a time). Status is never stored; it is derived from what is present. Everything produced is kept forever; nothing is re-made.</p>
+
+<pre data-lang="shape"><code>session ─┬─ session_segment (num 1) ─┬─ session_slot (seq 1)   ← the break
+         │                           ├─ session_slot (seq 2)
+         │                           └─ … one per track
+         └─ session_segment (num 2) ─ …</code></pre>
+
+<h2 id="session">1. <code>session</code> <span class="tag built">in schema</span></h2>
+<p><code>packages/db/schema/session.sql</code>. Created instantly by <code>POST /api/sessions</code>, in one transaction with segment 1 — a session never exists without its first segment. It never changes after creation (the <code>updated_at</code> trigger is there for hygiene, not workflow).</p>
+<table>
+<tr><th>Column</th><th>Type</th><th>What it is</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>Primary key, generated.</td></tr>
+<tr><td><code>prompt</code></td><td>text</td><td>The listener's ask, verbatim. Every production rung reads it from here.</td></tr>
+<tr><td><code>voice_id</code></td><td>text</td><td>The roster voice picked at creation. The whole session is voiced in it.</td></tr>
+<tr><td><code>created_at</code>, <code>updated_at</code></td><td>timestamptz</td><td>Bookkeeping.</td></tr>
+</table>
+<p>The session row doubles as the <strong>production lock</strong>: every rung takes <code>select … for update nowait</code> on it, so at most one thing produces for a session at a time and a second producer gets a clean 409 instead of a duplicate model call.</p>
+
+<h2 id="segment">2. <code>session_segment</code> <span class="tag built">in schema</span></h2>
+<p><code>packages/db/schema/session_segment.sql</code>. One sweep of the show. Named <code>session_segment</code> only because the old station world still owns <code>segment</code>; rename when that world is deleted.</p>
+<table>
+<tr><th>Column</th><th>Type</th><th>What it is</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>Primary key.</td></tr>
+<tr><td><code>session_id</code></td><td>uuid</td><td>→ <code>session</code>, cascade delete.</td></tr>
+<tr><td><code>num</code></td><td>integer</td><td>1-based position in the session. <code>unique (session_id, num)</code>.</td></tr>
+<tr><td><code>rationale</code></td><td>text</td><td>Compose's words: why this set answers the ask.</td></tr>
+<tr><td><code>tracks</code></td><td>jsonb</td><td>The playlist, in play order: <code>[{id, uri, name, artists, album, image, durationMs, pick, why}]</code>. Present ⇒ playlisted.</td></tr>
+<tr><td><code>proposed</code></td><td>jsonb</td><td>Telemetry, pass 1: <code>{rationale, picks: [{artist, title, why}]}</code>.</td></tr>
+<tr><td><code>candidates</code></td><td>jsonb</td><td>Telemetry, hydration: every Spotify hit as offered to compose.</td></tr>
+<tr><td><code>dropped</code></td><td>jsonb</td><td><code>string[]</code> — reasons from all three playlist stages.</td></tr>
+</table>
+
+<h3 id="seg-status">Status is derived, never stored</h3>
+<p>A segment's stage falls out of which column sets are present. No status column, no state machine table — a crashed rung leaves nothing to repair, just an absent column set to produce again.</p>
+<table>
+<tr><th>Status</th><th>Derivation</th><th>The client can…</th></tr>
+<tr><td><code>open</code></td><td>row exists, <code>tracks</code> null</td><td>request the playlist</td></tr>
+<tr><td><code>playlisted</code></td><td><code>tracks</code> present, no slot rows</td><td>paint art and titles; request the program</td></tr>
+<tr><td><code>programmed</code></td><td>slot rows present, some slot's <code>voiced_at</code> null</td><td>show the rundown's words; request each slot's audio</td></tr>
+<tr><td><code>voiced</code></td><td>every slot's <code>voiced_at</code> set</td><td>play the whole segment</td></tr>
+</table>
+
+<h3 id="seg-telemetry">Telemetry columns stay off the wire</h3>
+<p><code>proposed</code> and <code>candidates</code> (and, once the program rung lands, a <code>program</code> jsonb holding the writer's raw output) are receipts: why the machine did what it did. They live in the database and never leave it — <code>GET /api/sessions/:id</code> returns <code>rationale</code>, <code>tracks</code>, <code>dropped</code> and the slots, not the receipts.</p>
+
+<h2 id="slot">3. <code>session_slot</code> <span class="tag decided">decided, not built</span></h2>
+<p>The slot is the unit of everything after the playlist: <em>one track's introduction</em> — how it is brought on air, every word said over it, and eventually the clip that says them. The program rung writes all of a segment's slots in <strong>one transaction from one Claude call</strong> (the writing is one coherent piece; the break sets up the set, the talk-ups reference what is around them). The audio rung then fills each slot's voice half <strong>one slot at a time</strong>, so slot 1's clip — the break — is playable while slots 2–N are still voicing.</p>
+
+<h3 id="slot-shape">The row</h3>
+<pre data-lang="sql"><code>-- One track's introduction: written whole by the program rung, voiced one at a time.
+create table session_slot (
+  id           uuid primary key default gen_random_uuid(),
+  segment_id   uuid not null references session_segment (id) on delete cascade,
+  seq          integer not null,          -- 1-based, matches the track's position in tracks
+  track_id     text not null,             -- the Spotify id of tracks[seq - 1]; belt and braces
+
+  -- the program half, immutable once written
+  kind         text not null,             -- break | talkup | sweeper | segue
+  words        text,                      -- everything said; null for a segue
+  lead_line    text,                      -- breaks: the one sentence that talks the record in, said last
+  legal_id     text,                      -- said dry before the bed comes in; top-of-hour breaks only
+
+  -- the voice half, landed by the audio rung
+  clip_ms      integer,                   -- the clip's length, from the alignment
+  bed_in_ms    integer,                   -- breaks: when the bed comes in (after the legal ID)
+  lead_ms      integer,                   -- breaks: how far before clip end the record starts
+  at_ms        integer,                   -- talkups: how far into the intro the voice comes in
+  clip_key     text,                      -- bucket key of the clip; written only after the PUT succeeded
+  fallback     jsonb,                     -- {from, to, reason} when the ladder stepped down
+  voiced_at    timestamptz,               -- set ⇒ done, nothing more will ever happen to this slot
+
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  unique (segment_id, seq)
+);</code></pre>
+
+<h3 id="slot-halves">Two halves, two writers</h3>
+<p>The split matters because the two halves have different producers, different failure modes, and different immutability:</p>
+<table>
+<tr><th>Half</th><th>Written by</th><th>When</th><th>Mutability</th></tr>
+<tr><td><code>kind</code>, <code>words</code>, <code>lead_line</code>, <code>legal_id</code></td><td>the program rung — one Claude call, all slots in one transaction</td><td>once, after the playlist</td><td>immutable once written</td></tr>
+<tr><td><code>clip_ms</code>, <code>bed_in_ms</code>, <code>lead_ms</code>, <code>at_ms</code>, <code>clip_key</code>, <code>fallback</code>, <code>voiced_at</code></td><td>the audio rung — ElevenLabs <code>/with-timestamps</code>, per slot</td><td>per slot, in any order the client asks (in practice: in order)</td><td>immutable once <code>voiced_at</code> is set</td></tr>
+</table>
+<p>Every timing is <em>derived</em>, never guessed: the clip's length and the character-offset timings (<code>bed_in_ms</code> after the legal ID's last character, <code>lead_ms</code> from <code>lead_line.length</code> back from the end) come from the alignment (<code>timingsOf</code> in <code>packages/dj/src/program/timings.ts</code>); <code>at_ms</code> comes from the record's card. The clip bytes go to the bucket at <code>sessions/&lt;sessionId&gt;/&lt;num&gt;/&lt;seq&gt;.mp3</code>, immutable; the row holds numbers, words and the key only. A failed clip is a <code>fallback</code> (the ladder: break → sweeper → segue; a talk-up that can't land its post → later, or none), never an error — <code>voiced_at</code> is still set, the show never stalls on a slot.</p>
+
+<h3 id="slot-ready">Readiness</h3>
+<p>The audio rung PUTs the clip to the bucket first, then updates the row (<code>clip_key</code>, timings, <code>voiced_at</code>) in one statement. So <code>clip_key</code> present always means the media exists. <code>clip_key</code> alone isn't enough to mean "done" because a slot can finish with no media (a segue, or a fallback to one) — that's what <code>voiced_at</code> is for:</p>
+<table>
+<tr><th><code>voiced_at</code></th><th><code>clip_key</code></th><th>Meaning</th></tr>
+<tr><td>null</td><td>null</td><td>not voiced yet</td></tr>
+<tr><td>set</td><td>set</td><td>done, media in the bucket — stream the GET endpoint</td></tr>
+<tr><td>set</td><td>null</td><td>done, no media (segue or fallback) — just play the record</td></tr>
+<tr><td>null</td><td>set</td><td>impossible given the write order</td></tr>
+</table>
+<p>A segment is playable once slot 1 has <code>voiced_at</code> (the break exists); fully voiced when every slot does. A crash between PUT and update leaves an unreferenced mp3 in the bucket; the retried rung overwrites it.</p>
+
+<div class="note"><strong>Why rows, not a jsonb array on the segment.</strong> The old world grew four parallel arrays on the segment row one item at a time (<code>lines</code>, <code>log.slots</code>, <code>elements</code>, <code>notes</code>) — that parallel-array bookkeeping is a good part of what made it spaghetti. Rows give each slot its own <code>voiced_at</code> instead of "array length = progress", make the audio rung's idempotency a one-row check, and let the two halves land as plain column updates under the session lock.</div>
+
+<h3 id="slot-kinds">The four kinds</h3>
+<p>Same vocabulary as the old world's <code>Intro</code> (<code>packages/dj/src/program/shapes.ts</code>) — the pure clock rules, timings and assembly ladder carry over unchanged.</p>
+<table>
+<tr><th>Kind</th><th>What you hear</th><th>Program half needs</th><th>Voice half needs</th></tr>
+<tr><td><code>break</code></td><td>Voice over a bed, the last line talks the record in under it. Slot 1 is always the break.</td><td><code>words</code>, <code>lead_line</code>, <code>legal_id</code> if the hour turned</td><td><code>clip_ms</code>, <code>bed_in_ms</code>, <code>lead_ms</code></td></tr>
+<tr><td><code>talkup</code></td><td>The song starts full; the voice comes in over the intro and ends a beat before the first sung word.</td><td><code>words</code></td><td><code>clip_ms</code>, <code>at_ms</code></td></tr>
+<tr><td><code>sweeper</code></td><td>A short dry ID, then a hard intro.</td><td><code>words</code></td><td><code>clip_ms</code></td></tr>
+<tr><td><code>segue</code></td><td>Straight out of the last record.</td><td>nothing (<code>words</code> null)</td><td>nothing (<code>voiced_at</code> set immediately)</td></tr>
+</table>
+
+<h2 id="card">4. <code>card</code> — carried over <span class="tag built">in schema</span></h2>
+<p>The record's card (<code>packages/db/schema/card.sql</code>) survives the refactor as-is: intro length, <code>sure</code>, the post (<em>where</em> the vocal comes in, never the lyric), ending, energy, talking points — keyed by Spotify track id, shared by every session, the first session to play a record pays for its card. The program rung reads cards to know which tracks can carry a talk-up (a talk-up needs a ≥ 7 s intro the card is sure of); the audio rung reads them to place <code>at_ms</code>. Cards may be corrected in place; voiced slots never re-read them.</p>
+
+<h2 id="outside">5. What lives outside the database</h2>
+<table>
+<tr><th>Thing</th><th>Where</th><th>Keyed by</th></tr>
+<tr><td>The voice clips</td><td>the <code>radio-clips</code> bucket</td><td><code>sessions/&lt;sessionId&gt;/&lt;num&gt;/&lt;seq&gt;.mp3</code>, immutable</td></tr>
+<tr><td>The bed, the produced sweepers</td><td><code>public/bed.mp3</code>, <code>public/sweepers/*.mp3</code></td><td>static, shipped with the app</td></tr>
+<tr><td>The prompts, the identity, the voice roster</td><td>the <code>settings</code> table, edited on <code>/settings</code></td><td>slot name; read per request, throw if missing</td></tr>
+<tr><td>Playback</td><td>the browser — the tab is the Spotify device, the listener's own token, never the server's</td><td>—</td></tr>
+</table>
+
+<h2 id="old">6. The old world next door</h2>
+<p><code>station</code> and <code>segment</code> (the skeleton, the four parallel arrays) are the previous design, still in the schema and still behind the old routes. Nothing in the sessions world reads them. They — and the <code>session_</code> prefixes here — go away when the old routes are deleted.</p>
+
+</main>
+</div>
+</body>
+</html>

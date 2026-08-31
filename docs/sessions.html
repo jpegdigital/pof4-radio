@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sessions — the API dance</title>
+<style>
+  :root { color-scheme: light dark;
+    --bg:#fbfaf7; --fg:#1f1d1a; --muted:#6b665e; --line:#e4e0d8; --code:#f2efe8; --accent:#b4531a; --nav:#f5f2ec;
+    --amber:#b45309; --amberbg:#fdf3e2; --good:#166534; --goodbg:#e8f3e8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161513; --fg:#e8e4dc; --muted:#a09a90; --line:#2c2a26; --code:#211f1c; --accent:#f0a06a; --nav:#1c1a17;
+    --amber:#fbbf24; --amberbg:#3a2a10; --good:#86efac; --goodbg:#122a17; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 16px/1.6 Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  .wrap { display:grid; grid-template-columns: 260px minmax(0,1fr); min-height:100vh; }
+  nav { position:sticky; top:0; height:100vh; overflow:auto; padding:28px 20px; background:var(--nav); border-right:1px solid var(--line);
+        font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  nav .t { font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:12px; font-size:11px; }
+  nav a { display:block; color:var(--fg); text-decoration:none; padding:3px 0; }
+  nav a.l3 { padding-left:14px; color:var(--muted); }
+  nav a:hover { color:var(--accent); }
+  main { padding: 48px 56px 96px; max-width: 960px; }
+  h1 { font-size:2.2rem; line-height:1.15; margin:0 0 .3em; letter-spacing:-.01em; }
+  h2 { font-size:1.5rem; margin:2.4em 0 .6em; padding-top:.6em; border-top:1px solid var(--line); }
+  h3 { font-size:1.15rem; margin:1.8em 0 .5em; }
+  h1+p { color:var(--muted); font-style:italic; }
+  p, li { max-width: 76ch; }
+  a { color:var(--accent); }
+  code { font: 0.86em/1.5 ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; background:var(--code); padding:.1em .35em; border-radius:4px; }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:14px 16px; overflow-x:auto; font-size:.8rem; line-height:1.45; position:relative; }
+  pre code { background:none; padding:0; font-size:inherit; }
+  pre[data-lang]::before { content: attr(data-lang); position:absolute; top:6px; right:10px; font: 10px ui-sans-serif, system-ui; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+  table { border-collapse:collapse; font-size:.9rem; margin:1em 0; }
+  th, td { text-align:left; vertical-align:top; padding:8px 12px; border-bottom:1px solid var(--line); }
+  th { font: 600 .78rem ui-sans-serif, system-ui; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .note { border-left:3px solid var(--accent); padding:.4em 1em; margin:1.2em 0; background:var(--code); border-radius:0 8px 8px 0; }
+  .tag { display:inline-block; font: 11px/1.6 ui-sans-serif, system-ui; border-radius:999px; padding:0 .7em; vertical-align:2px; letter-spacing:.04em; }
+  .built { color:var(--good); background:var(--goodbg); border:1px solid var(--good); }
+  .decided { color:var(--amber); background:var(--amberbg); border:1px solid var(--amber); }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } nav { position:static; height:auto; } main { padding:24px 20px 64px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <div class="t">Sessions — API dance</div>
+  <a href="#breath">In one breath</a>
+  <a href="#principles">1. The rules of the dance</a>
+  <a href="#create">2. The form and the create</a>
+  <a href="#snapshot">3. GET /api/sessions/:id — the snapshot</a>
+  <a class="l3" href="#frontier">The frontier</a>
+  <a href="#playlist">4. The playlist rung</a>
+  <a href="#program">5. The program rung</a>
+  <a href="#audio">6. The audio rung</a>
+  <a href="#coldstart">7. Cold start, end to end</a>
+  <a href="#errors">8. When a rung fails</a>
+  <div class="t" style="margin-top:24px">Companion</div>
+  <a href="api.html">api.html — the data model</a>
+</nav>
+<main>
+
+<h1>Sessions — the API dance</h1>
+<p>Written 2026-08-31, mid-refactor. The create and the playlist rung are live; the program and audio rungs are the agreed next steps. This covers everything up to <em>the program exists and the client is requesting slot audio</em> — playing the show, opening segment 2 while segment 1 is on air, all the post-production choreography, is deliberately out of scope here. Companion to <a href="api.html">api.html</a>, the data model underneath.</p>
+
+<h2 id="breath">In one breath</h2>
+<p>The browser is the state machine; the server is stateless functions. <code>GET /</code> is a form; posting it creates a session and lands the client on <code>/sessions/:id</code>. From there the client's whole job is a loop: <em>fetch the snapshot, inspect it, call the one rung the frontier asks for, fold the response in, repeat.</em> Every rung is idempotent and lock-guarded, so retries and second tabs are safe by construction — the sequencing knowledge lives in the client, and the server just enforces preconditions per call. No queue, no worker, no polling endpoint: the response of each rung <em>is</em> the product.</p>
+
+<pre data-lang="dance"><code>GET  /                                       the form: prompt + voice
+POST /api/sessions                           → { sessionId }, client goes to /sessions/:id
+GET  /api/sessions/:id                       the snapshot: the whole tree, status derived
+POST /api/sessions/:id/segments/:num/playlist   rung: tracks land          (Claude ×2 + Spotify)
+POST /api/sessions/:id/segments/:num/program    rung: all slots land       (Claude ×1)
+POST /api/sessions/:id/segments/:num/slots/:seq/audio   rung: one clip     (ElevenLabs ×1)
+GET  /api/sessions/:id/segments/:num/slots/:seq/audio   the clip bytes, immutable</code></pre>
+
+<h2 id="principles">1. The rules of the dance</h2>
+<ul>
+  <li><strong>Rungs, not a pipeline.</strong> Each POST does exactly one stage for exactly one thing and returns the produced document in the response. Nothing runs when nobody asks.</li>
+  <li><strong>Idempotent.</strong> A rung whose product already exists returns the kept row instantly, no model call. Refreshing mid-production costs nothing.</li>
+  <li><strong>One producer per session.</strong> Every rung takes the session row lock (<code>for update nowait</code>); a concurrent producer gets <code>409 "session is already producing"</code> and simply tries again later.</li>
+  <li><strong>Preconditions, not queues.</strong> A rung called before its input exists (program before playlist, audio before program) is <code>409</code> with why. That guardrail is for races and bugs — a well-behaved client never hits it, because it only calls what the frontier asks for.</li>
+  <li><strong>Status is derived.</strong> The client never receives "you are at stage X" as authority; it receives the data and derives the same status the server would (the server's <code>status</code> field on the wire is a convenience, computed from presence the same way).</li>
+</ul>
+
+<h2 id="create">2. The form and the create <span class="tag built">built</span></h2>
+<p><code>GET /</code> renders the form: the ask (free text, ≤ 500 chars) and the voice (from the roster in <code>settings</code>). Submitting it:</p>
+<pre data-lang="http"><code>POST /api/sessions
+{ "prompt": "rainy sunday soul, nothing after 1979", "voiceId": "…" }
+
+→ 200 { "sessionId": "8f14e45f-…" }        instant: no model call, no Spotify
+→ 400 { "error": "…zod's why…" }</code></pre>
+<p>One transaction inserts the session <em>and</em> segment 1 at open — a session never exists without its first segment, so the client's loop has something to stand on immediately. The client navigates to <code>/sessions/:id</code> and everything after this is the loop.</p>
+
+<h2 id="snapshot">3. <code>GET /api/sessions/:id</code> — the snapshot <span class="tag built">built, grows slots</span></h2>
+<p>The session as stored, whole: the ask, then every segment in order, each carrying whatever production has landed. It never produces anything and it is <code>no-store</code> while the document can still grow. Small on purpose — words, timings and refs, never audio and never the telemetry receipts (<code>proposed</code>, <code>candidates</code>, the raw program output stay in the database).</p>
+<pre data-lang="json"><code>{
+  "sessionId": "8f14e45f-…",
+  "prompt": "rainy sunday soul, nothing after 1979",
+  "voiceId": "…",
+  "createdAt": "2026-08-31T17:02:11Z",
+  "segments": [
+    {
+      "num": 1,
+      "status": "programmed",              // derived: open | playlisted | programmed | voiced
+      "rationale": "why this set answers the ask",
+      "tracks":  [ { "id", "uri", "name", "artists", "album", "image", "durationMs", "pick", "why" }, … ],
+      "dropped": [ "no hits for …", … ],
+      "slots": [                            // absent columns are absent keys; [] until programmed
+        { "seq": 1, "kind": "break",  "trackId": "…", "words": "…", "leadLine": "…",
+          "voiced": true,  "clipKey": "sessions/8f14e45f-…/1/1.mp3",
+          "clipMs": 40600, "bedInMs": 0, "leadMs": 6848 },
+        { "seq": 2, "kind": "talkup", "trackId": "…", "words": "…", "voiced": false },
+        { "seq": 3, "kind": "segue",  "trackId": "…", "voiced": true }   // no clipKey: done, silent
+      ]
+    },
+    { "num": 2, "status": "open", "tracks": [], "slots": [] }
+  ]
+}</code></pre>
+
+<h3 id="frontier">The frontier — how the client knows what to do</h3>
+<p>The client inspects, it is never told. Walk the segments; the <em>frontier</em> is the last segment plus the first unvoiced slot inside it, and each state maps to exactly one next call:</p>
+<table>
+<tr><th>What the snapshot shows</th><th>The one next call</th></tr>
+<tr><td>last segment <code>open</code></td><td><code>POST …/segments/:num/playlist</code></td></tr>
+<tr><td>last segment <code>playlisted</code></td><td><code>POST …/segments/:num/program</code></td></tr>
+<tr><td>last segment <code>programmed</code>, slot <code>seq</code> is the first with <code>voiced: false</code></td><td><code>POST …/segments/:num/slots/:seq/audio</code></td></tr>
+<tr><td>last segment <code>voiced</code></td><td>out of scope here (this is where "open segment <code>num + 1</code>" will live)</td></tr>
+</table>
+<p>This is what makes resume free: a page load on <code>/sessions/:id</code> re-fetches the snapshot, the same derivation lands in the same place, and the loop continues as if it never left. There is no client-side production state worth persisting — the snapshot <em>is</em> the state.</p>
+
+<h2 id="playlist">4. The playlist rung <span class="tag built">built</span></h2>
+<pre data-lang="http"><code>POST /api/sessions/:id/segments/:num/playlist
+{ }                                          // optional partial Knobs, debugging pass-through
+
+→ 200 { "num", "status": "playlisted", "rationale", "tracks": […], "dropped": […] }
+→ 409 { "error": "session is already producing" }
+→ 502 { "error": "only 3 tracks composed (need 4)", "dropped": […] }</code></pre>
+<p>Inside the request, under the session lock: Claude <strong>proposes</strong> records by name, Spotify search <strong>hydrates</strong> each into real candidates, Claude <strong>composes</strong> the playlist from those candidates by id — it cannot invent a track, every id is validated against the pool. Two Claude calls and ~a dozen searches, tens of seconds; the response is the product. The client shows the ask and a producing state while it waits, then paints art and titles the moment this resolves — the first progressive-enhancement beat of the page.</p>
+
+<h2 id="program">5. The program rung <span class="tag decided">decided, next</span></h2>
+<pre data-lang="http"><code>POST /api/sessions/:id/segments/:num/program
+
+→ 200 { "num", "status": "programmed", …segment doc with slots, none voiced }
+→ 409 { "error": "session is already producing" }
+→ 409 { "error": "segment has no playlist yet" }
+→ 502 { "error": "…" }</code></pre>
+<p><strong>One Claude call writes the whole segment</strong> — the break and every talk-up, sweeper and segue in one pass — because the writing is one coherent piece: the break sets up the set and the talk-ups reference what is around them. Looping Claude per slot would cost N round-trips for worse copy; the thing that actually gates playback is audio, and that lands per slot in the next rung. Under the lock: read the segment's <code>tracks</code> (absent → 409), read the cards for tracks that have them (a talk-up needs a card that is sure of a ≥ 7 s intro), one call at medium effort, validate against the clock rules, then insert every <code>session_slot</code> row in one transaction — kind, words, lead line, legal ID; the voice half all null. The raw output is kept on the segment as telemetry. The program half is immutable once written.</p>
+<p>The client folds the slots in and the rundown gains its words — the second progressive beat: you can <em>read</em> the whole segment before you can hear any of it.</p>
+
+<h2 id="audio">6. The audio rung <span class="tag decided">decided, next</span></h2>
+<pre data-lang="http"><code>POST /api/sessions/:id/segments/:num/slots/:seq/audio
+
+→ 200 { "seq", "kind", "voiced": true, "clipKey"?, "clipMs", "bedInMs", "leadMs", "atMs", "fallback"? }
+→ 409 { "error": "session is already producing" }
+→ 409 { "error": "slot has no program yet" }
+
+GET  /api/sessions/:id/segments/:num/slots/:seq/audio     → audio/mpeg, immutable, cache forever</code></pre>
+<p>POST produces, GET streams. The client doesn't probe GET to discover state: it POSTs (idempotent — a voiced slot returns its row with no TTS call), and fetches the GET endpoint only when the response has a <code>clipKey</code>. A voiced slot without a <code>clipKey</code> has no media (segue, or a fallback to one); there is nothing to fetch, just play the record.</p>
+<p>Inside the POST: the slot's words through ElevenLabs <code>/with-timestamps</code> in the session's voice, timings derived at known character offsets (the bed after the legal ID's last character, the lead <code>leadLine.length</code> from the end), <code>PUT</code> to the bucket at <code>sessions/&lt;sessionId&gt;/&lt;num&gt;/&lt;seq&gt;.mp3</code>, then the row update (<code>clip_key</code>, timings, <code>voiced_at</code>) in one statement. Bucket first, row second, so a stamped row without media can't exist; a crash in between leaves an unreferenced mp3 the retry overwrites. A segue voices instantly (nothing to say). A failed TTS is a fallback down the ladder (break → sweeper → segue), recorded on the slot with <code>voiced_at</code> still set — never an error. See <a href="api.html#slot-ready">readiness</a> in the data model.</p>
+<p>The client requests slots sequentially (the session lock would serialize them anyway), starting when the program lands. Slot 1 is the break, so the segment is playable as soon as slot 1 comes back voiced; the rest voice while it plays.</p>
+
+<h2 id="coldstart">7. Cold start, end to end</h2>
+<pre data-lang="timeline"><code>client                                        server
+──────                                        ──────
+GET /                                         the form
+POST /api/sessions ─────────────────────────► session + segment 1 (instant)
+◄─ { sessionId }          navigate to /sessions/:id
+GET /api/sessions/:id ──────────────────────► snapshot: segment 1 open
+◄─ tree                   frontier says: playlist
+POST …/segments/1/playlist ─────────────────► propose → hydrate → compose   (~tens of s)
+◄─ tracks                 paint art + titles; frontier says: program
+POST …/segments/1/program ──────────────────► one call, all slots inserted  (~tens of s)
+◄─ slots                  paint the rundown's words; frontier says: audio, slot 1
+POST …/segments/1/slots/1/audio ────────────► TTS + timings + bucket        (~seconds)
+◄─ slot 1 voiced          ░░ the break is playable — out of scope past here ░░
+POST …/segments/1/slots/2/audio ────────────► …and so on, one at a time
+</code></pre>
+
+<h2 id="errors">8. When a rung fails</h2>
+<table>
+<tr><th>Failure</th><th>On the wire</th><th>Client's move</th></tr>
+<tr><td>Concurrent producer (second tab, double click)</td><td><code>409 session is already producing</code></td><td>back off, re-fetch the snapshot later — whoever holds the lock is doing the same work</td></tr>
+<tr><td>Called out of order</td><td><code>409</code> with the missing precondition</td><td>re-fetch the snapshot; the frontier was stale</td></tr>
+<tr><td>Production failed (model, Spotify, ElevenLabs)</td><td><code>502</code> with the message and receipts</td><td>nothing landed (the transaction rolled back) — the same POST retries the whole rung, idempotency makes that safe</td></tr>
+<tr><td>TTS failed inside the audio rung</td><td><code>200</code> with a <code>fallback</code></td><td>nothing — the slot is done, just humbler; the rundown shows the badge</td></tr>
+</table>
+<div class="note"><strong>Why no queue or worker.</strong> The sequencing knowledge ("playlist before program before audio") lives in the client's loop; the server enforces preconditions per call and locks per session. A queue would add infra that runs when nobody is listening, a place for state to live outside the database, and a polling protocol — for a pipeline whose every stage already fits in one request/response. The 409s are the entire coordination mechanism, and they are guardrails, not the happy path.</div>
+
+</main>
+</div>
+</body>
+</html>
