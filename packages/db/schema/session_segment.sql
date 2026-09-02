@@ -2,7 +2,8 @@
 -- stage landing a column set whole; status is derived from what is present, never stored:
 --   open        the row exists, nothing produced yet
 --   playlisted  tracks present — the client can paint art and titles
--- (programmed and voiced arrive with their columns in later steps.)
+--   programmed  session_slot rows present, some slot's voiced_at null — the words can be read
+--   voiced      every slot's voiced_at set — the whole segment can play
 -- Named session_segment only because the old station world still owns `segment`; rename when
 -- that world is deleted.
 create table session_segment (
@@ -14,6 +15,7 @@ create table session_segment (
   candidates  jsonb,                                   -- telemetry, hydration: every Spotify hit as offered to compose
   tracks      jsonb,                                   -- the playlist: [{id, uri, name, artists, album, image, durationMs, pick, why}]
   dropped     jsonb,                                   -- reasons from all three stages: string[]
+  program     jsonb,                                   -- telemetry, the program rung: the writer's raw output
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
   unique (session_id, num)

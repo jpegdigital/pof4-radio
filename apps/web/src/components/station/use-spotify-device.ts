@@ -77,8 +77,8 @@ export interface SpotifyDevice {
    * gesture; the SDK's `activateElement` does that for its own hidden media element.
    */
   activate(): void;
-  /** Start `uris` on this device from `position`. */
-  play(uris: string[], position: number): Promise<void>;
+  /** Start `uris` on this device from `position` in the list, `positionMs` into that track. */
+  play(uris: string[], position: number, positionMs?: number): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   /** Move within the current track. */
@@ -211,7 +211,7 @@ export function useSpotifyDevice(
   }, [clientId]);
 
   const play = useCallback(
-    async (uris: string[], position: number) => {
+    async (uris: string[], position: number, positionMs = 0) => {
       if (status.kind !== "ready") throw new Error("no device");
       list.current = { last: uris.at(-1) ?? "", startedAt: Date.now() };
       const token = await accessToken(clientId);
@@ -220,7 +220,11 @@ export function useSpotifyDevice(
         {
           method: "PUT",
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ uris, offset: { position } }),
+          body: JSON.stringify({
+            uris,
+            offset: { position },
+            position_ms: Math.max(0, Math.round(positionMs)),
+          }),
         },
       );
       if (!res.ok) throw new Error(`play failed: ${res.status} ${await res.text()}`);

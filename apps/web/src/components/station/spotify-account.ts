@@ -23,7 +23,8 @@ export interface SpotifyAccount extends SpotifyIdentity {
   expiresAt: number;
 }
 
-const ACCOUNT_KEY = "radio.spotify";
+/** The localStorage key the account lives under (read raw by pages that must hydrate first). */
+export const ACCOUNT_KEY = "radio.spotify";
 /** The identity cookie the server page reads (app/old/page.tsx). */
 export const IDENTITY_COOKIE = "radio.spotify.who";
 const FLOW_KEY = "radio.spotify.flow"; // sessionStorage: { state, verifier } across the redirect

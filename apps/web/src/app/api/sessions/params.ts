@@ -8,7 +8,7 @@ import { z } from "zod";
  * at the boundary, so a bad knob is a 400 with zod's why, never a weird playlist.
  */
 
-export const DEFAULTS = { propose: 12, candidates: 5, playlist: 8, min: 4 } as const;
+export const DEFAULTS = { propose: 6, candidates: 5, playlist: 4, min: 4 } as const;
 
 export const Knobs = z
   .object({

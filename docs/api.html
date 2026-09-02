@@ -50,7 +50,7 @@
   <a href="#segment">2. session_segment</a>
   <a class="l3" href="#seg-status">Status is derived</a>
   <a class="l3" href="#seg-telemetry">Telemetry columns</a>
-  <a href="#slot">3. session_slot (decided, not built)</a>
+  <a href="#slot">3. session_slot</a>
   <a class="l3" href="#slot-shape">The row</a>
   <a class="l3" href="#slot-halves">Two halves, two writers</a>
   <a class="l3" href="#slot-ready">Readiness</a>
@@ -64,10 +64,10 @@
 <main>
 
 <h1>Sessions — the data model</h1>
-<p>Read from the code on 2026-08-31, mid-refactor. <code>session</code> and <code>session_segment</code> are in the schema and live; <code>session_slot</code> is the decision this document records — the database will be brought to match it. Companion to <a href="sessions.html">sessions.html</a>, which covers the API dance over this model.</p>
+<p>Read from the code on 2026-08-31, mid-refactor. <code>session</code> and <code>session_segment</code> are in the schema and live; <code>session_slot</code> joined them on 2026-09-01 with the program rung. Companion to <a href="sessions.html">sessions.html</a>, which covers the API dance over this model.</p>
 
 <h2 id="breath">In one breath</h2>
-<p>A <strong>session</strong> is one listening: the ask, verbatim, and the voice — nothing else. It owns <strong>segments</strong>, numbered from 1, each one sweep of the show: a DJ break and its songs. A segment is produced in rungs, each rung landing a column set whole — the <em>playlist</em> (tracks), then the <em>program</em> (slot rows: every word the DJ will say, one slot per track), then the <em>voice</em> (each slot's clip, one at a time). Status is never stored; it is derived from what is present. Everything produced is kept forever; nothing is re-made.</p>
+<p>A <strong>session</strong> is one listening: the ask, verbatim, and the voice — nothing else. It owns <strong>segments</strong>, numbered from 1, each one sweep of the show: a DJ break and its songs. A segment is produced in rungs, each rung landing a column set whole — the <em>playlist</em> (tracks), then the <em>program</em> (slot rows: every word the DJ will say, one slot per track), then the <em>voice</em> (each slot's clip, one at a time). Status is never stored; it is derived from what is present. Everything produced is kept forever; nothing is re-made — except a clip, on request: another take of the same words, under a new key, the old one kept.</p>
 
 <pre data-lang="shape"><code>session ─┬─ session_segment (num 1) ─┬─ session_slot (seq 1)   ← the break
          │                           ├─ session_slot (seq 2)
@@ -112,7 +112,7 @@
 <h3 id="seg-telemetry">Telemetry columns stay off the wire</h3>
 <p><code>proposed</code> and <code>candidates</code> (and, once the program rung lands, a <code>program</code> jsonb holding the writer's raw output) are receipts: why the machine did what it did. They live in the database and never leave it — <code>GET /api/sessions/:id</code> returns <code>rationale</code>, <code>tracks</code>, <code>dropped</code> and the slots, not the receipts.</p>
 
-<h2 id="slot">3. <code>session_slot</code> <span class="tag decided">decided, not built</span></h2>
+<h2 id="slot">3. <code>session_slot</code> <span class="tag built">in schema</span></h2>
 <p>The slot is the unit of everything after the playlist: <em>one track's introduction</em> — how it is brought on air, every word said over it, and eventually the clip that says them. The program rung writes all of a segment's slots in <strong>one transaction from one Claude call</strong> (the writing is one coherent piece; the break sets up the set, the talk-ups reference what is around them). The audio rung then fills each slot's voice half <strong>one slot at a time</strong>, so slot 1's clip — the break — is playable while slots 2–N are still voicing.</p>
 
 <h3 id="slot-shape">The row</h3>
@@ -128,14 +128,13 @@ create table session_slot (
   words        text,                      -- everything said; null for a segue
   lead_line    text,                      -- breaks: the one sentence that talks the record in, said last
   legal_id     text,                      -- said dry before the bed comes in; top-of-hour breaks only
+  why          text not null,             -- the writer's one line: why this treatment here
+  fallback     jsonb,                     -- {from, to, reason} when the clock rules stepped the kind down
+  record_under_ms integer,                -- breaks: how far before the voice ends the record starts under it (the writer's number, clamped)
+  voice_in_ms  integer,                   -- talkups: how far into the record the voice comes in (the writer's number, clamped)
 
   -- the voice half, landed by the audio rung
-  clip_ms      integer,                   -- the clip's length, from the alignment
-  bed_in_ms    integer,                   -- breaks: when the bed comes in (after the legal ID)
-  lead_ms      integer,                   -- breaks: how far before clip end the record starts
-  at_ms        integer,                   -- talkups: how far into the intro the voice comes in
   clip_key     text,                      -- bucket key of the clip; written only after the PUT succeeded
-  fallback     jsonb,                     -- {from, to, reason} when the ladder stepped down
   voiced_at    timestamptz,               -- set ⇒ done, nothing more will ever happen to this slot
 
   created_at   timestamptz not null default now(),
@@ -147,13 +146,13 @@ create table session_slot (
 <p>The split matters because the two halves have different producers, different failure modes, and different immutability:</p>
 <table>
 <tr><th>Half</th><th>Written by</th><th>When</th><th>Mutability</th></tr>
-<tr><td><code>kind</code>, <code>words</code>, <code>lead_line</code>, <code>legal_id</code></td><td>the program rung — one Claude call, all slots in one transaction</td><td>once, after the playlist</td><td>immutable once written</td></tr>
-<tr><td><code>clip_ms</code>, <code>bed_in_ms</code>, <code>lead_ms</code>, <code>at_ms</code>, <code>clip_key</code>, <code>fallback</code>, <code>voiced_at</code></td><td>the audio rung — ElevenLabs <code>/with-timestamps</code>, per slot</td><td>per slot, in any order the client asks (in practice: in order)</td><td>immutable once <code>voiced_at</code> is set</td></tr>
+<tr><td><code>kind</code>, <code>words</code>, <code>lead_line</code>, <code>legal_id</code>, <code>why</code>, <code>fallback</code>, <code>record_under_ms</code>, <code>voice_in_ms</code></td><td>the program rung — one Claude call, all slots in one transaction</td><td>once, after the playlist</td><td>immutable once written</td></tr>
+<tr><td><code>clip_key</code>, <code>voiced_at</code></td><td>the audio rung — ElevenLabs plain TTS, per slot</td><td>per slot, in any order the client asks (in practice: in order)</td><td>immutable once <code>voiced_at</code> is set</td></tr>
 </table>
-<p>Every timing is <em>derived</em>, never guessed: the clip's length and the character-offset timings (<code>bed_in_ms</code> after the legal ID's last character, <code>lead_ms</code> from <code>lead_line.length</code> back from the end) come from the alignment (<code>timingsOf</code> in <code>packages/dj/src/program/timings.ts</code>); <code>at_ms</code> comes from the record's card. The clip bytes go to the bucket at <code>sessions/&lt;sessionId&gt;/&lt;num&gt;/&lt;seq&gt;.mp3</code>, immutable; the row holds numbers, words and the key only. A failed clip is a <code>fallback</code> (the ladder: break → sweeper → segue; a talk-up that can't land its post → later, or none), never an error — <code>voiced_at</code> is still set, the show never stalls on a slot.</p>
+<p>Timing is <em>opportunistic</em>, not measured. The writer gives two numbers with the words — how far before the voice ends a break's record starts under the lead line, how far into the record a talk-up's voice comes in — kept where they mean something and clamped to sense. Everything else about the mix is a house constant in the player (<code>plan.ts</code> next to the session page): the bed under the break from the start (after a dry legal ID), its ramps, a talk-up done a beat before the card's intro ends, a sweeper dry then a hard start. The clip's length is read by the browser when it loads the clip. No alignment, no timestamps, no ladder. The clip bytes go to the bucket at <code>sessions/&lt;sessionId&gt;/&lt;num&gt;/&lt;seq&gt;.mp3</code>, immutable; the row holds words, the two numbers and the key. A failed TTS is a 502 the client may retry; a slot never fails silently.</p>
 
 <h3 id="slot-ready">Readiness</h3>
-<p>The audio rung PUTs the clip to the bucket first, then updates the row (<code>clip_key</code>, timings, <code>voiced_at</code>) in one statement. So <code>clip_key</code> present always means the media exists. <code>clip_key</code> alone isn't enough to mean "done" because a slot can finish with no media (a segue, or a fallback to one) — that's what <code>voiced_at</code> is for:</p>
+<p>The audio rung PUTs the clip to the bucket first, then updates the row (<code>clip_key</code>, <code>voiced_at</code>) in one statement. So <code>clip_key</code> present always means the media exists. <code>clip_key</code> alone isn't enough to mean "done" because a segue finishes with no media — that's what <code>voiced_at</code> is for:</p>
 <table>
 <tr><th><code>voiced_at</code></th><th><code>clip_key</code></th><th>Meaning</th></tr>
 <tr><td>null</td><td>null</td><td>not voiced yet</td></tr>
@@ -169,14 +168,14 @@ create table session_slot (
 <p>Same vocabulary as the old world's <code>Intro</code> (<code>packages/dj/src/program/shapes.ts</code>) — the pure clock rules, timings and assembly ladder carry over unchanged.</p>
 <table>
 <tr><th>Kind</th><th>What you hear</th><th>Program half needs</th><th>Voice half needs</th></tr>
-<tr><td><code>break</code></td><td>Voice over a bed, the last line talks the record in under it. Slot 1 is always the break.</td><td><code>words</code>, <code>lead_line</code>, <code>legal_id</code> if the hour turned</td><td><code>clip_ms</code>, <code>bed_in_ms</code>, <code>lead_ms</code></td></tr>
-<tr><td><code>talkup</code></td><td>The song starts full; the voice comes in over the intro and ends a beat before the first sung word.</td><td><code>words</code></td><td><code>clip_ms</code>, <code>at_ms</code></td></tr>
-<tr><td><code>sweeper</code></td><td>A short dry ID, then a hard intro.</td><td><code>words</code></td><td><code>clip_ms</code></td></tr>
+<tr><td><code>break</code></td><td>Voice over a bed, the last line talks the record in under it. Slot 1 is always the break.</td><td><code>words</code>, <code>lead_line</code>, <code>legal_id</code> if the hour turned, <code>record_under_ms</code></td><td><code>clip_key</code></td></tr>
+<tr><td><code>talkup</code></td><td>The song starts full; the voice comes in over the intro and ends a beat before the first sung word.</td><td><code>words</code>, <code>voice_in_ms</code></td><td><code>clip_key</code></td></tr>
+<tr><td><code>sweeper</code></td><td>A short dry ID, then a hard intro.</td><td><code>words</code></td><td><code>clip_key</code></td></tr>
 <tr><td><code>segue</code></td><td>Straight out of the last record.</td><td>nothing (<code>words</code> null)</td><td>nothing (<code>voiced_at</code> set immediately)</td></tr>
 </table>
 
 <h2 id="card">4. <code>card</code> — carried over <span class="tag built">in schema</span></h2>
-<p>The record's card (<code>packages/db/schema/card.sql</code>) survives the refactor as-is: intro length, <code>sure</code>, the post (<em>where</em> the vocal comes in, never the lyric), ending, energy, talking points — keyed by Spotify track id, shared by every session, the first session to play a record pays for its card. The program rung reads cards to know which tracks can carry a talk-up (a talk-up needs a ≥ 7 s intro the card is sure of); the audio rung reads them to place <code>at_ms</code>. Cards may be corrected in place; voiced slots never re-read them.</p>
+<p>The record's card (<code>packages/db/schema/card.sql</code>) survives the refactor as-is: intro length, <code>sure</code>, the post (<em>where</em> the vocal comes in, never the lyric), ending, energy, talking points — keyed by Spotify track id, shared by every session, the first session to play a record pays for its card. The program rung reads cards to know which tracks can carry a talk-up (a talk-up needs a ≥ 7 s intro); the snapshot joins each slot's <code>introMs</code> from its card so the player can end a talk-up a beat before the vocal. Cards may be corrected in place; voiced slots never re-read them.</p>
 
 <h2 id="outside">5. What lives outside the database</h2>
 <table>

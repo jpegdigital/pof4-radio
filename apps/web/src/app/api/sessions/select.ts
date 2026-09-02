@@ -1,4 +1,4 @@
-import type { Choice } from "./tools";
+import type { Choice } from "./shapes";
 
 /**
  * The guarantee half of composition, pure: compose chooses {id, why}; this validates every id
@@ -50,4 +50,12 @@ export function selectTracks(
     kept.push({ ...c, why });
   }
   return { kept, dropped };
+}
+
+/** A featured-artist tag in a title: "(feat. X)", "[ft. X]", "(with X)" — Spotify's own titles carry it differently, so it only hurts a search. */
+const FEAT_TAG = /\s*[([](?:feat\.?|ft\.?|featuring|with)\s[^)\]]*[)\]]/gi;
+
+/** What Spotify is asked for a pick: the title without its feat tag, pinned to the artist. */
+export function searchQuery(artist: string, title: string): string {
+  return `${title.replace(FEAT_TAG, "").trim()} artist:${artist.trim()}`;
 }

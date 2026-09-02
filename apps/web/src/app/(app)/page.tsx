@@ -1,80 +1,42 @@
-"use client";
+import { summarize } from "@radio/dj";
+import { db } from "@/lib/db";
+import { loadVoices } from "@/lib/voices";
+import { HomeDesk, type SessionSummary } from "./home-desk";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+export const dynamic = "force-dynamic";
+
+interface SessionRow {
+  id: string;
+  prompt: string;
+  voice_id: string;
+  created_at: Date;
+  segments: string;
+}
+
+/** How many earlier sessions the desk shows. */
+const LOG_LENGTH = 20;
 
 /**
- * The home: the ask and the voice, nothing else. POST /api/sessions is creation only and
- * instant — success is a soft redirect to /sessions/:id, where the state machine lives and
- * production starts. The knobs are global defaults (params.ts); a production rung takes a
- * partial override for debugging, not this form.
+ * The home. The server contributes the DJ roster (names and ids from `settings.voices` — the
+ * tuning stays server-side) and the log of earlier sessions, both ready on first paint;
+ * the form and the redirect are the browser's (home-desk.tsx).
  */
-
-type State = { phase: "idle" } | { phase: "working" } | { phase: "error"; message: string };
-
-export default function HomePage() {
-  const router = useRouter();
-  const [prompt, setPrompt] = useState("");
-  const [voiceId, setVoiceId] = useState("default");
-  const [state, setState] = useState<State>({ phase: "idle" });
-
-  async function submit(e: { preventDefault(): void }) {
-    e.preventDefault();
-    setState({ phase: "working" });
-    try {
-      const res = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt, voiceId }),
-      });
-      const data = (await res.json().catch(() => null)) as { sessionId?: string; error?: string } | null;
-      if (!res.ok || !data?.sessionId) {
-        setState({ phase: "error", message: data?.error ?? `HTTP ${res.status}` });
-        return;
-      }
-      router.push(`/sessions/${data.sessionId}`);
-    } catch (err) {
-      setState({ phase: "error", message: err instanceof Error ? err.message : String(err) });
-    }
-  }
-
-  const working = state.phase === "working";
-
-  return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-8">
-      <h1 className="font-display text-2xl font-semibold uppercase tracking-[0.18em]">Claude Radio</h1>
-
-      <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="What should the hour sound like?"
-          rows={3}
-          required
-          className="w-full resize-none rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-2 focus:outline-zinc-500"
-        />
-        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wide text-zinc-500">
-          voice
-          <input
-            value={voiceId}
-            onChange={(e) => setVoiceId(e.target.value)}
-            className="rounded-md border border-zinc-800 bg-zinc-950 p-2 text-sm text-zinc-200"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={working}
-          className="rounded-lg bg-zinc-200 py-2.5 text-sm font-semibold text-zinc-900 transition hover:bg-white disabled:opacity-50"
-        >
-          {working ? "Starting…" : "Start a session"}
-        </button>
-      </form>
-
-      {state.phase === "error" && (
-        <p className="rounded-lg border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
-          {state.message}
-        </p>
-      )}
-    </div>
-  );
+export default async function HomePage() {
+  const [voices, { rows }] = await Promise.all([
+    loadVoices(),
+    db().pool.query<SessionRow>(
+      `select s.id, s.prompt, s.voice_id, s.created_at, count(g.tracks) as segments
+       from session s left join session_segment g on g.session_id = s.id
+       group by s.id order by s.created_at desc limit $1`,
+      [LOG_LENGTH],
+    ),
+  ]);
+  const sessions: SessionSummary[] = rows.map((r) => ({
+    sessionId: r.id,
+    prompt: r.prompt,
+    dj: (voices.find((v) => v.id === r.voice_id) ?? voices[0])?.name ?? "no voice",
+    segments: Number(r.segments),
+    createdAt: r.created_at.toISOString(),
+  }));
+  return <HomeDesk djs={voices.map(summarize)} sessions={sessions} />;
 }

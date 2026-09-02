@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Candidate, selectTracks } from "./select";
+import { type Candidate, searchQuery, selectTracks } from "./select";
 
 /** A hydrated candidate as the route builds it from a Spotify hit + the pick it answered. */
 const cand = (id: string, over: Partial<Candidate> = {}): Candidate => ({
@@ -86,5 +86,30 @@ describe("selectTracks — compose chooses {id, why}, we join the metadata back"
     const out = selectTracks([], [cand("a")], 10);
     expect(out.kept).toEqual([]);
     expect(out.dropped).toEqual([]);
+  });
+});
+
+describe("searchQuery — the pick as Spotify hears it", () => {
+  it.each([
+    { give: ["Ariana Grande", "Break Free"], want: "Break Free artist:Ariana Grande", id: "plain" },
+    { give: ["Zedd", "Clarity (feat. Foxes)"], want: "Clarity artist:Zedd", id: "feat in parentheses" },
+    {
+      give: ["Calvin Harris", "Outside [ft. Ellie Goulding]"],
+      want: "Outside artist:Calvin Harris",
+      id: "ft in brackets",
+    },
+    {
+      give: ["Ariana Grande", "Break Free (with Zedd)"],
+      want: "Break Free artist:Ariana Grande",
+      id: "with",
+    },
+    {
+      give: ["Don Henley", "The Boys of Summer (Remastered)"],
+      want: "The Boys of Summer (Remastered) artist:Don Henley",
+      id: "a version tag stays",
+    },
+    { give: ["  Kesha ", " Die Young "], want: "Die Young artist:Kesha", id: "trimmed" },
+  ])("$id", ({ give: [artist, title], want }) => {
+    expect(searchQuery(artist, title)).toBe(want);
   });
 });
