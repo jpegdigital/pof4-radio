@@ -34,6 +34,10 @@ export interface WriteSlotInput {
   /** Everything said on the station so far, in order. */
   said: string[];
   topOfHour: boolean;
+  /** The weather as the brief carries it (`weatherText`), or null when the pull failed. */
+  weather: string | null;
+  /** The headlines as the brief carries them (`headlinesText`), or null when the pull failed. */
+  headlines: string | null;
 }
 
 export interface Written {
@@ -79,6 +83,8 @@ export async function writeSlot(input: WriteSlotInput): Promise<Written> {
       cards: full,
       previous_words: input.said.length ? input.said.join("\n\n") : "none",
       legal_id: legal ? legalIdOf(input.identity) : "none",
+      weather: input.weather ?? "none",
+      headlines: input.headlines ?? "none",
     }),
     "",
     RULES_TEXT,

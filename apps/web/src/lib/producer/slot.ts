@@ -6,14 +6,18 @@ import {
   type SegmentView,
   sweeperPicker,
   type Voice,
+  headlinesText,
+  weatherText,
 } from "@radio/dj";
 import { bucket, clipKey } from "@/lib/bucket";
 import { db } from "@/lib/db";
 import { loadPromptTemplate } from "@/lib/prompts";
 import { cardFor } from "./cards";
 import { ProducerError } from "./errors";
+import { fetchHeadlines } from "./headlines";
 import { clockFor, type Lock, viewOf } from "./segment";
 import { BED_URL, clipUrl, speak, sweeperUrls } from "./voice";
+import { fetchWeather, WEATHER_PLACE } from "./weather";
 import { writeSlot } from "./write";
 
 /**
@@ -82,10 +86,25 @@ export async function produceSlot(
   if (!carded.card && carded.reason)
     fallbacks.push({ seq, from: "talkup", to: "segue", reason: carded.reason });
 
-  // The words.
-  const kept = await lock.listSegments();
+  // The words. The weather and the headlines ride along; a failed pull is logged and the slot goes on without it.
+  const orNull = (what: string) => (err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[segment ${segment.id.slice(0, 8)}] ${what} pull failed, writing without it: ${message}`);
+    return null;
+  };
+  const [kept, weather, headlines] = await Promise.all([
+    lock.listSegments(),
+    fetchWeather()
+      .then((wx) => weatherText(wx, WEATHER_PLACE.timeZone))
+      .catch(orNull("weather")),
+    fetchHeadlines()
+      .then((h) => headlinesText(h, WEATHER_PLACE.city))
+      .catch(orNull("headlines")),
+  ]);
   t = Date.now();
   const w = await writeSlot({
+    weather,
+    headlines,
     template,
     request: segment.prompt,
     dj: station.dj,

@@ -24,7 +24,9 @@ export type PromptVar =
   | "records"
   | "cards"
   | "previous_words"
-  | "legal_id";
+  | "legal_id"
+  | "weather"
+  | "headlines";
 
 export const PROMPT_SLOTS = [
   {
@@ -49,7 +51,19 @@ export const PROMPT_SLOTS = [
     key: "prompt.write",
     label: "Write",
     blurb: "The slot brief: what happens at the top of one record and every word that is said there.",
-    vars: ["request", "dj", "identity", "clock", "slot", "records", "cards", "previous_words", "legal_id"],
+    vars: [
+      "request",
+      "dj",
+      "identity",
+      "clock",
+      "slot",
+      "records",
+      "cards",
+      "previous_words",
+      "legal_id",
+      "weather",
+      "headlines",
+    ],
   },
 ] as const satisfies readonly { key: string; label: string; blurb: string; vars: readonly PromptVar[] }[];
 
@@ -67,6 +81,10 @@ export const PROMPT_VAR_HELP: Record<PromptVar, string> = {
   cards: "the slot's record's card in full: intro, post, ending, energy, talking points",
   previous_words: 'everything the DJ has said on this station so far, latest last ("none" at the opening)',
   legal_id: 'the legal ID to say first when the break is the top of the hour, else "none"',
+  weather:
+    'the weather from the National Weather Service, one line for now and one each for today and tonight ("none" when the pull failed)',
+  headlines:
+    "the top headlines from Google News, one per line, the city's then the nation's then the world's, each with its source (\"none\" when the pull failed)",
 };
 
 export type PromptTemplate = Record<PromptKey, string>;

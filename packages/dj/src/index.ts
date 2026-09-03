@@ -59,7 +59,23 @@ export {
   type Track,
   Treatment,
 } from "./program/shapes.ts";
+export {
+  HEADLINES_PER_FEED,
+  type Headline,
+  type Headlines,
+  headlinesText,
+  parseHeadlines,
+} from "./program/headlines.ts";
 export { type Alignment, type ClipInfo, textOf, timingsOf } from "./program/timings.ts";
+export {
+  Forecast,
+  Observation,
+  type Period,
+  readWeather,
+  WEATHER_PERIODS,
+  type Weather,
+  weatherText,
+} from "./program/weather.ts";
 export {
   parseVoices,
   summarize,
