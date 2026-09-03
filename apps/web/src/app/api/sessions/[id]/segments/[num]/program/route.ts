@@ -1,6 +1,8 @@
-import { clockOf } from "@radio/dj";
+import { clockOf, headlinesText, weatherText } from "@radio/dj";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { fetchHeadlines } from "@/lib/producer/headlines";
+import { fetchWeather, WEATHER_PLACE } from "@/lib/producer/weather";
 import { loadIdentity } from "@/lib/prompts";
 import { loadVoices } from "@/lib/voices";
 import { ensureCards } from "../../../../cards";
@@ -31,6 +33,21 @@ const LOCK_NOT_AVAILABLE = "55P03";
 const localClockMs = () => {
   const now = new Date();
   return now.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+};
+
+/** A pull for the brief — the weather, the headlines; a failure is logged and the segment goes on without it. */
+const forBrief = async (
+  sessionId: string,
+  what: string,
+  pull: () => Promise<string>,
+): Promise<string | null> => {
+  try {
+    return await pull();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[session ${sessionId.slice(0, 8)}] ${what} pull failed, writing without it: ${message}`);
+    return null;
+  }
 };
 
 export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[id]/segments/[num]/program">) {
@@ -95,7 +112,12 @@ export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[id]/s
       return Response.json({ num: n, status: "programmed", slots: kept.map(slotDoc) });
     }
 
-    const [identity, voices] = await Promise.all([loadIdentity(), loadVoices()]);
+    const [identity, voices, weather, headlines] = await Promise.all([
+      loadIdentity(),
+      loadVoices(),
+      forBrief(id, "weather", async () => weatherText(await fetchWeather(), WEATHER_PLACE.timeZone)),
+      forBrief(id, "headlines", async () => headlinesText(await fetchHeadlines(), WEATHER_PLACE.city)),
+    ]);
     const dj = voices.find((v) => v.id === session.voice_id)?.name ?? null;
     const carded = await ensureCards(seg.tracks);
     const made = await produceProgram({
@@ -107,6 +129,8 @@ export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[id]/s
       cards: carded.cards,
       // Segment 1 is the opening; the hour turning between segments is the next rung's business.
       legalId: n === 1 ? legalIdOf(identity) : null,
+      weather,
+      headlines,
     });
 
     for (const s of made.slots)

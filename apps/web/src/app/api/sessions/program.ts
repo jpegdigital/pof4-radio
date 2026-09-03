@@ -38,6 +38,10 @@ export interface ProgramInput {
   cards: Map<string, Card>;
   /** The legal ID to open with, or null when this break is not the top of the hour. */
   legalId: string | null;
+  /** The weather as the brief carries it (`weatherText`), or null when the pull failed: then nothing is said of it. */
+  weather: string | null;
+  /** The headlines as the brief carries them (`headlinesText`), or null when the pull failed: then none are said. */
+  headlines: string | null;
 }
 
 export interface Program {
@@ -56,7 +60,30 @@ const cardLine = (c: Card | undefined) => {
   return `${intro}${post}; ends ${c.outro}; energy ${c.energy}/5, ${c.tempo}-tempo; ${c.mood}.${notes}`;
 };
 
-export async function produceProgram(input: ProgramInput): Promise<Program> {
+/**
+ * The weather goes in the break and nowhere else, in one breath: now, then today and tonight,
+ * the way it rolls off the tongue. The feed's prose is long; the DJ is told to cut it.
+ */
+const weatherBlock = (city: string, weather: string) =>
+  [
+    `The weather in ${city} right now, from the National Weather Service:`,
+    weather,
+    'Say it in the break, in one breath, the way it rolls off the tongue: what it is now, then today and tonight — "eighty-one and cloudy, storms around lunch, down to seventy-six tonight". Two sentences at most. Skip the humidity, the wind and the rain totals unless one of them is the story. Nowhere else in the segment.',
+  ].join("\n");
+
+/**
+ * One headline, two at most, across the whole segment — in the break or a talk-up, never more
+ * than one to a slot — each a single spoken sentence. The DJ picks what sits with the music.
+ */
+const headlinesBlock = (headlines: string) =>
+  [
+    "The headlines right now, from Google News (the city's, then the nation's, then the world's), each with its source:",
+    headlines,
+    'Say one, two at most, across the whole segment — in the break or a talk-up, never more than one to a slot. Each is a single spoken sentence: the gist, in your own words, and the source when it matters ("the Morning News says…"). Pick what sits with the music and the hour; leave the rest unsaid. Nothing grim straight into a love song.',
+  ].join("\n");
+
+/** The brief the writer gets: the ask, the clock, the records with their cards, the legal ID, the weather, the headlines, the rules. */
+export function programBrief(input: ProgramInput): string {
   const { tracks, cards, legalId } = input;
   const n = tracks.length;
   const list = tracks
@@ -65,7 +92,7 @@ export async function produceProgram(input: ProgramInput): Promise<Program> {
         `${i + 1}. ${t.artists.join(", ")} — ${t.name} (${Math.round(t.durationMs / 1000)} s). Why it is here: ${t.why}\n   ${cardLine(cards.get(t.id))}`,
     )
     .join("\n");
-  const brief = [
+  return [
     `The listener's request: ${input.prompt}`,
     `The clock: ${input.clock}`,
     "",
@@ -76,10 +103,18 @@ export async function produceProgram(input: ProgramInput): Promise<Program> {
       ? `This break is the top of the hour: the legal ID "${legalId}" is said first, dry, before the bed comes in. It is added for you — do not write it into your words.`
       : "This break is not the top of the hour: no legal ID.",
     "",
+    ...(input.weather ? [weatherBlock(input.identity.city, input.weather), ""] : []),
+    ...(input.headlines ? [headlinesBlock(input.headlines), ""] : []),
     `Write the program: one slot per record, ${n} in all. Slot 1 is the break — set up the set for the listener, then the lead line into record 1. For every other record choose how it is brought on air and write every word said there.`,
     "",
     RULES_TEXT,
   ].join("\n");
+}
+
+export async function produceProgram(input: ProgramInput): Promise<Program> {
+  const { tracks, cards, legalId } = input;
+  const n = tracks.length;
+  const brief = programBrief(input);
   const slots = numbered("slot", n, Slot);
   const once = () =>
     claude().messages.parse({

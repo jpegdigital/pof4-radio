@@ -43,6 +43,16 @@ const SAMPLE: Record<PromptVar, string> = {
     "Duran Duran, Rio, and the single that put them on every wall in America.",
   ].join("\n\n"),
   legal_id: "WFAI, Dallas. 56.6, Claude Radio.",
+  weather: [
+    "Now (8:43 PM): Clear, 84°F, feels like 88, humidity 55%, wind 7 mph.",
+    "Tonight: Mostly Clear, low around 74. Mostly clear, with a low around 74. South wind 5 to 10 mph.",
+    "Saturday: Sunny, high near 97. Sunny, with a high near 97. Heat index values as high as 103.",
+  ].join("\n"),
+  headlines: [
+    "Dallas: Grass fires burn along highways in Dallas and Denton counties (FOX 4 News Dallas-Fort Worth)",
+    "Nation: Feminist activist Gloria Steinem dies at age 92 (Reuters)",
+    "World: U.N. says world will miss its 1.5-degree climate target (nytimes.com)",
+  ].join("\n"),
 };
 
 export function PromptEditor({
