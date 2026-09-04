@@ -4,6 +4,7 @@ import {
   BED_GAIN,
   bedGainAt,
   DUCK_MS,
+  offsetsAt,
   type Plan,
   planSlot,
   TRACK_DUCK,
@@ -11,8 +12,8 @@ import {
   trackLevelAt,
   RISE_MS,
 } from "./plan";
-import { resumes } from "./transport";
-import type { Cue, Slot } from "./types";
+import { onContext, realign, resumes } from "./transport";
+import type { Cue, DeckPhase, Slot, TrackClock } from "./types";
 
 /**
  * The deck: one slot on air at a time, three lanes from one clock. Load a cue and its clip and
@@ -28,20 +29,23 @@ import type { Cue, Slot } from "./types";
  * head (transport.ts). The head is ms since the slot's top; the track's own clock is its
  * element's, read every frame. Writing and voicing a slot is the page's business (the loop), not
  * the deck's: a cue arrives voiced.
+ *
+ * Three clocks, tied together once at start: the head and the timers on wall time, the gains and
+ * the bed on the audio clock, the record on its element's. The transport's rules (transport.ts)
+ * say what to do when they come apart. In the background (Safari hidden, the screen locked) iOS
+ * keeps the graph running only under a "playback" audio session, set before the context is made;
+ * the page's timers then fire up to a second late, so each lane is seeked to the real head when
+ * its start fires (offsetsAt). The platform taking the audio (a call) interrupts the context: the
+ * deck holds — the head frozen — and plays again from there when it comes back (onContext). On
+ * return to the page the context is resumed by hand, since iOS does not always do it, and the
+ * record's own clock is checked against the head (realign). The lock screen is media-session.ts.
  */
 
 const BED_URL = "/bed.mp3";
 /** A few ms of silence (WAV); playing it inside a tap unlocks an element for later `play()`s on iOS. */
 const SILENCE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
-
-export type DeckPhase = "idle" | "loading" | "playing" | "paused" | "error";
-
-/** The track's own clock, as of the last frame. */
-export interface TrackClock {
-  positionMs: number;
-  durationMs: number;
-  playing: boolean;
-}
+/** How long after coming back to the page before a context clock that has not moved counts as stalled. */
+const STALL_CHECK_MS = 300;
 
 export interface Deck {
   cue: Cue | null;
@@ -94,9 +98,22 @@ interface Graph {
   primed: boolean;
 }
 let graph: Graph | null = null;
+/** The hook's ear on the context's state; the graph may be made before or after the hook mounts. */
+let onState: ((state: string) => void) | null = null;
+/** Safari's Audio Session API (not in lib.dom yet): the page says what kind of sound it makes. */
+type WithAudioSession = Navigator & { audioSession?: { type: string } };
 function ensureGraph(): Graph {
   if (graph) return graph;
+  // iOS keeps an AudioContext running when Safari is hidden or the screen locks only while the
+  // page's session is "playback" (WebKit's AudioContext::shouldOverrideBackgroundPlaybackRestriction,
+  // iOS 17.5+); "auto" is ambient, which the ringer switch silences and the background interrupts.
+  const audioSession = (navigator as WithAudioSession).audioSession;
+  if (audioSession) audioSession.type = "playback";
   const ctx = new AudioContext();
+  ctx.onstatechange = () => {
+    console.info("[deck] context:", ctx.state);
+    onState?.(ctx.state);
+  };
   const mic = new Audio();
   mic.preload = "auto";
   ctx.createMediaElementSource(mic).connect(ctx.destination);
@@ -203,11 +220,14 @@ export function useDeck({
       const from = Math.max(0, Math.min(plan.lengthMs, fromMs));
       const timers: number[] = [];
       const startedAt = performance.now() - from;
-      // Something due at `ms` on the timeline: now if it is behind the head, else on time.
-      const at = (ms: number, f: () => void) => {
+      // Something due at `ms` on the timeline: now if it is behind the head, else on time. A hidden
+      // page's timers fire up to a second late (iOS aligns them to 1 s while the page plays audio),
+      // so an element is seeked to where the head actually stands when its start fires, not to
+      // where the plan said it would be: a late start lands in time rather than shifting the track.
+      const at = (ms: number, f: (headMs: number) => void) => {
         const d = ms - from;
-        if (d <= 0) f();
-        else timers.push(window.setTimeout(f, d));
+        if (d <= 0) f(from);
+        else timers.push(window.setTimeout(() => f(performance.now() - startedAt), d));
       };
       let bed: AudioBufferSourceNode | null = null;
       if (plan.mic && clipUrl && from < plan.mic.endMs) {
@@ -215,8 +235,12 @@ export function useDeck({
           g.mic.src = clipUrl;
           g.mic.load();
         }
-        g.mic.currentTime = Math.max(0, from - plan.mic.atMs) / 1000;
-        at(plan.mic.atMs, () => void g.mic.play().catch((e: unknown) => console.warn("[deck] mic:", e)));
+        at(plan.mic.atMs, (headMs) => {
+          const { micMs } = offsetsAt(plan, headMs);
+          if (micMs === null) return; // so late the voice is over
+          g.mic.currentTime = micMs / 1000;
+          g.mic.play().catch((e: unknown) => console.warn("[deck] mic:", e));
+        });
       }
       if (plan.bed && from < plan.bed.outMs) {
         const buf = await getBed(g.ctx, BED_URL);
@@ -262,8 +286,8 @@ export function useDeck({
         g.rec.load();
       }
       g.rec.onended = () => h.current.onEnded();
-      at(plan.music.atMs, () => {
-        g.rec.currentTime = Math.max(0, from - plan.music.atMs) / 1000;
+      at(plan.music.atMs, (headMs) => {
+        g.rec.currentTime = (offsetsAt(plan, headMs).trackMs ?? 0) / 1000;
         g.rec.play().catch((e: unknown) => {
           setState((s) => ({ ...s, phase: "error", message: e instanceof Error ? e.message : String(e) }));
         });
@@ -351,6 +375,28 @@ export function useDeck({
     [sessionId, halt, start, trackOf],
   );
 
+  /** Play again from the head, after the listener's pause or the platform's hold. */
+  const resume = useCallback(() => {
+    const s = st.current;
+    if (!s.cue || !s.plan || !s.trackUrl) return;
+    if (resumes(s.plan, s.headMs)) {
+      // The voice is done: whatever level the pause caught, the track alone is full.
+      const g = ensureGraph();
+      void g.ctx.resume();
+      const now = g.ctx.currentTime;
+      g.recGain.gain.cancelScheduledValues(now);
+      g.recGain.gain.setValueAtTime(TRACK_FULL, now);
+      void g.rec.play().catch((e: unknown) => console.warn("[deck] track:", e));
+      run.current = {
+        timers: [],
+        bed: null,
+        frame: requestAnimationFrame(tick),
+        startedAt: performance.now() - s.headMs,
+      };
+      setState((x) => ({ ...x, phase: "playing" }));
+    } else void start(s.cue, s.plan, s.clipUrl, s.trackUrl, s.headMs);
+  }, [tick, start]);
+
   const toggle = useCallback(() => {
     const s = st.current;
     if (s.phase === "playing") {
@@ -359,27 +405,59 @@ export function useDeck({
       return;
     }
     if (!s.cue) return;
-    if (s.phase === "paused" && s.plan && s.trackUrl) {
-      if (resumes(s.plan, s.headMs)) {
-        // The voice is done: whatever level the pause caught, the track alone is full.
-        const g = ensureGraph();
-        void g.ctx.resume();
-        const now = g.ctx.currentTime;
-        g.recGain.gain.cancelScheduledValues(now);
-        g.recGain.gain.setValueAtTime(TRACK_FULL, now);
-        void g.rec.play().catch((e: unknown) => console.warn("[deck] track:", e));
-        run.current = {
-          timers: [],
-          bed: null,
-          frame: requestAnimationFrame(tick),
-          startedAt: performance.now() - s.headMs,
-        };
-        setState((x) => ({ ...x, phase: "playing" }));
-      } else void start(s.cue, s.plan, s.clipUrl, s.trackUrl, s.headMs);
-      return;
-    }
-    if (s.phase === "idle" || s.phase === "error") load(s.cue);
-  }, [halt, tick, start, load]);
+    if (s.phase === "paused" || s.phase === "held") resume();
+    else if (s.phase === "idle" || s.phase === "error") load(s.cue);
+  }, [halt, resume, load]);
+
+  // The platform taking the audio (a call, Siri) interrupts the context: on air, hold — the head
+  // frozen — and play again from there when it comes back (transport.ts).
+  useEffect(() => {
+    onState = (state) => {
+      const move = onContext(st.current.phase, state);
+      if (move === "hold") {
+        const headMs = halt();
+        setState((x) => ({ ...x, phase: "held", headMs }));
+      } else if (move === "play") resume();
+    };
+    return () => {
+      onState = null;
+    };
+  }, [halt, resume]);
+
+  // Back from the background while on air. The record's clock is the truth: if it and the head
+  // came apart (the record stalled, or ran while the page's timers slept) the mix is laid again
+  // from where the record is. Otherwise iOS does not always bring the context back on its own
+  // (WebKit bug 263627 — it can even say "running" with its clock stopped): resume it, and if the
+  // clock has not moved a moment later, suspend and resume to kick it.
+  useEffect(() => {
+    const onVisible = () => {
+      const g = graph;
+      const r = run.current;
+      const s = st.current;
+      if (document.visibilityState !== "visible" || !g || !r) return;
+      if (s.cue && s.plan && s.trackUrl) {
+        const headMs = realign(s.plan, performance.now() - r.startedAt, g.rec.currentTime * 1000);
+        if (headMs !== null) {
+          console.warn(`[deck] the head and the record came apart; the mix again from ${headMs} ms`);
+          halt();
+          void start(s.cue, s.plan, s.clipUrl, s.trackUrl, headMs);
+          return;
+        }
+      }
+      g.ctx.resume().catch((e: unknown) => console.warn("[deck] resume:", e));
+      const was = g.ctx.currentTime;
+      window.setTimeout(() => {
+        if (!run.current || g.ctx.currentTime !== was) return;
+        console.warn("[deck] the context's clock stalled after return; kicking it");
+        g.ctx
+          .suspend()
+          .then(() => g.ctx.resume())
+          .catch((e: unknown) => console.warn("[deck] kick:", e));
+      }, STALL_CHECK_MS);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [halt, start]);
 
   const seek = useCallback(
     (ms: number) => {
@@ -389,7 +467,7 @@ export function useDeck({
       if (s.phase === "playing") {
         halt();
         void start(s.cue, s.plan, s.clipUrl, s.trackUrl, headMs);
-      } else if (s.phase === "paused") setState((x) => ({ ...x, headMs }));
+      } else if (s.phase === "paused" || s.phase === "held") setState((x) => ({ ...x, headMs }));
     },
     [halt, start],
   );

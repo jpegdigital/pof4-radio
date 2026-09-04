@@ -139,7 +139,17 @@ track (its MP3 in its own `<audio>` through a gain node), the bed's and the trac
 the audio clock, the track started at its mark and ducked under the voice. The transport is
 start/stop; rows (voiced and held) and ⏮ ⏭ pick the slot; the track ending advances to the next
 voiced slot (`transport.ts`, pure), whose track was pulled while this one played. First sound after
-two model calls: the fill, then slot 1.
+two model calls: the fill, then slot 1. **iOS in the background** (Safari hidden, the screen
+locked): the graph is made under a `"playback"` audio session (`navigator.audioSession`, iOS 17.5+ —
+WebKit interrupts an `AudioContext` on hide under any other type, and the ringer switch silences
+it), each lane is seeked to the real head when its start fires (a hidden page's timers run up to a
+second late; `offsetsAt`), a call taking the audio holds the deck and it plays again from the head
+when the audio comes back (`onContext`, phase `held`), on return the record's own clock is checked
+against the head and the mix laid again from the record if they came apart (`realign`) else the
+context is resumed by hand (WebKit bug 263627), and the lock screen is the Media Session
+(`media-session.ts`): the pick's tags, play/pause/⏮/⏭ into the same transport, what it shows the
+transport's rule (`lockScreen`). Three clocks — wall, audio, the record's element — tied once at
+start; every rule for their coming apart is pure and tested in `transport.ts`.
 
 ## Working here
 

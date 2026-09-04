@@ -3,8 +3,7 @@ import { type KeyboardEvent, type PointerEvent, useState } from "react";
 import { focusRing } from "../../lib/ui";
 import type { Plan } from "./plan";
 import { onMic } from "./transport";
-import { type Cue, clock, KIND_LABEL, secs } from "./types";
-import type { DeckPhase, TrackClock } from "./use-deck";
+import { type Cue, clock, type DeckPhase, KIND_LABEL, secs, type TrackClock } from "./types";
 
 /**
  * The transport, lifted from the old station: the art slot, three lines, a progress line, three
@@ -49,7 +48,7 @@ export function Player({
 }) {
   const { pick } = cue;
   const making = phase === "loading";
-  const running = phase === "playing" || phase === "paused";
+  const running = phase === "playing" || phase === "paused" || phase === "held";
   const talking = plan !== null && running && onMic(plan, headMs);
   const paused = phase !== "playing";
   const rec = track ?? { positionMs: 0, durationMs: pick.durationMs, playing: false };

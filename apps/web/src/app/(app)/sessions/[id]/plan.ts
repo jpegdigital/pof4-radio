@@ -91,6 +91,20 @@ export function bedGainAt(bed: NonNullable<Plan["bed"]>, ms: number): number {
   return (BED_GAIN * (bed.outMs - ms)) / (bed.outMs - bed.downMs);
 }
 
+/**
+ * Where the mic and the record stand at a moment: how far into its clip the mic is while it is
+ * on, how far into the record once it has started, null when not (yet, or any more). What an
+ * element is seeked to when its start fires — at the head as it really is, since a hidden page's
+ * timers fire late — and where a scrub or a resume lands.
+ */
+export function offsetsAt(plan: Plan, ms: number): { micMs: number | null; trackMs: number | null } {
+  const m = plan.mic;
+  return {
+    micMs: m && ms >= m.atMs && ms < m.endMs ? ms - m.atMs : null,
+    trackMs: ms >= plan.music.atMs ? ms - plan.music.atMs : null,
+  };
+}
+
 export function planSlot(input: PlanInput): Plan {
   const { kind, clipMs } = input;
   if (clipMs === null || kind === "segue")

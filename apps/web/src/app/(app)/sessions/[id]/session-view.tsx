@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, focusRing, Label } from "../../lib/ui";
 import { nextMove } from "./loop";
+import { useMediaSession } from "./media-session";
 import { Player } from "./player";
 import { Rundown } from "./rundown";
 import { onMic, prevTarget, RESTART_AFTER_MS } from "./transport";
@@ -24,7 +25,7 @@ import { trackUrlOf, useDeck } from "./use-deck";
  * tap on a row pick which slot; when the track ends the next voiced slot goes in on its own, its
  * track already pulled while this one played. The clip can be voiced again from its row — the
  * same words read with the roster as it stands now; if that cue is in the deck the new take
- * plays at once.
+ * plays at once. The lock screen (media-session.ts) shows the cue and drives the same transport.
  */
 
 type Producing = { key: string; seq: number | null; label: string };
@@ -203,12 +204,22 @@ export function SessionView({ id }: { id: string }) {
       if (deck.phase === "playing" && nextCue) deckLoad(nextCue);
     };
   });
+  // The lock screen shows the cue and its buttons work the same transport.
+  useMediaSession({
+    cue: deck.cue,
+    phase: deck.phase,
+    track: deck.track,
+    onToggle: toggle,
+    onPrev: prev,
+    onNext: next,
+  });
 
   const running = deck.phase === "playing";
   const talking = running && deck.plan !== null && onMic(deck.plan, deck.headMs);
   const status = (() => {
     if (deck.phase === "loading") return "Loading…";
     if (deck.phase === "paused") return "Paused";
+    if (deck.phase === "held") return "Interrupted";
     if (deck.phase === "error") return "Stopped";
     if (!running || !deck.cue) return "Off air";
     return `${KIND_LABEL[deck.cue.kind]} · slot ${deck.cue.seq} of ${slots.length}`;
