@@ -139,24 +139,23 @@ export async function POST(req: Request, ctx: Route) {
       const [clock, identity, voices] = await Promise.all([loadClock(), loadIdentity(), loadVoices()]);
       const dj = voices.find((v) => v.id === session.voice_id)?.name ?? null;
       const clockSaysBreak = isBreak(seq, clock.breakEvery);
-      const [{ rows: lastBreak }, { rows: recent }, { rows: played }, { rows: priors }] = await Promise.all([
-        client.query<{ clock_ms: number }>(
-          "select clock_ms from session_slot where session_id = $1 and kind = 'break' and seq < $2 and clock_ms is not null order by seq desc limit 1",
-          [id, seq],
-        ),
-        client.query<RecentRow>(
-          "select seq, kind, words, lead_line, title, artist from session_slot where session_id = $1 and seq < $2 and qobuz_id is not null order by seq desc limit $3",
-          [id, seq, RECENT_SLOTS],
-        ),
-        client.query<{ title: string; artist: string }>(
-          "select title, artist from session_slot where session_id = $1 and seq < $2 and qobuz_id is not null order by seq",
-          [id, seq],
-        ),
-        client.query<PriorRow>(
-          "select qobuz_id, hits, ramp_ms, sure, post, outro, outro_ms, energy, tempo, mood, words from session_slot where qobuz_id = any($1::text[]) and session_id <> $2 and ramp_ms is not null order by created_at desc limit $3",
-          [slot.hits.map((h) => h.id), id, PRIOR_CHARTS],
-        ),
-      ]);
+      // One client, so one query at a time (pg runs a client's queries serially).
+      const { rows: lastBreak } = await client.query<{ clock_ms: number }>(
+        "select clock_ms from session_slot where session_id = $1 and kind = 'break' and seq < $2 and clock_ms is not null order by seq desc limit 1",
+        [id, seq],
+      );
+      const { rows: recent } = await client.query<RecentRow>(
+        "select seq, kind, words, lead_line, title, artist from session_slot where session_id = $1 and seq < $2 and qobuz_id is not null order by seq desc limit $3",
+        [id, seq, RECENT_SLOTS],
+      );
+      const { rows: played } = await client.query<{ title: string; artist: string }>(
+        "select title, artist from session_slot where session_id = $1 and seq < $2 and qobuz_id is not null order by seq",
+        [id, seq],
+      );
+      const { rows: priors } = await client.query<PriorRow>(
+        "select qobuz_id, hits, ramp_ms, sure, post, outro, outro_ms, energy, tempo, mood, words from session_slot where qobuz_id = any($1::text[]) and session_id <> $2 and ramp_ms is not null order by created_at desc limit $3",
+        [slot.hits.map((h) => h.id), id, PRIOR_CHARTS],
+      );
       const legalId =
         clockSaysBreak && legalIdDue(seq, clockMs, lastBreak[0]?.clock_ms ?? null)
           ? legalIdOf(identity)

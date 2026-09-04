@@ -128,11 +128,11 @@ comes in under the lead line. A reload lands in the same place.
 
 ### The cutover — quickstart §3–§5
 
-- [ ] T044 [US1] Update `db/clear.mts` to also `delete from track` when run with `--tracks` (print both counts; doc comment: the bytes stay in the bucket, a row comes back on the next pick without a download). Run `pnpm db:clear --tracks`.
-- [ ] T045 [US1] Run `pnpm db:apply`; then `pnpm db:sql "select table_name from information_schema.tables where table_schema='public' order by 1"` → `session, session_slot, settings, track`.
-- [ ] T046 [US1] Run the smoke scripts under `op run`: `apps/web/scripts/bucket-smoke.mts` (HEAD present/absent) and `apps/web/scripts/qobuz-smoke.mts`.
-- [ ] T047 [US1] `pnpm dev`; on `/settings` save the clock (5, 6, 2); confirm the identity and a voice exist.
-- [ ] T048 [US1] Quickstart §5 live: a named-record ask; exactly two Claude calls before first sound; the pull line lands alongside the voicing; play; reload mid-slot lands in place with no new production lines. Fix what fails; commit.
+- [X] T044 [US1] Update `db/clear.mts` to also `delete from track` when run with `--tracks` (print both counts; doc comment: the bytes stay in the bucket, a row comes back on the next pick without a download). Run `pnpm db:clear --tracks`.
+- [X] T045 [US1] Run `pnpm db:apply`; then `pnpm db:sql "select table_name from information_schema.tables where table_schema='public' order by 1"` → `session, session_slot, settings, track`.
+- [X] T046 [US1] Run the smoke scripts under `op run`: `apps/web/scripts/bucket-smoke.mts` (HEAD present/absent) and `apps/web/scripts/qobuz-smoke.mts`.
+- [X] T047 [US1] `pnpm dev`; on `/settings` save the clock (5, 6, 2); confirm the identity and a voice exist.
+- [X] T048 [US1] Quickstart §5 live: a named-record ask; exactly two Claude calls before first sound; the pull line lands alongside the voicing; play; reload mid-slot lands in place with no new production lines. Fix what fails; commit.
 
 **Checkpoint**: A listener hears the first song after two model calls. Slots 2–6 sit as "coming up".
 
@@ -146,12 +146,12 @@ no repeats; the legal ID when the hour turns; another take; concurrency refused.
 **Independent Test**: quickstart §6–§7 — play through more than one fill; every transition
 gapless; breaks at 1, 6, 11; no title twice; a concurrent fill gets 409.
 
-- [ ] T049 [US2] In `page/session-view.tsx`, make ⏭ and the record-ended advance target the next **voiced** slot only (`cues[index + 1]` with `status === "voiced"`); when it is written-not-voiced or proposed, `canNext` is false and the deck shows "Loading the next slot…" rather than silence; confirm the loop asks for slot k+1 the moment slot k becomes the cue.
-- [ ] T050 [US2] In `api/[id]/slots/[seq]/route.ts`, confirm the non-break path: weather/headlines are not pulled, the brief says "not a break", `checkSlot` steps a writer's `break` to `sweeper`; and the `again: true` path re-voices only (new key `sessions/<id>/<seq>-<take>.mp3`, words untouched). Add a log line for a fallback (`slot N: <from> → <to>: <reason>`).
-- [ ] T051 [US2] In `api/[id]/fill/route.ts`, confirm `played`/`pending` reach the proposer brief and `dedupe` runs before search; log the dropped duplicates.
-- [ ] T052 [US2] Quickstart §6 live: listen past slot 6; expect `fill: 6 slots added (seq 7–12)` after slot 4 is written; slot 6 is a break without a legal ID (same hour) and slot 1's had one; no repeated title; a `Voice again` on a played slot yields a new take and the old bytes stay.
-- [ ] T053 [US2] Quickstart §7 live: two concurrent `POST …/fill` → one 200, one 409; two concurrent `POST …/slots/<seq>` → same.
-- [ ] T054 [US2] Quickstart §8, the failure paths: bad `ELEVENLABS_KEY` → 502 with `slot.status = "written"`, then a fix voices without rewriting; `POST …/slots/99` → 404; `POST …/slots/<proposed>/track` → 409. Commit.
+- [X] T049 [US2] In `page/session-view.tsx`, make ⏭ and the record-ended advance target the next **voiced** slot only (`cues[index + 1]` with `status === "voiced"`); when it is written-not-voiced or proposed, `canNext` is false and the deck shows "Loading the next slot…" rather than silence; confirm the loop asks for slot k+1 the moment slot k becomes the cue.
+- [X] T050 [US2] In `api/[id]/slots/[seq]/route.ts`, confirm the non-break path: weather/headlines are not pulled, the brief says "not a break", `checkSlot` steps a writer's `break` to `sweeper`; and the `again: true` path re-voices only (new key `sessions/<id>/<seq>-<take>.mp3`, words untouched). Add a log line for a fallback (`slot N: <from> → <to>: <reason>`).
+- [X] T051 [US2] In `api/[id]/fill/route.ts`, confirm `played`/`pending` reach the proposer brief and `dedupe` runs before search; log the dropped duplicates.
+- [X] T052 [US2] Quickstart §6 live: listen past slot 6; expect `fill: 6 slots added (seq 7–12)` after slot 4 is written; slot 6 is a break without a legal ID (same hour) and slot 1's had one; no repeated title; a `Voice again` on a played slot yields a new take and the old bytes stay.
+- [X] T053 [US2] Quickstart §7 live: two concurrent `POST …/fill` → one 200, one 409; two concurrent `POST …/slots/<seq>` → same.
+- [X] T054 [US2] Quickstart §8, the failure paths: bad `ELEVENLABS_KEY` → 502 with `slot.status = "written"`, then a fix voices without rewriting; `POST …/slots/99` → 404; `POST …/slots/<proposed>/track` → 409. Commit.
 
 **Checkpoint**: A session runs as long as the listener listens.
 
