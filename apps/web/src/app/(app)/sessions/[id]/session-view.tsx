@@ -214,7 +214,7 @@ export function SessionView({ id }: { id: string }) {
     return `${KIND_LABEL[deck.cue.kind]} · slot ${deck.cue.seq} of ${slots.length}`;
   })();
   // The track ran out and the next slot is not voiced yet: say so rather than go silent.
-  const waiting = deck.phase === "playing" && deck.record?.playing === false && after && !nextCue;
+  const waiting = deck.phase === "playing" && deck.track?.playing === false && after && !nextCue;
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5 px-4 pt-5 pb-10">
@@ -272,14 +272,14 @@ export function SessionView({ id }: { id: string }) {
             phase={deck.phase}
             plan={deck.plan}
             headMs={deck.headMs}
-            record={deck.record}
+            track={deck.track}
             canPrev={index > 0 || deck.headMs > RESTART_AFTER_MS}
             canNext={nextCue !== null}
             onPrev={prev}
             onNext={next}
             onToggle={toggle}
             onScrub={deck.seek}
-            onSeekRecord={deck.seekRecord}
+            onSeekTrack={deck.seekTrack}
           />
           {waiting && <p className="text-xs text-zinc-500">Loading the next slot…</p>}
         </Card>

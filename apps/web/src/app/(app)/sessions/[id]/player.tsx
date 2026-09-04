@@ -4,11 +4,11 @@ import { focusRing } from "../../lib/ui";
 import type { Plan } from "./plan";
 import { onMic } from "./transport";
 import { type Cue, clock, KIND_LABEL, secs } from "./types";
-import type { DeckPhase, RecordClock } from "./use-deck";
+import type { DeckPhase, TrackClock } from "./use-deck";
 
 /**
  * The transport, lifted from the old station: the art slot, three lines, a progress line, three
- * buttons — the voice and the record share the frame so the show reads as one sequence. New in
+ * buttons — the voice and the track share the frame so the show reads as one sequence. New in
  * this one: the cue, three lanes on one scale — the mic, the bed with its ramps, the track up
  * to its vocal, dimmed where it is ducked under the voice — with the head sweeping across while
  * the slot's mix runs; drag it to scrub the mix. The track's own clock is its element's, read by
@@ -23,20 +23,20 @@ export function Player({
   phase,
   plan,
   headMs,
-  record,
+  track,
   canPrev,
   canNext,
   onPrev,
   onNext,
   onToggle,
   onScrub,
-  onSeekRecord,
+  onSeekTrack,
 }: {
   cue: Cue;
   phase: DeckPhase;
   plan: Plan | null;
   headMs: number;
-  record: RecordClock | null;
+  track: TrackClock | null;
   canPrev: boolean;
   canNext: boolean;
   onPrev: () => void;
@@ -45,14 +45,14 @@ export function Player({
   /** Move the head on the cue. */
   onScrub: (ms: number) => void;
   /** Move within the track. */
-  onSeekRecord: (ms: number) => void;
+  onSeekTrack: (ms: number) => void;
 }) {
   const { pick } = cue;
   const making = phase === "loading";
   const running = phase === "playing" || phase === "paused";
   const talking = plan !== null && running && onMic(plan, headMs);
   const paused = phase !== "playing";
-  const rec = record ?? { positionMs: 0, durationMs: pick.durationMs, playing: false };
+  const rec = track ?? { positionMs: 0, durationMs: pick.durationMs, playing: false };
 
   return (
     <div className="flex flex-col gap-4">
@@ -95,7 +95,7 @@ export function Player({
         <Loading label="loading…" />
       ) : null}
 
-      <Progress clock={rec} onSeek={record && running ? onSeekRecord : null} />
+      <Progress clock={rec} onSeek={track && running ? onSeekTrack : null} />
 
       <div className="flex items-center justify-center gap-6">
         <button type="button" onClick={onPrev} disabled={!canPrev} aria-label="Previous" className={iconBtn}>
@@ -287,7 +287,7 @@ function Lanes({
 }
 
 /** The track's clock, as the deck reads it each frame; a scrub moves within the track. */
-function Progress({ clock: c, onSeek }: { clock: RecordClock; onSeek: ((ms: number) => void) | null }) {
+function Progress({ clock: c, onSeek }: { clock: TrackClock; onSeek: ((ms: number) => void) | null }) {
   const { drag, handlers } = useScrub(c.durationMs, onSeek);
   const shown = drag ?? c.positionMs;
   const pct = c.durationMs > 0 ? Math.min(100, (shown / c.durationMs) * 100) : 0;

@@ -3,7 +3,7 @@
  * the world — each a ranked list of `<item>`s whose title is `Headline - Source`. No key, no
  * package: plain fetch (each feed answers with a redirect to its topic id; fetch follows it),
  * the XML read by hand (a regex over the items), the top few of each kept with the source beside
- * the title so the DJ can credit it, cached for ten minutes so every segment of a show reads one
+ * the title so the DJ can credit it, cached for ten minutes so every break of a show reads one
  * pull. The city is the station's: Dallas, the feed's own geo section. Google's feeds are for
  * personal, non-commercial use, which is what this station is.
  */

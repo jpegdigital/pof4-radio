@@ -125,7 +125,7 @@ export async function produceFill(
   const fresh = input.played.length === 0 && input.pending.length === 0;
 
   // 1. PROPOSE — names only, wide on purpose.
-  const songs = numbered("song", propose, Proposal);
+  const named = numbered("song", propose, Proposal);
   const proposed = await claude().messages.parse({
     model: env().CLAUDE_MODEL,
     max_tokens: 16000,
@@ -142,7 +142,7 @@ export async function produceFill(
                   ? "how you read the request and what the opener has to be — a short paragraph in your own words"
                   : "how these carry the show on from where it stands — a short paragraph in your own words",
               ),
-            ...songs.shape,
+            ...named.shape,
           })
           .describe(
             `${propose} songs, one per slot, in the order you would play them: leads for a catalogue search, the strongest first.`,
@@ -153,7 +153,7 @@ export async function produceFill(
     messages: [{ role: "user", content: fillBrief(input, propose) }],
   });
   if (!proposed.parsed_output) throw new FillError(`claude proposed nothing (${proposed.stop_reason})`);
-  const { kept, dropped } = dedupe(songs.list(proposed.parsed_output), [...input.played, ...input.pending]);
+  const { kept, dropped } = dedupe(named.list(proposed.parsed_output), [...input.played, ...input.pending]);
 
   // 2. SEARCH — dumb, in parallel; a failed search is an empty hand, logged.
   const settled = await Promise.allSettled(

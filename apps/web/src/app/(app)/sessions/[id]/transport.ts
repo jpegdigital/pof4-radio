@@ -9,8 +9,8 @@ import type { Plan } from "./plan";
 export const RESTART_AFTER_MS = 3000;
 
 /**
- * Whether a paused deck can pick the slot up where it was: only once the record is on and the
- * voice is done, when the record alone is sounding and the device's own position is the truth
+ * Whether a paused deck can pick the slot up where it was: only once the track is on and the
+ * voice is done, when the track alone is sounding and the device's own position is the truth
  * (it may have been scrubbed). Earlier — a voice over a bed, a talk-up mid-word — the mix runs
  * again from the head.
  */

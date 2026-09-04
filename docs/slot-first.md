@@ -102,7 +102,14 @@ the track, and the writer is told so.
 
 ## Open
 
-- Whether the writer's brief carries the last three slots' copy, or the whole show so far.
-  Start with three and the list of everything played.
-- What the rundown shows for a proposed-but-unwritten slot. Title and artist as "coming up" is
-  enough.
+Both settled in the build (2026-09-04):
+
+- The writer's brief carries the last three slots' copy and the list of everything played, plus
+  another DJ's chart of any of the slot's hits from an earlier session (newest three, read-only).
+- A proposed-but-unwritten slot is a dim "coming up" row with the proposer's title and artist,
+  not tappable; a written row shows the pick's tags and whether the bucket holds it.
+
+The choices the implementation had to make beyond this document — where the track route lives,
+what happens when the voicing fails after the write, what a writer that gives nothing twice
+becomes, how the server knows the hour turned, the clock row, the browser's `nextMove` — are
+recorded with their alternatives in `specs/004-slot-first/research.md` (R1–R13).

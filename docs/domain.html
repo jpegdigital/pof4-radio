@@ -60,13 +60,12 @@
   <a href="#gone">7. What goes away</a>
   <div class="t" style="margin-top:24px">Companion</div>
   <a href="slot-first.md">slot-first.md — the refactor</a>
-  <a href="api.html">api.html — the model before this one</a>
-  <a href="sessions.html">sessions.html — the API dance before this one</a>
+  <a href="sessions.html">sessions.html — the API dance</a>
 </nav>
 <main>
 
 <h1>Radio — the domain model</h1>
-<p>Decided 2026-09-04 in the slot-first design session; not yet in the schema. Replaces <a href="api.html">api.html</a>, which describes the segment world this one retires. The refactor that gets us here is narrated in <a href="slot-first.md">slot-first.md</a>.</p>
+<p>Decided 2026-09-04 in the slot-first design session; in the schema since 2026-09-04 (<code>db/schema/*.sql</code> is the source of truth, this page the reading of it). Replaced <code>api.html</code>, which described the segment world this one retires. The refactor that got us here is narrated in <a href="slot-first.md">slot-first.md</a>; how the pieces talk is <a href="sessions.html">sessions.html</a>.</p>
 
 <h2 id="breath">In one breath</h2>
 <p>A <strong>session</strong> is one listening: the ask and the voice. It owns <strong>slots</strong>, numbered from 1, each one clip over one track — the unit of the show and the only unit there is. A slot is born as a <em>proposal</em> (the proposer names a song and says why), grows its <em>hits</em> (what Qobuz found for that name), and is then written whole in one call: the <em>pick</em> (which hit), the <em>chart</em> (the writer's read of the track: ramp, post, outro, feel), the <em>copy</em> (the words) and the <em>timing</em> (two numbers). Then it is voiced: the <em>clip</em>. The <strong>track</strong> is the library's, not the session's: one row per record ever pulled into the bucket, carrying what Qobuz says about it and nothing anyone guessed. There is no playlist as a thing of its own — the playlist is the slots that have not been written yet. There are no segments: a break is a kind of slot, and the clock says which slots are breaks. Status is never stored; it is derived from what is present. Everything produced is kept forever.</p>

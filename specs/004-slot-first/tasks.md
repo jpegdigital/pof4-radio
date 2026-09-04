@@ -164,9 +164,9 @@ gapless; breaks at 1, 6, 11; no title twice; a concurrent fill gets 409.
 **Independent Test**: open a session mid-show: rows in order with the right status; a proposed row
 says "coming up" with title and artist; a written row shows the pick's tags; tapping a held row plays.
 
-- [ ] T055 [P] [US3] Finish `page/rundown.tsx`: remove the segment headers; row tones (played / on / ahead) over the flat list; a proposed row (`ToCome`: chip "coming up", title · artist, no duration, not a button); a written row with a small marker "pulling…" while `!held` and "not held" after a failed pull; the mic icon for a break; the row is tappable only when `voiced && held`; `Detail` shows the legal ID, the words, the lead line, the two timings, the chart (`ramp 12.0 s (sure)`, `post: …`, `ends: fade at 3:41`, `energy 4/5 · up · <mood>`), `treatment`, the fallback and its reason, the take state.
-- [ ] T056 [P] [US3] In `page/session-view.tsx`, pass `producing` as `{ seq, label }` ("filling…" / "writing slot N…") so the rundown can mark the row being produced; the status line under "Now playing" reads `<Kind> · slot N of M`.
-- [ ] T057 [US3] Quickstart §5–§6 visual pass on a phone-width window: nothing overflows; "coming up" rows dim; the on-air row lit. Commit.
+- [X] T055 [P] [US3] Finish `page/rundown.tsx`: remove the segment headers; row tones (played / on / ahead) over the flat list; a proposed row (`ToCome`: chip "coming up", title · artist, no duration, not a button); a written row with a small marker "pulling…" while `!held` and "not held" after a failed pull; the mic icon for a break; the row is tappable only when `voiced && held`; `Detail` shows the legal ID, the words, the lead line, the two timings, the chart (`ramp 12.0 s (sure)`, `post: …`, `ends: fade at 3:41`, `energy 4/5 · up · <mood>`), `treatment`, the fallback and its reason, the take state.
+- [X] T056 [P] [US3] In `page/session-view.tsx`, pass `producing` as `{ seq, label }` ("filling…" / "writing slot N…") so the rundown can mark the row being produced; the status line under "Now playing" reads `<Kind> · slot N of M`.
+- [X] T057 [US3] Quickstart §5–§6 visual pass on a phone-width window: nothing overflows; "coming up" rows dim; the on-air row lit. Commit.
 
 **Checkpoint**: The show reads as one list.
 
@@ -179,9 +179,9 @@ says "coming up" with title and artist; a written row shows the pick's tags; tap
 **Independent Test**: change break-every on `/settings` and see breaks move; change fill and see a
 fill's count change; remove the row and see a request fail naming it.
 
-- [ ] T058 [US4] On `/settings`, set `breakEvery 3, fill 4, lowWater 1`; start a session; expect breaks at 1, 4, 7, fills of 4, the next fill when one unwritten slot remains. Restore 5/6/2.
-- [ ] T059 [US4] Prove the missing-row fault: with the `clock` row absent (rename its key by hand in the database once, or start a fresh database), `GET /api/sessions/:id` and `POST …/fill` respond 500/502 with `settings row clock is missing — fill it on /settings`; restore. Update the rail's lamp/`Fault` copy in `web/app/(settings)/settings/page.tsx` if the state is not obvious.
-- [ ] T060 [US4] Commit: "The clock is a setting: break every, fill, low water".
+- [X] T058 [US4] On `/settings`, set `breakEvery 3, fill 4, lowWater 1`; start a session; expect breaks at 1, 4, 7, fills of 4, the next fill when one unwritten slot remains. Restore 5/6/2.
+- [X] T059 [US4] Prove the missing-row fault: with the `clock` row absent (rename its key by hand in the database once, or start a fresh database), `GET /api/sessions/:id` and `POST …/fill` respond 500/502 with `settings row clock is missing — fill it on /settings`; restore. Update the rail's lamp/`Fault` copy in `web/app/(settings)/settings/page.tsx` if the state is not obvious.
+- [X] T060 [US4] Commit: "The clock is a setting: break every, fill, low water".
 
 ---
 
@@ -193,19 +193,19 @@ words are the domain's; the gate is green; the source is smaller.
 **Independent Test**: quickstart §9 — the retired-words grep finds only prose; the schema lists
 four tables; the pre-push gate and the build pass.
 
-- [ ] T061 [P] [US5] Rewrite `docs/sessions.html` from `specs/004-slot-first/contracts/sessions-api.md`: in one breath, the rules of the dance, create, the snapshot and the frontier (`nextMove`), the fill rung, the slot rung (precedence, the brief, the voicing failure), the clip, the track (HEAD → row, pull), cold start end to end, when a rung fails. Tags "built".
-- [ ] T062 [P] [US5] Delete `docs/api.html`; in `docs/domain.html` change the subtitle to "In the schema since 2026-09-0X" and drop the `api.html` link from the nav; keep the "What goes away" table as history.
-- [ ] T063 [P] [US5] Rewrite `CLAUDE.md`: "Where things live" (`api/sessions/`: `fill`, `write`, `rules`, `shapes`, `doc`, `params`, `qobuz`, `weather`, `headlines`; `(app)/sessions/[id]/`: `loop`, `plan`, `transport`, `use-deck`, …; `lib/clock`), "How it works" (the show is slots; the fill; the slot rung; the track; the loop one ahead; the clock), "Working here" (`db:clear --tracks`; the four tables; the docs are `sessions.html` and `domain.html`), the retired-words rule, the memory line about old sessions.
-- [ ] T064 [US5] Retired-words sweep: `rg -n -i "record|song|card|candidate|playlist|segment|program" apps/web/src db --glob '!*.test.ts'`; rename any identifier that survives (`recordUrl` → `trackUrl`, `RECORD_FULL` → `TRACK_FULL`, `recordUnderMs` stays — it is the writer's word for the timing and in the schema; decide and record in CLAUDE.md), leave prose that says what a thing *was*. `rg -n "segments/|session_segment|\bcard\b" docs/sessions.html docs/domain.html CLAUDE.md` → only history tables.
-- [ ] T065 [US5] Dead-code pass: `voice-cache.ts` exports still used (`prefetch`, `drop` — delete if no consumer), `identity.ts` comment ("read per slot"), `web/proxy.ts` exempt list unchanged, `apps/web/package.json` description ("the deck: the clips and the tracks mixed in the browser").
-- [ ] T066 [US5] `pnpm check && pnpm --filter web build` green; compare `apps/web/src` line count with T001's baseline (SC-006). Commit: "Segments, cards, the compose step and the split rungs go; the docs say slots".
+- [X] T061 [P] [US5] Rewrite `docs/sessions.html` from `specs/004-slot-first/contracts/sessions-api.md`: in one breath, the rules of the dance, create, the snapshot and the frontier (`nextMove`), the fill rung, the slot rung (precedence, the brief, the voicing failure), the clip, the track (HEAD → row, pull), cold start end to end, when a rung fails. Tags "built".
+- [X] T062 [P] [US5] Delete `docs/api.html`; in `docs/domain.html` change the subtitle to "In the schema since 2026-09-0X" and drop the `api.html` link from the nav; keep the "What goes away" table as history.
+- [X] T063 [P] [US5] Rewrite `CLAUDE.md`: "Where things live" (`api/sessions/`: `fill`, `write`, `rules`, `shapes`, `doc`, `params`, `qobuz`, `weather`, `headlines`; `(app)/sessions/[id]/`: `loop`, `plan`, `transport`, `use-deck`, …; `lib/clock`), "How it works" (the show is slots; the fill; the slot rung; the track; the loop one ahead; the clock), "Working here" (`db:clear --tracks`; the four tables; the docs are `sessions.html` and `domain.html`), the retired-words rule, the memory line about old sessions.
+- [X] T064 [US5] Retired-words sweep: `rg -n -i "record|song|card|candidate|playlist|segment|program" apps/web/src db --glob '!*.test.ts'`; rename any identifier that survives (`recordUrl` → `trackUrl`, `RECORD_FULL` → `TRACK_FULL`, `recordUnderMs` stays — it is the writer's word for the timing and in the schema; decide and record in CLAUDE.md), leave prose that says what a thing *was*. `rg -n "segments/|session_segment|\bcard\b" docs/sessions.html docs/domain.html CLAUDE.md` → only history tables.
+- [X] T065 [US5] Dead-code pass: `voice-cache.ts` exports still used (`prefetch`, `drop` — delete if no consumer), `identity.ts` comment ("read per slot"), `web/proxy.ts` exempt list unchanged, `apps/web/package.json` description ("the deck: the clips and the tracks mixed in the browser").
+- [X] T066 [US5] `pnpm check && pnpm --filter web build` green; compare `apps/web/src` line count with T001's baseline (SC-006). Commit: "Segments, cards, the compose step and the split rungs go; the docs say slots".
 
 ---
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T067 [P] Update `docs/slot-first.md` "Open" section with what was chosen (three slots' copy + everything played; "coming up" rows) and a line pointing at `specs/004-slot-first/research.md`.
-- [ ] T068 [P] Update the auto-memory file `slot-first-refactor.md` (in the Claude profile's memory dir): implemented on <date>, cutover applied, what is left (Railway deploy, flip `GUARD_OPEN`).
+- [X] T067 [P] Update `docs/slot-first.md` "Open" section with what was chosen (three slots' copy + everything played; "coming up" rows) and a line pointing at `specs/004-slot-first/research.md`.
+- [X] T068 [P] Update the auto-memory file `slot-first-refactor.md` (in the Claude profile's memory dir): implemented on <date>, cutover applied, what is left (Railway deploy, flip `GUARD_OPEN`).
 - [ ] T069 Push the branch; open a PR titled "Slot-first: the show is a list of slots, produced one ahead of the listener" with the spec's summary and the quickstart's evidence lines; note the one-time `db:clear --tracks` in the PR body.
 
 ---

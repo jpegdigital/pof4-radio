@@ -4,8 +4,8 @@ import { z } from "zod";
 const Env = z.object({
   DATABASE_URL: z.string().url(),
   /**
-   * The records (api/sessions/qobuz.ts): the search behind the playlist and the pull behind each
-   * record. The token is the listener's own from play.qobuz.com — required, there is no show
+   * The tracks (api/sessions/qobuz.ts): the search behind the fill and the pull behind each
+   * pick. The token is the listener's own from play.qobuz.com — required, there is no show
    * without it. The app id + secret pair is the web player's, printed by `scripts/qobuz-smoke.mts`;
    * set both to skip the ~3 s bundle scrape on the first call — when the pair stops signing the
    * scrape runs anyway.

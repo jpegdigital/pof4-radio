@@ -8,22 +8,22 @@ import {
   DUCK_MS,
   LEGAL_ID_MS_PER_CHAR,
   planSlot,
-  RECORD_DUCK,
-  RECORD_FULL,
-  recordLevelAt,
+  TRACK_DUCK,
+  TRACK_FULL,
+  trackLevelAt,
   RISE_MS,
   TAIL_MS,
   VOCAL_TAIL_MS,
 } from "./plan";
 
 /**
- * The plan is the mix on paper: when the mic, the bed and the record start and stop, from the
+ * The plan is the mix on paper: when the mic, the bed and the track start and stop, from the
  * kind, the clip's length, the writer's two numbers and the chart's ramp. Nothing measured,
  * nothing searched for — the numbers are opportunistic and the player follows them.
  */
 
 describe("planSlot", () => {
-  it("a break: mic from 0, bed under it, the record starts under the lead line", () => {
+  it("a break: mic from 0, bed under it, the track starts under the lead line", () => {
     const p = planSlot({ kind: "break", clipMs: 20_000, recordUnderMs: 3000, legalIdChars: 0 });
     expect(p.mic).toEqual({ atMs: 0, endMs: 20_000 });
     expect(p.music.atMs).toBe(17_000);
@@ -43,7 +43,7 @@ describe("planSlot", () => {
     expect(p.bed).toBeNull();
   });
 
-  it("a talk-up: the record from 0, the voice in where the writer said", () => {
+  it("a talk-up: the track from 0, the voice in where the writer said", () => {
     const p = planSlot({ kind: "talkup", clipMs: 4000, voiceInMs: 1500, rampMs: 12_000, legalIdChars: 0 });
     expect(p.music.atMs).toBe(0);
     expect(p.mic).toEqual({ atMs: 1500, endMs: 5500 });
@@ -70,9 +70,9 @@ describe("planSlot", () => {
   });
 
   it.each([
-    { id: "a segue is the record alone", kind: "segue" as const },
-    { id: "a break with no clip is the record alone", kind: "break" as const },
-    { id: "a talk-up with no clip is the record alone", kind: "talkup" as const },
+    { id: "a segue is the track alone", kind: "segue" as const },
+    { id: "a break with no clip is the track alone", kind: "break" as const },
+    { id: "a talk-up with no clip is the track alone", kind: "talkup" as const },
   ])("$id", ({ kind }) => {
     const p = planSlot({ kind, clipMs: null, legalIdChars: 0 });
     expect(p.mic).toBeNull();
@@ -83,7 +83,7 @@ describe("planSlot", () => {
 });
 
 describe("the vocal and the timeline's length", () => {
-  it("a break into a record with a known intro runs to the vocal and a little past", () => {
+  it("a break into a track with a known intro runs to the vocal and a little past", () => {
     const p = planSlot({
       kind: "break",
       clipMs: 20_000,
@@ -128,8 +128,8 @@ describe("bedGainAt", () => {
   });
 });
 
-describe("the duck: the record under the voice", () => {
-  it("a break: from the record's start under the lead line until the voice is done", () => {
+describe("the duck: the track under the voice", () => {
+  it("a break: from the track's start under the lead line until the voice is done", () => {
     const p = planSlot({ kind: "break", clipMs: 20_000, recordUnderMs: 3000, legalIdChars: 0 });
     expect(p.duck).toEqual({ atMs: 17_000, endMs: 20_000 });
   });
@@ -152,22 +152,22 @@ describe("the duck: the record under the voice", () => {
   });
 });
 
-describe("recordLevelAt", () => {
+describe("trackLevelAt", () => {
   const duck = { atMs: 5000, endMs: 9000 };
   it.each<[number, number, string]>([
-    [0, RECORD_FULL, "long before"],
-    [5000 - DUCK_MS, RECORD_FULL, "as it starts down"],
-    [5000 - DUCK_MS / 2, (RECORD_FULL + RECORD_DUCK) / 2, "halfway down"],
-    [5000, RECORD_DUCK, "landed as the voice comes in"],
-    [7000, RECORD_DUCK, "under the voice"],
-    [9000, RECORD_DUCK, "as the voice ends"],
-    [9000 + RISE_MS / 2, (RECORD_FULL + RECORD_DUCK) / 2, "halfway back up"],
-    [9000 + RISE_MS, RECORD_FULL, "back"],
+    [0, TRACK_FULL, "long before"],
+    [5000 - DUCK_MS, TRACK_FULL, "as it starts down"],
+    [5000 - DUCK_MS / 2, (TRACK_FULL + TRACK_DUCK) / 2, "halfway down"],
+    [5000, TRACK_DUCK, "landed as the voice comes in"],
+    [7000, TRACK_DUCK, "under the voice"],
+    [9000, TRACK_DUCK, "as the voice ends"],
+    [9000 + RISE_MS / 2, (TRACK_FULL + TRACK_DUCK) / 2, "halfway back up"],
+    [9000 + RISE_MS, TRACK_FULL, "back"],
   ])("%#: %s", (ms, want, _id) => {
-    expect(recordLevelAt(duck, ms)).toBeCloseTo(want, 6);
+    expect(trackLevelAt(duck, ms)).toBeCloseTo(want, 6);
   });
 
   it("no duck: full throughout", () => {
-    expect(recordLevelAt(null, 3000)).toBe(RECORD_FULL);
+    expect(trackLevelAt(null, 3000)).toBe(TRACK_FULL);
   });
 });

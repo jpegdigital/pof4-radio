@@ -6,9 +6,9 @@ import {
   DUCK_MS,
   type Plan,
   planSlot,
-  RECORD_DUCK,
-  RECORD_FULL,
-  recordLevelAt,
+  TRACK_DUCK,
+  TRACK_FULL,
+  trackLevelAt,
   RISE_MS,
 } from "./plan";
 import { resumes } from "./transport";
@@ -37,7 +37,7 @@ const SILENCE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+A
 export type DeckPhase = "idle" | "loading" | "playing" | "paused" | "error";
 
 /** The track's own clock, as of the last frame. */
-export interface RecordClock {
+export interface TrackClock {
   positionMs: number;
   durationMs: number;
   playing: boolean;
@@ -52,7 +52,7 @@ export interface Deck {
   /** ms since the slot's top; frozen while paused. */
   headMs: number;
   /** Where the track stands, once it is loaded. */
-  record: RecordClock | null;
+  track: TrackClock | null;
   /** Call synchronously from a tap: the context and the elements must first make sound in a gesture. */
   unlock: () => void;
   /** Put a cue in the deck and run it from the top. */
@@ -62,7 +62,7 @@ export interface Deck {
   /** Move the head: the mix runs again from there if playing, or waits there if paused. */
   seek: (ms: number) => void;
   /** Move within the track. */
-  seekRecord: (ms: number) => void;
+  seekTrack: (ms: number) => void;
 }
 
 interface State {
@@ -73,7 +73,7 @@ interface State {
   clipUrl: string | null;
   trackUrl: string | null;
   headMs: number;
-  record: RecordClock | null;
+  track: TrackClock | null;
 }
 
 /** What is running: timers, the bed source, the frame loop, the clock's origin — all cleared by halt(). */
@@ -106,7 +106,7 @@ function ensureGraph(): Graph {
   const rec = new Audio();
   rec.preload = "auto";
   const recGain = ctx.createGain();
-  recGain.gain.value = RECORD_FULL;
+  recGain.gain.value = TRACK_FULL;
   ctx.createMediaElementSource(rec).connect(recGain);
   recGain.connect(ctx.destination);
   graph = { ctx, mic, rec, bedGain, recGain, primed: false };
@@ -127,10 +127,10 @@ const IDLE: State = {
   clipUrl: null,
   trackUrl: null,
   headMs: 0,
-  record: null,
+  track: null,
 };
 
-const clockOf = (rec: HTMLAudioElement, durationMs: number): RecordClock => ({
+const clockOf = (rec: HTMLAudioElement, durationMs: number): TrackClock => ({
   positionMs: rec.currentTime * 1000,
   durationMs: Number.isFinite(rec.duration) && rec.duration > 0 ? rec.duration * 1000 : durationMs,
   playing: !rec.paused,
@@ -190,7 +190,7 @@ export function useDeck({
     setState((s) => ({
       ...s,
       headMs: performance.now() - r.startedAt,
-      record: graph && s.cue ? clockOf(graph.rec, s.cue.pick.durationMs) : s.record,
+      track: graph && s.cue ? clockOf(graph.rec, s.cue.pick.durationMs) : s.track,
     }));
     r.frame = requestAnimationFrame(tick);
   }, []);
@@ -244,14 +244,14 @@ export function useDeck({
         const t0 = g.ctx.currentTime;
         const { gain } = g.recGain;
         gain.cancelScheduledValues(t0);
-        gain.setValueAtTime(recordLevelAt(plan.duck, from), t0);
+        gain.setValueAtTime(trackLevelAt(plan.duck, from), t0);
         if (plan.duck) {
           const d = plan.duck;
           const ramps: [number, number][] = [
-            [d.atMs - DUCK_MS, RECORD_FULL],
-            [d.atMs, RECORD_DUCK],
-            [d.endMs, RECORD_DUCK],
-            [d.endMs + RISE_MS, RECORD_FULL],
+            [d.atMs - DUCK_MS, TRACK_FULL],
+            [d.atMs, TRACK_DUCK],
+            [d.endMs, TRACK_DUCK],
+            [d.endMs + RISE_MS, TRACK_FULL],
           ];
           for (const [ms, v] of ramps)
             if (ms > from) gain.linearRampToValueAtTime(v, t0 + (ms - from) / 1000);
@@ -277,7 +277,7 @@ export function useDeck({
         clipUrl,
         trackUrl,
         headMs: from,
-        record: clockOf(g.rec, cue.pick.durationMs),
+        track: clockOf(g.rec, cue.pick.durationMs),
       });
     },
     [tick],
@@ -366,7 +366,7 @@ export function useDeck({
         void g.ctx.resume();
         const now = g.ctx.currentTime;
         g.recGain.gain.cancelScheduledValues(now);
-        g.recGain.gain.setValueAtTime(RECORD_FULL, now);
+        g.recGain.gain.setValueAtTime(TRACK_FULL, now);
         void g.rec.play().catch((e: unknown) => console.warn("[deck] track:", e));
         run.current = {
           timers: [],
@@ -394,12 +394,12 @@ export function useDeck({
     [halt, start],
   );
 
-  const seekRecord = useCallback((ms: number) => {
+  const seekTrack = useCallback((ms: number) => {
     const g = graph;
     const s = st.current;
     if (!g || !s.cue || !s.trackUrl) return;
     g.rec.currentTime = Math.max(0, ms) / 1000;
-    setState((x) => ({ ...x, record: x.cue ? clockOf(g.rec, x.cue.pick.durationMs) : x.record }));
+    setState((x) => ({ ...x, track: x.cue ? clockOf(g.rec, x.cue.pick.durationMs) : x.track }));
   }, []);
 
   return {
@@ -408,11 +408,11 @@ export function useDeck({
     message: state.message,
     plan: state.plan,
     headMs: state.headMs,
-    record: state.record,
+    track: state.track,
     unlock,
     load,
     toggle,
     seek,
-    seekRecord,
+    seekTrack,
   };
 }

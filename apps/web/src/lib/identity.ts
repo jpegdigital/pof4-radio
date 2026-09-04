@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * Who the station is: call letters, city, and the name as it is said on air. One JSON row in
- * `settings` (`IDENTITY_KEY`), edited on /settings and read per segment (settings.ts) for the
+ * `settings` (`IDENTITY_KEY`), edited on /settings and read per slot (settings.ts) for the
  * writer's brief and the legal ID. Pure, so the control room's form can import it.
  */
 

@@ -1,7 +1,7 @@
 /**
- * The clips and the records, once per URL for the life of the page: each fetched as a blob,
+ * The clips and the tracks, once per URL for the life of the page: each fetched as a blob,
  * measured, and kept as an object URL its element plays (a rewind is instant; a resumed show's
- * past blocks are ready the moment they're fetched; a record pulled while the last one played
+ * past slots are ready the moment they are fetched; a track pulled while the last one played
  * starts on time). The bed is decoded once into the shared graph's context. A
  * failed fetch is remembered as such and retried on the next ask.
  */
@@ -10,9 +10,6 @@ export type ClipEntry = { url: string; durationMs: number } | { error: string };
 
 const clips = new Map<string, ClipEntry>();
 const inflight = new Map<string, Promise<ClipEntry>>();
-
-/** The entry as it stands (undefined = not asked for yet). */
-export const peekClip = (url: string): ClipEntry | undefined => clips.get(url);
 
 /** Fetch and measure a clip, once; a remembered failure is tried again. */
 export function getClip(url: string): Promise<ClipEntry> {
@@ -37,18 +34,6 @@ export function getClip(url: string): Promise<ClipEntry> {
   })();
   inflight.set(url, p);
   return p;
-}
-
-/** Warm the cache for a segment's clips; resolves when every fetch has settled. */
-export const prefetch = (urls: string[]): Promise<ClipEntry[]> => Promise.all(urls.map(getClip));
-
-/** Forget clips (and free their object URLs). */
-export function drop(urls: string[]): void {
-  for (const u of urls) {
-    const e = clips.get(u);
-    if (e && "url" in e) URL.revokeObjectURL(e.url);
-    clips.delete(u);
-  }
 }
 
 /** Chrome reports a streamed mp3's length through `durationchange` (finite), not `loadedmetadata`. */
