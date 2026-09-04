@@ -5,7 +5,7 @@ import { SessionParams } from "./params";
 /**
  * POST /api/sessions — creation only, instant: the ask and the voice become a session row plus
  * segment 1 at open, one transaction (a session never exists without its first segment). No
- * model call, no Spotify, nothing to error-recover; production happens on the rungs
+ * model call, no Qobuz, nothing to error-recover; production happens on the rungs
  * (/segments/:num/playlist first) once the client lands on /sessions/:id.
  */
 

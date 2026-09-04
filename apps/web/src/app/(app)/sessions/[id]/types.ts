@@ -2,7 +2,6 @@
 
 export interface Track {
   id: string;
-  uri: string;
   name: string;
   artists: string[];
   album: string;
@@ -10,6 +9,8 @@ export interface Track {
   durationMs: number;
   pick: number;
   why: string;
+  /** The record is in the bucket: the deck plays it without a pull. */
+  recorded: boolean;
 }
 
 export type SlotKind = "break" | "talkup" | "sweeper" | "segue";

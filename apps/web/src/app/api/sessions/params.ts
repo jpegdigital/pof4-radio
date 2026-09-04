@@ -12,9 +12,9 @@ export const DEFAULTS = { propose: 6, candidates: 5, playlist: 4, min: 4 } as co
 
 export const Knobs = z
   .object({
-    /** Pass 1: how many records Claude names. The only number Spotify sees (one search per pick). */
+    /** Pass 1: how many records Claude names. The only number Qobuz sees (one search per pick). */
     propose: z.number().int().min(1).max(50).default(DEFAULTS.propose),
-    /** Hydration: Spotify hits kept per pick (the search limit). */
+    /** Hydration: Qobuz hits kept per pick (the search limit). */
     candidates: z.number().int().min(1).max(10).default(DEFAULTS.candidates),
     /** Pass 2: how many tracks compose keeps. */
     playlist: z.number().int().min(1).max(25).default(DEFAULTS.playlist),

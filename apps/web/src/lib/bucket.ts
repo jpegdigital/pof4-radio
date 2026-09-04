@@ -3,8 +3,9 @@ import { sign } from "./sigv4";
 
 /**
  * The clips bucket (Railway's `radio-clips`, S3-compatible): two verbs over `fetch` with the
- * request signed by hand (sigv4.ts). Path-style URLs (`<endpoint>/<bucket>/<key>`). Null when the
- * five `BUCKET_*` vars aren't all set — the voice and clip routes answer 503 then.
+ * request signed by hand (sigv4.ts). Path-style URLs (`<endpoint>/<bucket>/<key>`). The voice clips
+ * live under `sessions/`, the records under `tracks/` (the routes name the keys). Null when the
+ * five `BUCKET_*` vars aren't all set — the audio routes answer 503 then.
  */
 
 export interface Bucket {
@@ -13,10 +14,6 @@ export interface Bucket {
     key: string,
   ): Promise<{ body: ReadableStream<Uint8Array>; contentType: string; contentLength: number | null } | null>;
 }
-
-/** Where a segment's clips live: one object per voiced slot, written once. */
-export const clipKey = (stationId: string, segmentId: string, seq: number) =>
-  `stations/${stationId}/${segmentId}/${seq}.mp3`;
 
 interface Config {
   endpoint: string;

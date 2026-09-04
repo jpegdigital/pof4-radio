@@ -11,7 +11,7 @@ import { CardFacts } from "./shapes";
  * is never an error: the clock rules make that slot a segue.
  */
 
-/** A record's card (schema/card.sql), keyed by Spotify track id: the facts plus the record's own fields. */
+/** A record's card (schema/card.sql), keyed by Qobuz track id: the facts plus the record's own fields. */
 export interface Card extends CardFacts {
   id: string;
   name: string;

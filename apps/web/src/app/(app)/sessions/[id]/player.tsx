@@ -1,18 +1,18 @@
 import { Mic, Pause, Play, SkipBack, SkipForward } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent, useEffect, useState } from "react";
+import { type KeyboardEvent, type PointerEvent, useState } from "react";
 import { focusRing } from "../../lib/ui";
-import type { Playback } from "../../lib/use-spotify-device";
 import type { Plan } from "./plan";
 import { onMic } from "./transport";
 import { type Cue, clock, KIND_LABEL, secs } from "./types";
-import type { DeckPhase } from "./use-deck";
+import type { DeckPhase, RecordClock } from "./use-deck";
 
 /**
  * The transport, lifted from the old station: the art slot, three lines, a progress line, three
  * buttons — the voice and the record share the frame so the show reads as one sequence. New in
  * this one: the cue, three lanes on one scale — the mic, the bed with its ramps, the record up
  * to its vocal, dimmed where it is ducked under the voice — with the head sweeping across while
- * the slot's mix runs; drag it to scrub the mix. The record's own clock is Spotify's, interpolated between reports, and scrubs the record.
+ * the slot's mix runs; drag it to scrub the mix. The record's own clock is its element's, read by
+ * the deck every frame, and scrubs the record.
  */
 
 /** A keyboard nudge on either scrubber. */
@@ -23,7 +23,7 @@ export function Player({
   phase,
   plan,
   headMs,
-  playback,
+  record,
   canPrev,
   canNext,
   onPrev,
@@ -36,7 +36,7 @@ export function Player({
   phase: DeckPhase;
   plan: Plan | null;
   headMs: number;
-  playback: Playback | null;
+  record: RecordClock | null;
   canPrev: boolean;
   canNext: boolean;
   onPrev: () => void;
@@ -52,10 +52,7 @@ export function Player({
   const running = phase === "playing" || phase === "paused";
   const talking = plan !== null && running && onMic(plan, headMs);
   const paused = phase !== "playing";
-  const live = playback && playback.uri === track.uri ? playback : null;
-  const record = live
-    ? { paused: live.paused, position: live.position, duration: live.duration, at: live.at }
-    : { paused: true, position: 0, duration: track.durationMs, at: 0 };
+  const rec = record ?? { positionMs: 0, durationMs: track.durationMs, playing: false };
 
   return (
     <div className="flex flex-col gap-4">
@@ -68,7 +65,7 @@ export function Player({
             <Mic className="size-8" strokeWidth={1.75} />
           </div>
         ) : track.image ? (
-          // biome-ignore lint/performance/noImgElement: album art is a remote Spotify CDN url
+          // biome-ignore lint/performance/noImgElement: album art is a remote Qobuz CDN url
           <img src={track.image} alt="" className="size-20 shrink-0 rounded-lg bg-zinc-800 object-cover" />
         ) : (
           <div className="size-20 shrink-0 rounded-lg bg-zinc-800" />
@@ -102,10 +99,10 @@ export function Player({
           onScrub={running ? onScrub : null}
         />
       ) : making ? (
-        <Loading label={phase === "voicing" ? "voicing…" : "loading the voice…"} />
+        <Loading label={phase === "voicing" ? "voicing…" : "loading…"} />
       ) : null}
 
-      <Progress clock={record} live={!record.paused} onSeek={live ? onSeekRecord : null} />
+      <Progress clock={rec} onSeek={record && running ? onSeekRecord : null} />
 
       <div className="flex items-center justify-center gap-6">
         <button type="button" onClick={onPrev} disabled={!canPrev} aria-label="Previous" className={iconBtn}>
@@ -296,35 +293,18 @@ function Lanes({
   );
 }
 
-interface Clock {
-  paused: boolean;
-  /** ms as of `at` (performance.now()). */
-  position: number;
-  duration: number;
-  at: number;
-}
-
-/** The record's clock, interpolated between the device's reports; a scrub moves within the record. */
-function Progress({
-  clock: c,
-  live,
-  onSeek,
-}: {
-  clock: Clock;
-  live: boolean;
-  onSeek: ((ms: number) => void) | null;
-}) {
-  const position = useLivePosition(c, live);
-  const { drag, handlers } = useScrub(c.duration, onSeek);
-  const shown = drag ?? position;
-  const pct = c.duration > 0 ? Math.min(100, (shown / c.duration) * 100) : 0;
+/** The record's clock, as the deck reads it each frame; a scrub moves within the record. */
+function Progress({ clock: c, onSeek }: { clock: RecordClock; onSeek: ((ms: number) => void) | null }) {
+  const { drag, handlers } = useScrub(c.durationMs, onSeek);
+  const shown = drag ?? c.positionMs;
+  const pct = c.durationMs > 0 ? Math.min(100, (shown / c.durationMs) * 100) : 0;
   return (
     <div>
       <div
         role="slider"
         aria-label="The record"
         aria-valuemin={0}
-        aria-valuemax={Math.round(c.duration / 1000)}
+        aria-valuemax={Math.round(c.durationMs / 1000)}
         aria-valuenow={Math.round(shown / 1000)}
         aria-valuetext={clock(shown)}
         tabIndex={onSeek ? 0 : -1}
@@ -341,7 +321,7 @@ function Progress({
       </div>
       <div className="flex justify-between font-mono text-[11px] tabular-nums text-zinc-500">
         <span>{clock(shown)}</span>
-        <span>{clock(c.duration)}</span>
+        <span>{clock(c.durationMs)}</span>
       </div>
     </div>
   );
@@ -357,14 +337,4 @@ function Loading({ label }: { label: string }) {
       </div>
     </div>
   );
-}
-
-function useLivePosition(c: Clock, live: boolean): number {
-  const [now, setNow] = useState(() => performance.now());
-  useEffect(() => {
-    if (!live) return;
-    const id = setInterval(() => setNow(performance.now()), 500);
-    return () => clearInterval(id);
-  }, [live, c.at]);
-  return live ? Math.min(c.duration, c.position + (now - c.at)) : c.position;
 }

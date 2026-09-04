@@ -12,8 +12,8 @@ create table session_segment (
   num         integer not null,                        -- 1-based position within the session
   rationale   text,                                    -- compose's words: why this set answers the ask
   proposed    jsonb,                                   -- telemetry, pass 1: {rationale, picks: [{artist, title, why}]}
-  candidates  jsonb,                                   -- telemetry, hydration: every Spotify hit as offered to compose
-  tracks      jsonb,                                   -- the playlist: [{id, uri, name, artists, album, image, durationMs, pick, why}]
+  candidates  jsonb,                                   -- telemetry, hydration: every Qobuz hit as offered to compose
+  tracks      jsonb,                                   -- the playlist: [{id, name, artists, album, image, durationMs, pick, why}]
   dropped     jsonb,                                   -- reasons from all three stages: string[]
   program     jsonb,                                   -- telemetry, the program rung: the writer's raw output
   created_at  timestamptz not null default now(),

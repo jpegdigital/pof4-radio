@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
  * token (`localuser.token` in play.qobuz.com's localStorage, set as QOBUZ_TOKEN) and the app id +
  * secret the web player ships in its bundle.js. Those are read from the env when set (QOBUZ_APP_ID,
  * QOBUZ_SECRET) and otherwise scraped from the bundle, checked against a known track, and kept for
- * the process — the scrape is ~13 s, the check ~1 s, every call after that under a second. Ported
+ * the process — the scrape is ~3 s, the check ~0.2 s, every call after that ~0.2 s. Ported
  * from Sei969/qobuz-dl (qopy.py + bundle.py), the MP3 path only: FLAC needs the segmented,
  * AES-keyed session flow and is not ours.
  */
@@ -153,6 +153,8 @@ export interface FileUrl {
   formatId: number;
   /** kHz. */
   samplingRate: number;
+  /** True when the URL is the 30-second preview, not the record: the plan does not cover it. */
+  sample: boolean;
 }
 
 export interface Me {
@@ -180,7 +182,13 @@ export function qobuz(cfg: QobuzConfig) {
   /** getFileUrl signed with `secret`; a wrong secret is a 400 with "Invalid Request Signature". */
   async function fileUrlWith(trackId: string, app: App): Promise<FileUrl> {
     const ts = Math.floor(Date.now() / 1000);
-    const r = await call<{ url: string; mime_type: string; format_id: number; sampling_rate: number }>(
+    const r = await call<{
+      url: string;
+      mime_type: string;
+      format_id: number;
+      sampling_rate: number;
+      sample?: boolean;
+    }>(
       "track/getFileUrl",
       {
         track_id: trackId,
@@ -191,7 +199,13 @@ export function qobuz(cfg: QobuzConfig) {
       },
       app,
     );
-    return { url: r.url, mimeType: r.mime_type, formatId: r.format_id, samplingRate: r.sampling_rate };
+    return {
+      url: r.url,
+      mimeType: r.mime_type,
+      formatId: r.format_id,
+      samplingRate: r.sampling_rate,
+      sample: r.sample === true,
+    };
   }
 
   /** The env's pair if it still signs, else the bundle's first secret that does. */
@@ -266,9 +280,13 @@ export function qobuz(cfg: QobuzConfig) {
       return fileUrlWith(trackId, await app());
     },
 
-    /** The record's bytes. A 30-second sample instead of the record means the token's plan lapsed. */
+    /** The record's bytes, the whole record: a sample in its place (the plan lapsed, or does not cover it) is an error, not a 30-second show. */
     async download(trackId: string): Promise<{ bytes: Uint8Array; mimeType: string }> {
       const f = await fileUrlWith(trackId, await app());
+      if (f.sample)
+        throw new Error(
+          `qobuz offers only a sample of track ${trackId}: the token's plan has lapsed or does not cover it`,
+        );
       const res = await fetch(f.url);
       if (!res.ok) throw new QobuzError(`qobuz cdn failed (${res.status})`, res.status, await res.text());
       return { bytes: new Uint8Array(await res.arrayBuffer()), mimeType: f.mimeType };

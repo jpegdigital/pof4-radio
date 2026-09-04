@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { slotDoc, statusOf } from "./doc";
+import { slotDoc, statusOf, trackDocs } from "./doc";
 
 describe("statusOf — a segment's stage from what is present", () => {
   it.each([
@@ -73,5 +73,29 @@ describe("slotDoc — absent columns are absent keys", () => {
       voiced: true,
       clipKey: "k",
     });
+  });
+});
+
+describe("trackDocs — the playlist on the wire, each record marked as held or not", () => {
+  const t = (id: string) => ({
+    id,
+    name: `Song ${id}`,
+    artists: ["A"],
+    album: "B",
+    image: null,
+    durationMs: 1000,
+    pick: 0,
+    why: "w",
+  });
+
+  it("marks the records the track table holds", () => {
+    expect(trackDocs([t("1"), t("2")], new Set(["2"]))).toEqual([
+      { ...t("1"), recorded: false },
+      { ...t("2"), recorded: true },
+    ]);
+  });
+
+  it("no playlist yet is an empty list", () => {
+    expect(trackDocs(null, new Set())).toEqual([]);
   });
 });

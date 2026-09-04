@@ -7,10 +7,9 @@ import type { Choice } from "./shapes";
  * replacing the propose-stage lead. Judgment lives in the model; this is the law.
  */
 
-/** A hydrated candidate: one Spotify hit joined to the pick it answered. */
+/** A hydrated candidate: one Qobuz hit joined to the pick it answered. */
 export interface Candidate {
   id: string;
-  uri: string;
   name: string;
   artists: string[];
   album: string;
@@ -52,10 +51,10 @@ export function selectTracks(
   return { kept, dropped };
 }
 
-/** A featured-artist tag in a title: "(feat. X)", "[ft. X]", "(with X)" — Spotify's own titles carry it differently, so it only hurts a search. */
+/** A featured-artist tag in a title: "(feat. X)", "[ft. X]", "(with X)" — Qobuz's own titles carry it differently, so it only hurts a search. */
 const FEAT_TAG = /\s*[([](?:feat\.?|ft\.?|featuring|with)\s[^)\]]*[)\]]/gi;
 
-/** What Spotify is asked for a pick: the title without its feat tag, pinned to the artist. */
+/** What Qobuz is asked for a pick: the artist, then the title without its feat tag — plain words, the catalog search has no field syntax. */
 export function searchQuery(artist: string, title: string): string {
-  return `${title.replace(FEAT_TAG, "").trim()} artist:${artist.trim()}`;
+  return `${artist.trim()} ${title.replace(FEAT_TAG, "").trim()}`;
 }

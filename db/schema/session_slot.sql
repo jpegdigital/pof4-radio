@@ -9,7 +9,7 @@ create table session_slot (
   id          uuid primary key default gen_random_uuid(),
   segment_id  uuid not null references session_segment (id) on delete cascade,
   seq         integer not null,                        -- 1-based, matches the track's position in tracks
-  track_id    text not null,                           -- the Spotify id of tracks[seq - 1]
+  track_id    text not null,                           -- the Qobuz id of tracks[seq - 1]
   -- the program half, immutable once written
   kind        text not null,                           -- break | talkup | sweeper | segue
   words       text,                                    -- everything said; null for a segue

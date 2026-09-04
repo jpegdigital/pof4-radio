@@ -40,7 +40,7 @@ if (hits.length === 0) throw new Error("no hits");
 t = Date.now();
 const f = await client.fileUrl(hits[0].id);
 console.log(
-  `fileUrl  ${f.mimeType} fmt=${f.formatId} ${f.samplingRate} kHz ${new URL(f.url).host} ${Date.now() - t} ms`,
+  `fileUrl  ${f.mimeType} fmt=${f.formatId} ${f.samplingRate} kHz sample=${f.sample} ${new URL(f.url).host} ${Date.now() - t} ms`,
 );
 
 t = Date.now();

@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { pool } from "@/lib/db";
-import { SLOT_COLUMNS, SLOT_FROM, type SlotRow, slotDoc, statusOf } from "../doc";
+import { SLOT_COLUMNS, SLOT_FROM, type SlotRow, slotDoc, statusOf, trackDocs } from "../doc";
 
 /**
  * GET /api/sessions/:id — the session as stored, a snapshot that never produces anything: the
  * ask, then every segment in order, each carrying whatever its production has landed so far —
- * the playlist, then the slots (words, the writer's numbers, the card's intro, refs — never audio). A segment's status is
- * derived from presence (doc.ts); the telemetry columns (proposed, candidates, program) stay
- * in the database, off the wire. no-store while the document can still grow.
+ * the playlist (each record marked `recorded` when the bucket holds it), then the slots (words,
+ * the writer's numbers, the card's intro, refs — never audio). A segment's status is derived
+ * from presence (doc.ts); the telemetry columns (proposed, candidates, program) stay in the
+ * database, off the wire. no-store while the document can still grow.
  */
 
 interface SessionRow {
@@ -21,7 +22,7 @@ interface SegmentRow {
   id: string;
   num: number;
   rationale: string | null;
-  tracks: unknown;
+  tracks: { id: string }[] | null;
   dropped: unknown;
 }
 
@@ -43,6 +44,12 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[id]">
      where s.segment_id = any($1::uuid[]) order by s.seq`,
     [segments.map((g) => g.id)],
   );
+  // Which of the session's records the bucket holds — one query across every segment.
+  const { rows: held } = await pool().query<{ id: string }>(
+    "select id from track where id = any($1::text[])",
+    [segments.flatMap((g) => g.tracks ?? []).map((t) => t.id)],
+  );
+  const recorded = new Set(held.map((r) => r.id));
   return Response.json(
     {
       sessionId: s.id,
@@ -55,7 +62,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[id]">
           num: g.num,
           status: statusOf(g.tracks, own),
           rationale: g.rationale,
-          tracks: g.tracks ?? [],
+          tracks: trackDocs(g.tracks, recorded),
           dropped: g.dropped ?? [],
           slots: own.map(slotDoc),
         };

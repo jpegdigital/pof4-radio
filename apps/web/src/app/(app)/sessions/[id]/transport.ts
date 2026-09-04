@@ -5,7 +5,7 @@ import type { Plan } from "./plan";
  * say, from the plan and the head, what the buttons should do at this moment.
  */
 
-/** ⏮ this far into a slot restarts it instead of going back one (the Spotify convention). */
+/** ⏮ this far into a slot restarts it instead of going back one (the convention). */
 export const RESTART_AFTER_MS = 3000;
 
 /**

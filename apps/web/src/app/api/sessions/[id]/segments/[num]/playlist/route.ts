@@ -1,7 +1,11 @@
+import type { PoolClient } from "pg";
 import { z } from "zod";
 import { pool } from "@/lib/db";
+import { env } from "@/lib/env";
+import { trackDocs } from "../../../../doc";
 import { Knobs } from "../../../../params";
 import { PlaylistError, producePlaylist } from "../../../../playlist";
+import { qobuz } from "../../../../qobuz";
 
 /**
  * POST /api/sessions/:id/segments/:num/playlist — one rung, idempotent: ensure this segment's
@@ -15,11 +19,19 @@ import { PlaylistError, producePlaylist } from "../../../../playlist";
 interface SegmentRow {
   id: string;
   rationale: string | null;
-  tracks: unknown;
+  tracks: { id: string }[] | null;
   dropped: unknown;
 }
 
 const LOCK_NOT_AVAILABLE = "55P03";
+
+/** Which of these records the bucket holds already (pulled for an earlier session). */
+async function heldOf(client: PoolClient, tracks: { id: string }[]): Promise<Set<string>> {
+  const { rows } = await client.query<{ id: string }>("select id from track where id = any($1::text[])", [
+    tracks.map((t) => t.id),
+  ]);
+  return new Set(rows.map((r) => r.id));
+}
 
 export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[id]/segments/[num]/playlist">) {
   const { id, num } = await ctx.params;
@@ -72,17 +84,20 @@ export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[id]/s
 
     // Idempotent: already playlisted returns the kept row, no production.
     if (seg.tracks) {
+      const tracks = trackDocs(seg.tracks, await heldOf(client, seg.tracks));
       await client.query("rollback");
       return Response.json({
         num: n,
         status: "playlisted",
         rationale: seg.rationale,
-        tracks: seg.tracks,
+        tracks,
         dropped: seg.dropped ?? [],
       });
     }
 
-    const made = await producePlaylist(session.prompt, knobsParsed.data);
+    const e = env();
+    const q = qobuz({ token: e.QOBUZ_TOKEN, appId: e.QOBUZ_APP_ID, secret: e.QOBUZ_SECRET });
+    const made = await producePlaylist(q, session.prompt, knobsParsed.data);
     await client.query(
       "update session_segment set rationale = $1, proposed = $2, candidates = $3, tracks = $4, dropped = $5 where id = $6",
       [
@@ -94,6 +109,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[id]/s
         seg.id,
       ],
     );
+    const tracks = trackDocs(made.tracks, await heldOf(client, made.tracks));
     await client.query("commit");
     console.log(
       `[session ${id.slice(0, 8)}] segment ${n} playlisted: ${made.tracks.length} kept of ${made.candidates.length} candidates (${made.dropped.length} dropped)`,
@@ -102,7 +118,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[id]/s
       num: n,
       status: "playlisted",
       rationale: made.rationale,
-      tracks: made.tracks,
+      tracks,
       dropped: made.dropped,
     });
   } catch (err) {

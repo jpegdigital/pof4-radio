@@ -1,7 +1,8 @@
 /**
- * The clips, once per URL for the life of the page: each fetched as a blob, measured, and kept
- * as an object URL the voice element plays (a rewind is instant; a resumed show's past blocks are
- * ready the moment they're fetched). The bed is decoded once into the shared graph's context. A
+ * The clips and the records, once per URL for the life of the page: each fetched as a blob,
+ * measured, and kept as an object URL its element plays (a rewind is instant; a resumed show's
+ * past blocks are ready the moment they're fetched; a record pulled while the last one played
+ * starts on time). The bed is decoded once into the shared graph's context. A
  * failed fetch is remembered as such and retried on the next ask.
  */
 

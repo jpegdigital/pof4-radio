@@ -52,15 +52,16 @@
   <a href="#playlist">4. The playlist rung</a>
   <a href="#program">5. The program rung</a>
   <a href="#audio">6. The audio rung</a>
-  <a href="#coldstart">7. Cold start, end to end</a>
-  <a href="#errors">8. When a rung fails</a>
+  <a href="#record">7. The record rung</a>
+  <a href="#coldstart">8. Cold start, end to end</a>
+  <a href="#errors">9. When a rung fails</a>
   <div class="t" style="margin-top:24px">Companion</div>
   <a href="api.html">api.html — the data model</a>
 </nav>
 <main>
 
 <h1>Sessions — the API dance</h1>
-<p>Written 2026-08-31, mid-refactor. The create, the playlist rung, the program rung and the audio rung are live (the program and audio rungs landed 2026-09-01), and the session page has the player: one deck, a transport, the show as a rundown — a slot's clip is made the first time it is played, then the mic, the bed and the record run to plan, and the next slot goes in when the record ends. Opening segment 2 while segment 1 is on air, all the post-production choreography, is deliberately out of scope here. Companion to <a href="api.html">api.html</a>, the data model underneath.</p>
+<p>Written 2026-08-31, mid-refactor. The create, the playlist rung, the program rung and the audio rung are live (the program and audio rungs landed 2026-09-01; the record rung, with Qobuz in place of Spotify, 2026-09-04), and the session page has the player: one deck, a transport, the show as a rundown — a slot's clip is made and its record pulled the first time it is played, then the mic, the bed and the record run to plan, and the next slot goes in when the record ends. Opening segment 2 while segment 1 is on air, all the post-production choreography, is deliberately out of scope here. Companion to <a href="api.html">api.html</a>, the data model underneath.</p>
 
 <h2 id="breath">In one breath</h2>
 <p>The browser is the state machine; the server is stateless functions. <code>GET /</code> is a form; posting it creates a session and lands the client on <code>/sessions/:id</code>. From there the client's whole job is a loop: <em>fetch the snapshot, inspect it, call the one rung the frontier asks for, fold the response in, repeat.</em> Every rung is idempotent and lock-guarded, so retries and second tabs are safe by construction — the sequencing knowledge lives in the client, and the server just enforces preconditions per call. No queue, no worker, no polling endpoint: the response of each rung <em>is</em> the product.</p>
@@ -68,16 +69,18 @@
 <pre data-lang="dance"><code>GET  /                                       the form: prompt + voice
 POST /api/sessions                           → { sessionId }, client goes to /sessions/:id
 GET  /api/sessions/:id                       the snapshot: the whole tree, status derived
-POST /api/sessions/:id/segments/:num/playlist   rung: tracks land          (Claude ×2 + Spotify)
+POST /api/sessions/:id/segments/:num/playlist   rung: tracks land          (Claude ×2 + Qobuz search)
 POST /api/sessions/:id/segments/:num/program    rung: all slots land       (Claude ×1, + one per record without a card)
 POST /api/sessions/:id/segments/:num/slots/:seq/audio   rung: one clip     (ElevenLabs ×1)
-GET  /api/sessions/:id/segments/:num/slots/:seq/audio   the clip bytes, immutable</code></pre>
+GET  /api/sessions/:id/segments/:num/slots/:seq/audio   the clip bytes, immutable
+POST /api/sessions/:id/segments/:num/tracks/:seq/audio  rung: one record   (Qobuz ×1, once ever per record)
+GET  /api/sessions/:id/segments/:num/tracks/:seq/audio  the record bytes, immutable</code></pre>
 
 <h2 id="principles">1. The rules of the dance</h2>
 <ul>
   <li><strong>Rungs, not a pipeline.</strong> Each POST does exactly one stage for exactly one thing and returns the produced document in the response. Nothing runs when nobody asks.</li>
   <li><strong>Idempotent.</strong> A rung whose product already exists returns the kept row instantly, no model call. Refreshing mid-production costs nothing.</li>
-  <li><strong>One producer per session.</strong> Every rung takes the session row lock (<code>for update nowait</code>); a concurrent producer gets <code>409 "session is already producing"</code> and simply tries again later.</li>
+  <li><strong>One producer per session.</strong> Every segment rung takes the session row lock (<code>for update nowait</code>); a concurrent producer gets <code>409 "session is already producing"</code> and simply tries again later. The record rung is the exception: a record belongs to the library, not the session, and the deck pulls it while the audio rung holds the lock.</li>
   <li><strong>Preconditions, not queues.</strong> A rung called before its input exists (program before playlist, audio before program) is <code>409</code> with why. That guardrail is for races and bugs — a well-behaved client never hits it, because it only calls what the frontier asks for.</li>
   <li><strong>Status is derived.</strong> The client never receives "you are at stage X" as authority; it receives the data and derives the same status the server would (the server's <code>status</code> field on the wire is a convenience, computed from presence the same way).</li>
 </ul>
@@ -87,7 +90,7 @@ GET  /api/sessions/:id/segments/:num/slots/:seq/audio   the clip bytes, immutabl
 <pre data-lang="http"><code>POST /api/sessions
 { "prompt": "rainy sunday soul, nothing after 1979", "voiceId": "…" }
 
-→ 200 { "sessionId": "8f14e45f-…" }        instant: no model call, no Spotify
+→ 200 { "sessionId": "8f14e45f-…" }        instant: no model call, no Qobuz
 → 400 { "error": "…zod's why…" }</code></pre>
 <p>One transaction inserts the session <em>and</em> segment 1 at open — a session never exists without its first segment, so the client's loop has something to stand on immediately. The client navigates to <code>/sessions/:id</code> and everything after this is the loop.</p>
 
@@ -103,7 +106,8 @@ GET  /api/sessions/:id/segments/:num/slots/:seq/audio   the clip bytes, immutabl
       "num": 1,
       "status": "programmed",              // derived: open | playlisted | programmed | voiced
       "rationale": "why this set answers the ask",
-      "tracks":  [ { "id", "uri", "name", "artists", "album", "image", "durationMs", "pick", "why" }, … ],
+      "tracks":  [ { "id", "name", "artists", "album", "image", "durationMs", "pick", "why",
+                     "recorded": true }, … ],       // recorded: the bucket holds the MP3 (a track row exists)
       "dropped": [ "no hits for …", … ],
       "slots": [                            // absent columns are absent keys; [] until programmed
         { "seq": 1, "kind": "break",  "trackId": "…", "words": "…", "leadLine": "…",
@@ -135,7 +139,7 @@ GET  /api/sessions/:id/segments/:num/slots/:seq/audio   the clip bytes, immutabl
 → 200 { "num", "status": "playlisted", "rationale", "tracks": […], "dropped": […] }
 → 409 { "error": "session is already producing" }
 → 502 { "error": "only 3 tracks composed (need 4)", "dropped": […] }</code></pre>
-<p>Inside the request, under the session lock: Claude <strong>proposes</strong> records by name, Spotify search <strong>hydrates</strong> each into real candidates, Claude <strong>composes</strong> the playlist from those candidates by id — it cannot invent a track, every id is validated against the pool. The propose brief reads the ask before it names anything: a record the ask names is song 1 exactly as named, an artist it names opens with their record that best answers it, and a mood or a scene opens with the record that defines it — the canonical hit, the first thing heard. It proposes more than the playlist holds (six for four), so compose can drop a weak lead; the search drops a title's feat tag (<code>searchQuery</code>, pure) and keeps five hits per pick, so the single is on the table beside the remixes; compose is told the version matters and that the opener stays first. Two Claude calls and ~a dozen searches, tens of seconds; the response is the product. The client shows the ask and a producing state while it waits, then paints art and titles the moment this resolves — the first progressive-enhancement beat of the page.</p>
+<p>Inside the request, under the session lock: Claude <strong>proposes</strong> records by name, Qobuz search <strong>hydrates</strong> each into real candidates (streamable hits only — the plan cannot play the rest), Claude <strong>composes</strong> the playlist from those candidates by id — it cannot invent a track, every id is validated against the pool. The propose brief reads the ask before it names anything: a record the ask names is song 1 exactly as named, an artist it names opens with their record that best answers it, and a mood or a scene opens with the record that defines it — the canonical hit, the first thing heard. It proposes more than the playlist holds (six for four), so compose can drop a weak lead; the search drops a title's feat tag (<code>searchQuery</code>, pure) and keeps five hits per pick, so the single is on the table beside the remixes; compose is told the version matters and that the opener stays first. Two Claude calls and ~a dozen searches, tens of seconds; the response is the product. The client shows the ask and a producing state while it waits, then paints art and titles the moment this resolves — the first progressive-enhancement beat of the page.</p>
 
 <h2 id="program">5. The program rung <span class="tag built">built</span></h2>
 <pre data-lang="http"><code>POST /api/sessions/:id/segments/:num/program
@@ -159,9 +163,21 @@ GET  /api/sessions/:id/segments/:num/slots/:seq/audio     → audio/mpeg, immuta
 <p>POST produces, GET streams. The client doesn't probe GET to discover state: it POSTs (idempotent — a voiced slot returns its row with no TTS call), and fetches the GET endpoint only when the response has a <code>clipKey</code>. A voiced slot without a <code>clipKey</code> is a segue; there is nothing to fetch, just play the record.</p>
 <p>Inside the POST: the slot's spoken text (legal ID, words, lead line, in that order) through ElevenLabs plain TTS in the session's voice, <code>PUT</code> to the bucket at <code>sessions/&lt;sessionId&gt;/&lt;num&gt;/&lt;seq&gt;.mp3</code>, then the row update (<code>clip_key</code>, <code>voiced_at</code>) in one statement. Bucket first, row second, so a stamped row without media can't exist; a crash in between leaves an unreferenced mp3 the retry overwrites. A segue voices instantly (nothing to say). A failed TTS is a 502 and the row is untouched; the client may try again. No timestamps, no alignment: the mix is the player's (<a href="api.html#slot-ready">the data model</a>).</p>
 <p><strong>Another take.</strong> <code>{ "again": true }</code> on a voiced slot with something said reads the same words once more with the roster as it stands now — the voice's model, speed, the lot — and lands it under a new key, <code>sessions/&lt;sessionId&gt;/&lt;num&gt;/&lt;seq&gt;-&lt;take&gt;.mp3</code>; the old bytes stay in the bucket, unreferenced. The GET is cached forever, so the player names the take in the clip's URL (<code>?take=</code>) and a new take is a new fetch. On the page it is the arrows beside a voiced row: the row spins while ElevenLabs works, and if that cue is in the deck the new take plays at once.</p>
-<p>The player is the old station's, on the session page (<code>app/(app)/sessions/[id]/</code>): the desk (the lamp, who is connected, the request), the transport — art, three lines, the record's clock, ⏮ ⏯ ⏭ — and the show as a rundown, a row per slot on the amber rail. One deck (<code>use-deck.ts</code>) holds one cue at a time. Loading a cue makes its clip if it isn't yet (this POST), fetches it and reads its length, lays the plan from the kind, the length, the writer's two numbers and the card's intro (<code>plan.ts</code>, pure, tested), and runs three lanes from one clock — the mic is the voice <code>&lt;audio&gt;</code> element and the bed a looping buffer in one Web Audio graph, the bed's gain scheduled on the audio clock; the record is the Spotify device (this tab, Web Playback SDK, the listener's own Premium account through PKCE at <code>/spotify/callback</code>), started at its mark. The transport shows the cue — the three lanes, the record's lane running to its vocal where the card knows the intro, and the head sweeping across — then the record's own clock; the record is ducked under the voice — the device's volume stepped down as the voice comes in over it and back up once it is done, the only knob Spotify gives us — and both strips scrub (the mix runs again from the new head, the mic seeked into its clip and the bed's gain picked up mid-ramp; the record seeks in place). Play/pause is the transport's; which slot plays is the rows' (a tap) and ⏮ ⏭'s; when the record ends the next slot goes in on its own. Pause freezes everything; play again resumes the record when it alone is sounding, else the slot runs from the top (<code>transport.ts</code>, pure, tested). One tap does it all even when the tab isn't the device yet: the tap registers it and the cue runs when it's ready.</p>
+<p>The player is the old station's, on the session page (<code>app/(app)/sessions/[id]/</code>): the desk (the lamp, who is connected, the request), the transport — art, three lines, the record's clock, ⏮ ⏯ ⏭ — and the show as a rundown, a row per slot on the amber rail. One deck (<code>use-deck.ts</code>) holds one cue at a time. Loading a cue makes its clip if it isn't yet (this POST), fetches it and reads its length, lays the plan from the kind, the length, the writer's two numbers and the card's intro (<code>plan.ts</code>, pure, tested), and runs three lanes from one clock — the mic is the voice <code>&lt;audio&gt;</code> element, the bed a looping buffer and the record its MP3 in a second <code>&lt;audio&gt;</code> element through a gain node, all in one Web Audio graph, the bed's and the record's gain scheduled on the audio clock; the record starts at its mark. The transport shows the cue — the three lanes, the record's lane running to its vocal where the card knows the intro, and the head sweeping across — then the record's own clock; the record is ducked under the voice — its gain ramped down as the voice comes in over it and back up once it is done — and both strips scrub (the mix runs again from the new head, the mic seeked into its clip and the bed's gain picked up mid-ramp; the record seeks in place). Play/pause is the transport's; which slot plays is the rows' (a tap) and ⏮ ⏭'s; when the record ends the next slot goes in on its own — its record already pulled while this one played (<a href="#record">the record rung</a>). Pause freezes everything; play again resumes the record when it alone is sounding, else the slot runs from the top (<code>transport.ts</code>, pure, tested). The first tap unlocks the graph and both elements for iOS.</p>
 
-<h2 id="coldstart">7. Cold start, end to end</h2>
+<h2 id="record">7. The record rung <span class="tag built">built</span></h2>
+<pre data-lang="http"><code>POST /api/sessions/:id/segments/:num/tracks/:seq/audio
+
+→ 200 { …the track doc: "id", "name", "artists", "album", "image", "durationMs", "pick", "why", "recorded": true }
+→ 409 { "error": "segment has no playlist yet" }
+→ 502 { "error": "qobuz track/getFileUrl failed (401): …" }        the token rotated: paste a fresh one
+
+GET  /api/sessions/:id/segments/:num/tracks/:seq/audio    → audio/mpeg, immutable, cache forever</code></pre>
+<p>POST pulls, GET streams — the twin of the audio rung, for the record itself. The segment's <code>tracks[seq - 1]</code> is pulled from Qobuz as MP3 320 (<code>api/sessions/qobuz.ts</code>: a signed <code>track/getFileUrl</code> on the listener's own token, then the CDN), <code>PUT</code> to the bucket at <code>tracks/&lt;qobuz id&gt;.mp3</code>, then a <code>track</code> row inserted. Bucket first, row second, so a row always points at media. The key is the record's, not the session's: the first session to play a record pays for its pull and every later one finds the row and returns at once with no Qobuz call. A record held is marked <code>recorded: true</code> in the snapshot, so the deck knows whether to POST before it fetches.</p>
+<p>Not under the session lock, on purpose. The audio rung holds the lock for the seconds ElevenLabs takes, and the deck pulls the record in that same window; two pulls of the same record at once (two sessions, a second tab) land the same bytes under the same key and the row insert is <code>on conflict do nothing</code>. Playback never touches Qobuz: the browser fetches the GET once as a blob (<code>voice-cache.ts</code>, the same cache as the clips), so scrubbing is instant and a replay is free. While a record plays, the deck warms the next cue's record — POST, then the fetch — so it starts on time.</p>
+<p>What can go wrong is Qobuz's side and surfaces as a 502 with the API's own words: a 401 on every call means the token rotated (paste a fresh one from play.qobuz.com into 1Password, set it on <code>radio-web</code>); a 400 "Invalid Request Signature" means the web player's app pair rotated, and the code scrapes the new one on its own; a 30-second file where a record should be means the plan lapsed — <code>download</code> refuses samples rather than air one.</p>
+
+<h2 id="coldstart">8. Cold start, end to end</h2>
 <pre data-lang="timeline"><code>client                                        server
 ──────                                        ──────
 GET /                                         the form
@@ -174,16 +190,18 @@ POST …/segments/1/playlist ─────────────────
 POST …/segments/1/program ──────────────────► one call, all slots inserted  (~tens of s)
 ◄─ slots                  paint the rundown's words; frontier says: audio, slot 1
 POST …/segments/1/slots/1/audio ────────────► TTS + bucket                 (~seconds)
-◄─ slot 1 voiced          play: mic, bed, record to plan — one slot at a time past here
+POST …/segments/1/tracks/1/audio ───────────► Qobuz + bucket, side by side (~1–2 s, once ever)
+◄─ slot 1 voiced, record 1 held   play: mic, bed, record to plan — one slot at a time past here
+POST …/segments/1/tracks/2/audio ───────────► the next record, pulled while record 1 plays
 POST …/segments/1/slots/2/audio ────────────► …and so on, one at a time
 </code></pre>
 
-<h2 id="errors">8. When a rung fails</h2>
+<h2 id="errors">9. When a rung fails</h2>
 <table>
 <tr><th>Failure</th><th>On the wire</th><th>Client's move</th></tr>
 <tr><td>Concurrent producer (second tab, double click)</td><td><code>409 session is already producing</code></td><td>back off, re-fetch the snapshot later — whoever holds the lock is doing the same work</td></tr>
 <tr><td>Called out of order</td><td><code>409</code> with the missing precondition</td><td>re-fetch the snapshot; the frontier was stale</td></tr>
-<tr><td>Production failed (model, Spotify, ElevenLabs)</td><td><code>502</code> with the message and receipts</td><td>nothing landed (the transaction rolled back) — the same POST retries the whole rung, idempotency makes that safe</td></tr>
+<tr><td>Production failed (model, Qobuz, ElevenLabs)</td><td><code>502</code> with the message and receipts</td><td>nothing landed (the transaction rolled back) — the same POST retries the whole rung, idempotency makes that safe</td></tr>
 <tr><td>TTS failed inside the audio rung</td><td><code>200</code> with a <code>fallback</code></td><td>nothing — the slot is done, just humbler; the rundown shows the badge</td></tr>
 </table>
 <div class="note"><strong>Why no queue or worker.</strong> The sequencing knowledge ("playlist before program before audio") lives in the client's loop; the server enforces preconditions per call and locks per session. A queue would add infra that runs when nobody is listening, a place for state to live outside the database, and a polling protocol — for a pipeline whose every stage already fits in one request/response. The 409s are the entire coordination mechanism, and they are guardrails, not the happy path.</div>

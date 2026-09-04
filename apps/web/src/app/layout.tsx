@@ -8,7 +8,7 @@ const plexMono = IBM_Plex_Mono({ variable: "--font-plex-mono", subsets: ["latin"
 
 export const metadata: Metadata = {
   title: "Claude Radio",
-  description: "An AI DJ over your Spotify.",
+  description: "An AI DJ over your records.",
 };
 
 /**

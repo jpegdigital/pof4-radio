@@ -4,13 +4,13 @@ import { claude } from "@/lib/claude";
 import { env } from "@/lib/env";
 import type { Knobs } from "./params";
 import { type Candidate, searchQuery, selectTracks } from "./select";
+import type { Qobuz } from "./qobuz";
 import { Choice, numbered, Pick } from "./shapes";
-import { search } from "./spotify";
 
 /**
  * One prompt becomes a playlist in three moves, straight through: Claude PROPOSES records by
- * name (leads, not gospel), Spotify search HYDRATES each into real candidate tracks (dumb,
- * keeps everything), Claude COMPOSES the playlist from those candidates by id — it can prefer
+ * name (leads, not gospel), Qobuz search HYDRATES each into real candidate tracks (dumb,
+ * keeps every streamable hit), Claude COMPOSES the playlist from those candidates by id — it can prefer
  * the live take when the ask wants one, and it cannot invent a track: every id is validated
  * against the pool and joined back to metadata we already hold (select.ts). Pure production:
  * no database in here; the caller owns the row. Failure throws PlaylistError with the receipts.
@@ -37,7 +37,7 @@ export class PlaylistError extends Error {
   }
 }
 
-export async function producePlaylist(prompt: string, knobs: Knobs): Promise<Playlist> {
+export async function producePlaylist(q: Qobuz, prompt: string, knobs: Knobs): Promise<Playlist> {
   const { propose, candidates: perPick, playlist, min } = knobs;
 
   // 1. PROPOSE — names only, wide on purpose: a dropped pick costs nothing now.
@@ -84,7 +84,9 @@ export async function producePlaylist(prompt: string, knobs: Knobs): Promise<Pla
   const picks = songs.list(proposed.parsed_output);
 
   // 2. HYDRATE — dumb search, everything kept; a failed search is an empty hand, logged.
-  const settled = await Promise.allSettled(picks.map((p) => search(searchQuery(p.artist, p.title), perPick)));
+  const settled = await Promise.allSettled(
+    picks.map((p) => q.search(searchQuery(p.artist, p.title), perPick)),
+  );
   const candidates: Candidate[] = [];
   const dropped: string[] = [];
   settled.forEach((s, i) => {
@@ -101,11 +103,10 @@ export async function producePlaylist(prompt: string, knobs: Knobs): Promise<Pla
     for (const t of s.value)
       candidates.push({
         id: t.id,
-        uri: t.uri,
-        name: t.name,
+        name: t.title,
         artists: t.artists,
         album: t.album,
-        image: t.images[0]?.url ?? null,
+        image: t.image,
         durationMs: t.durationMs,
         pick: i,
         why: p.why,

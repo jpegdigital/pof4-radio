@@ -45,6 +45,26 @@ export const SLOT_COLUMNS =
   "seq, track_id, kind, words, lead_line, legal_id, why, fallback, record_under_ms, voice_in_ms, clip_key, voiced_at, c.intro_ms";
 export const SLOT_FROM = "session_slot s left join card c on c.id = s.track_id";
 
+/** One record of the playlist as stored (playlist.ts writes it), plus whether the bucket holds it. */
+export interface TrackDoc {
+  id: string;
+  name: string;
+  artists: string[];
+  album: string;
+  image: string | null;
+  durationMs: number;
+  pick: number;
+  why: string;
+  /** The record is in the bucket (a `track` row exists): the deck can play it without a pull. */
+  recorded: boolean;
+}
+
+/** The segment's `tracks` jsonb on the wire, each record marked from the set of ids the track table holds. */
+export function trackDocs(tracks: unknown, recorded: Set<string>): TrackDoc[] {
+  if (!tracks) return [];
+  return (tracks as Omit<TrackDoc, "recorded">[]).map((t) => ({ ...t, recorded: recorded.has(t.id) }));
+}
+
 export function statusOf(tracks: unknown, slots: { voiced_at: Date | null }[]): SegmentStatus {
   if (!tracks) return "open";
   if (!slots.length) return "playlisted";

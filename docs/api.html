@@ -56,23 +56,27 @@
   <a class="l3" href="#slot-ready">Readiness</a>
   <a class="l3" href="#slot-kinds">The four kinds</a>
   <a href="#card">4. card — carried over</a>
-  <a href="#outside">5. What lives outside the database</a>
-  <a href="#old">6. The old world next door</a>
+  <a href="#track">5. track — the library</a>
+  <a href="#outside">6. What lives outside the database</a>
+  <a href="#old">7. The old world next door</a>
   <div class="t" style="margin-top:24px">Companion</div>
   <a href="sessions.html">sessions.html — the API dance</a>
 </nav>
 <main>
 
 <h1>Sessions — the data model</h1>
-<p>Read from the code on 2026-08-31, mid-refactor. <code>session</code> and <code>session_segment</code> are in the schema and live; <code>session_slot</code> joined them on 2026-09-01 with the program rung. Companion to <a href="sessions.html">sessions.html</a>, which covers the API dance over this model.</p>
+<p>Read from the code on 2026-08-31, mid-refactor. <code>session</code> and <code>session_segment</code> are in the schema and live; <code>session_slot</code> joined them on 2026-09-01 with the program rung, <code>track</code> on 2026-09-04 when Qobuz took Spotify's place. Companion to <a href="sessions.html">sessions.html</a>, which covers the API dance over this model.</p>
 
 <h2 id="breath">In one breath</h2>
-<p>A <strong>session</strong> is one listening: the ask, verbatim, and the voice — nothing else. It owns <strong>segments</strong>, numbered from 1, each one sweep of the show: a DJ break and its songs. A segment is produced in rungs, each rung landing a column set whole — the <em>playlist</em> (tracks), then the <em>program</em> (slot rows: every word the DJ will say, one slot per track), then the <em>voice</em> (each slot's clip, one at a time). Status is never stored; it is derived from what is present. Everything produced is kept forever; nothing is re-made — except a clip, on request: another take of the same words, under a new key, the old one kept.</p>
+<p>A <strong>session</strong> is one listening: the ask, verbatim, and the voice — nothing else. It owns <strong>segments</strong>, numbered from 1, each one sweep of the show: a DJ break and its songs. A segment is produced in rungs, each rung landing a column set whole — the <em>playlist</em> (tracks), then the <em>program</em> (slot rows: every word the DJ will say, one slot per track), then the <em>voice</em> (each slot's clip, one at a time). The records themselves are the library's, not the session's: a <strong>track</strong> row per record ever pulled from Qobuz into the bucket, shared by every session that plays it. Status is never stored; it is derived from what is present. Everything produced is kept forever; nothing is re-made — except a clip, on request: another take of the same words, under a new key, the old one kept.</p>
 
 <pre data-lang="shape"><code>session ─┬─ session_segment (num 1) ─┬─ session_slot (seq 1)   ← the break
          │                           ├─ session_slot (seq 2)
          │                           └─ … one per track
-         └─ session_segment (num 2) ─ …</code></pre>
+         └─ session_segment (num 2) ─ …
+
+track   ─ one row per record held in the bucket, keyed by Qobuz id; segments and slots point at it by id
+card    ─ one row per record described, same key</code></pre>
 
 <h2 id="session">1. <code>session</code> <span class="tag built">in schema</span></h2>
 <p><code>db/schema/session.sql</code>. Created instantly by <code>POST /api/sessions</code>, in one transaction with segment 1 — a session never exists without its first segment. It never changes after creation (the <code>updated_at</code> trigger is there for hygiene, not workflow).</p>
@@ -93,9 +97,9 @@
 <tr><td><code>session_id</code></td><td>uuid</td><td>→ <code>session</code>, cascade delete.</td></tr>
 <tr><td><code>num</code></td><td>integer</td><td>1-based position in the session. <code>unique (session_id, num)</code>.</td></tr>
 <tr><td><code>rationale</code></td><td>text</td><td>Compose's words: why this set answers the ask.</td></tr>
-<tr><td><code>tracks</code></td><td>jsonb</td><td>The playlist, in play order: <code>[{id, uri, name, artists, album, image, durationMs, pick, why}]</code>. Present ⇒ playlisted.</td></tr>
+<tr><td><code>tracks</code></td><td>jsonb</td><td>The playlist, in play order: <code>[{id, name, artists, album, image, durationMs, pick, why}]</code>, <code>id</code> the Qobuz track id. Present ⇒ playlisted. On the wire each record also carries <code>recorded</code>, derived from the <code>track</code> table.</td></tr>
 <tr><td><code>proposed</code></td><td>jsonb</td><td>Telemetry, pass 1: <code>{rationale, picks: [{artist, title, why}]}</code>.</td></tr>
-<tr><td><code>candidates</code></td><td>jsonb</td><td>Telemetry, hydration: every Spotify hit as offered to compose.</td></tr>
+<tr><td><code>candidates</code></td><td>jsonb</td><td>Telemetry, hydration: every Qobuz hit as offered to compose.</td></tr>
 <tr><td><code>dropped</code></td><td>jsonb</td><td><code>string[]</code> — reasons from all three playlist stages.</td></tr>
 </table>
 
@@ -121,7 +125,7 @@ create table session_slot (
   id           uuid primary key default gen_random_uuid(),
   segment_id   uuid not null references session_segment (id) on delete cascade,
   seq          integer not null,          -- 1-based, matches the track's position in tracks
-  track_id     text not null,             -- the Spotify id of tracks[seq - 1]; belt and braces
+  track_id     text not null,             -- the Qobuz id of tracks[seq - 1]; belt and braces
 
   -- the program half, immutable once written
   kind         text not null,             -- break | talkup | sweeper | segue
@@ -175,18 +179,32 @@ create table session_slot (
 </table>
 
 <h2 id="card">4. <code>card</code> — carried over <span class="tag built">in schema</span></h2>
-<p>The record's card (<code>db/schema/card.sql</code>) survives the refactor as-is: intro length, <code>sure</code>, the post (<em>where</em> the vocal comes in, never the lyric), ending, energy, talking points — keyed by Spotify track id, shared by every session, the first session to play a record pays for its card. The program rung reads cards to know which tracks can carry a talk-up (a talk-up needs a ≥ 7 s intro); the snapshot joins each slot's <code>introMs</code> from its card so the player can end a talk-up a beat before the vocal. Cards may be corrected in place; voiced slots never re-read them.</p>
+<p>The record's card (<code>db/schema/card.sql</code>) survives the refactor as-is: intro length, <code>sure</code>, the post (<em>where</em> the vocal comes in, never the lyric), ending, energy, talking points — keyed by Qobuz track id (Spotify's until 2026-09-04; the old rows are orphans, harmless), shared by every session, the first session to play a record pays for its card. The program rung reads cards to know which tracks can carry a talk-up (a talk-up needs a ≥ 7 s intro); the snapshot joins each slot's <code>introMs</code> from its card so the player can end a talk-up a beat before the vocal. Cards may be corrected in place; voiced slots never re-read them.</p>
 
-<h2 id="outside">5. What lives outside the database</h2>
+<h2 id="track">5. <code>track</code> — the library <span class="tag built">in schema</span></h2>
+<p><code>db/schema/track.sql</code>. One row per record the bucket holds: the MP3 320 pulled from Qobuz once by the record rung and kept forever, shared by every session that plays it — the first to play a record pays for its pull. Keyed by the Qobuz track id, the same id the playlist's <code>tracks</code> and each slot's <code>track_id</code> carry, so the snapshot marks a record <code>recorded</code> with one <code>where id = any(…)</code> across the session. Written once, never updated; no <code>updated_at</code>.</p>
+<table>
+<tr><th>Column</th><th>Type</th><th>What it is</th></tr>
+<tr><td><code>id</code></td><td>text</td><td>The Qobuz track id.</td></tr>
+<tr><td><code>name</code>, <code>artists</code></td><td>text, jsonb</td><td>Enough for the table to read as the library; the rest of the metadata lives in the playlists that chose the record.</td></tr>
+<tr><td><code>audio_key</code></td><td>text</td><td><code>tracks/&lt;id&gt;.mp3</code> in the bucket. Written only after the <code>PUT</code> succeeded — a row always points at media; a record with no row has not been pulled yet.</td></tr>
+<tr><td><code>bytes</code></td><td>integer</td><td>The MP3's size, for the bill (about 10 MB a record at 320).</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>Bookkeeping.</td></tr>
+</table>
+<p>The write order is the audio rung's: bucket first, row second, the row's presence the whole readiness signal. Two pulls of the same record at once (two sessions, a second tab — the rung takes no lock) land the same bytes under the same key; the insert is <code>on conflict do nothing</code>. A crash between <code>PUT</code> and insert leaves an unreferenced mp3 the next pull overwrites. <code>pnpm db:clear</code> leaves this table alone, like <code>card</code>.</p>
+
+<h2 id="outside">6. What lives outside the database</h2>
 <table>
 <tr><th>Thing</th><th>Where</th><th>Keyed by</th></tr>
 <tr><td>The voice clips</td><td>the <code>radio-clips</code> bucket</td><td><code>sessions/&lt;sessionId&gt;/&lt;num&gt;/&lt;seq&gt;.mp3</code>, immutable</td></tr>
+<tr><td>The records</td><td>the same bucket</td><td><code>tracks/&lt;qobuz id&gt;.mp3</code>, immutable, one per record ever played</td></tr>
 <tr><td>The bed</td><td><code>public/bed.mp3</code></td><td>static, shipped with the app; a sweeper is a slot, voiced like any other</td></tr>
 <tr><td>The prompts, the identity, the voice roster</td><td>the <code>settings</code> table, edited on <code>/settings</code></td><td>slot name; read per request, throw if missing</td></tr>
-<tr><td>Playback</td><td>the browser — the tab is the Spotify device, the listener's own token, never the server's</td><td>—</td></tr>
+<tr><td>Playback</td><td>the browser — the clips and the records streamed from the bucket through the app and mixed in one Web Audio graph; Qobuz is never touched at play time</td><td>—</td></tr>
+<tr><td>The Qobuz token</td><td>the env (<code>QOBUZ_TOKEN</code>), from the 1Password item <code>pof4-radio-qobuz</code> — the listener's own web-player token, no developer API exists</td><td>rotates when Qobuz changes auth; paste a fresh one</td></tr>
 </table>
 
-<h2 id="old">6. The old world next door</h2>
+<h2 id="old">7. The old world next door</h2>
 <p><code>station</code> and <code>segment</code> (the skeleton, the four parallel arrays) are the previous design, still in the schema and still behind the old routes. Nothing in the sessions world reads them. They — and the <code>session_</code> prefixes here — go away when the old routes are deleted.</p>
 
 </main>

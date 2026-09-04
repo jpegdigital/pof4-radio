@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { type Candidate, searchQuery, selectTracks } from "./select";
 
-/** A hydrated candidate as the route builds it from a Spotify hit + the pick it answered. */
+/** A hydrated candidate as the route builds it from a Qobuz hit + the pick it answered. */
 const cand = (id: string, over: Partial<Candidate> = {}): Candidate => ({
   id,
-  uri: `spotify:track:${id}`,
   name: `Song ${id}`,
   artists: ["Some Artist"],
   album: "Some Album",
@@ -27,7 +26,7 @@ describe("selectTracks — compose chooses {id, why}, we join the metadata back"
       10,
     );
     expect(out.kept.map((k) => k.id)).toEqual(["c", "a"]);
-    expect(out.kept[0]).toMatchObject({ uri: "spotify:track:c", name: "Song c", why: "sets the scene" });
+    expect(out.kept[0]).toMatchObject({ name: "Song c", why: "sets the scene" });
     expect(out.kept[1]?.why).toBe("answers it");
     expect(out.dropped).toEqual([]);
   });
@@ -89,26 +88,26 @@ describe("selectTracks — compose chooses {id, why}, we join the metadata back"
   });
 });
 
-describe("searchQuery — the pick as Spotify hears it", () => {
+describe("searchQuery — the pick as Qobuz hears it", () => {
   it.each([
-    { give: ["Ariana Grande", "Break Free"], want: "Break Free artist:Ariana Grande", id: "plain" },
-    { give: ["Zedd", "Clarity (feat. Foxes)"], want: "Clarity artist:Zedd", id: "feat in parentheses" },
+    { give: ["Ariana Grande", "Break Free"], want: "Ariana Grande Break Free", id: "plain" },
+    { give: ["Zedd", "Clarity (feat. Foxes)"], want: "Zedd Clarity", id: "feat in parentheses" },
     {
       give: ["Calvin Harris", "Outside [ft. Ellie Goulding]"],
-      want: "Outside artist:Calvin Harris",
+      want: "Calvin Harris Outside",
       id: "ft in brackets",
     },
     {
       give: ["Ariana Grande", "Break Free (with Zedd)"],
-      want: "Break Free artist:Ariana Grande",
+      want: "Ariana Grande Break Free",
       id: "with",
     },
     {
       give: ["Don Henley", "The Boys of Summer (Remastered)"],
-      want: "The Boys of Summer (Remastered) artist:Don Henley",
+      want: "Don Henley The Boys of Summer (Remastered)",
       id: "a version tag stays",
     },
-    { give: ["  Kesha ", " Die Young "], want: "Die Young artist:Kesha", id: "trimmed" },
+    { give: ["  Kesha ", " Die Young "], want: "Kesha Die Young", id: "trimmed" },
   ])("$id", ({ give: [artist, title], want }) => {
     expect(searchQuery(artist, title)).toBe(want);
   });

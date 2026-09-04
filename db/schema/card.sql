@@ -1,9 +1,9 @@
--- What is known about a record, keyed by the Spotify track id actually played. Shared by every
+-- What is known about a record, keyed by the Qobuz track id actually played. Shared by every
 -- station: the first to play a record pays for its card, every later one reuses it. Corrected in
 -- place (an UPDATE); a kept segment never re-reads it — its timings were produced from the card
 -- as it stood then.
 create table card (
-  id          text primary key,                        -- Spotify track id
+  id          text primary key,                        -- Qobuz track id
   name        text not null,
   artists     jsonb not null,                          -- string[]
   intro_ms    integer not null,                        -- instrumental intro; 0 = starts on the vocal
