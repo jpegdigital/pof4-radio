@@ -5,6 +5,18 @@ const Env = z.object({
   DATABASE_URL: z.string().url(),
   SPOTIFY_CLIENT_ID: z.string().min(1),
   SPOTIFY_CLIENT_SECRET: z.string().min(1),
+  /**
+   * The records (api/sessions/qobuz.ts). The token is the listener's own from play.qobuz.com;
+   * optional so the station builds and runs (records skipped) before it is set. The app id +
+   * secret pair is the web player's, printed by `scripts/qobuz-smoke.mts`; set both to skip the
+   * ~13 s bundle scrape on the first call — when the pair stops signing the scrape runs anyway.
+   */
+  QOBUZ_TOKEN: z.string().min(1).optional(),
+  QOBUZ_APP_ID: z
+    .string()
+    .regex(/^\d{9}$/)
+    .optional(),
+  QOBUZ_SECRET: z.string().min(1).optional(),
   /** The DJ. */
   CLAUDE_KEY: z.string().min(1),
   CLAUDE_MODEL: z.string().min(1).default("claude-opus-5"),
