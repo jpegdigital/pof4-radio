@@ -206,7 +206,7 @@ four tables; the pre-push gate and the build pass.
 
 - [X] T067 [P] Update `docs/slot-first.md` "Open" section with what was chosen (three slots' copy + everything played; "coming up" rows) and a line pointing at `specs/004-slot-first/research.md`.
 - [X] T068 [P] Update the auto-memory file `slot-first-refactor.md` (in the Claude profile's memory dir): implemented on <date>, cutover applied, what is left (Railway deploy, flip `GUARD_OPEN`).
-- [ ] T069 Push the branch; open a PR titled "Slot-first: the show is a list of slots, produced one ahead of the listener" with the spec's summary and the quickstart's evidence lines; note the one-time `db:clear --tracks` in the PR body.
+- [X] T069 Push the branch; open a PR titled "Slot-first: the show is a list of slots, produced one ahead of the listener" with the spec's summary and the quickstart's evidence lines; note the one-time `db:clear --tracks` in the PR body.
 
 ---
 
