@@ -27,11 +27,11 @@ describe("resumes", () => {
   it.each<[Plan, number, boolean, string]>([
     [brk, 5000, false, "a break with the voice still on: the mix runs again"],
     [brk, 18_000, false, "a break under the lead line, record started but voice not done"],
-    [brk, 21_000, true, "a break once the voice is done: the record picks up"],
+    [brk, 21_000, true, "a break once the voice is done: the track picks up"],
     [talkup, 1000, false, "a talk-up before the voice comes in"],
     [talkup, 4000, false, "a talk-up mid-voice"],
     [talkup, 7000, true, "a talk-up after the voice"],
-    [segue, 100, true, "a segue: the record alone, always resumable"],
+    [segue, 100, true, "a segue: the track alone, always resumable"],
   ])("%#: %s", (plan, headMs, want, _id) => {
     expect(resumes(plan, headMs)).toBe(want);
   });

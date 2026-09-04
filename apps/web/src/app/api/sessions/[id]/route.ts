@@ -1,14 +1,15 @@
 import { z } from "zod";
 import { pool } from "@/lib/db";
-import { SLOT_COLUMNS, SLOT_FROM, type SlotRow, slotDoc, statusOf, trackDocs } from "../doc";
+import { loadClock } from "@/lib/settings";
+import { SLOT_COLUMNS, type SlotRow, slotDoc } from "../doc";
 
 /**
  * GET /api/sessions/:id — the session as stored, a snapshot that never produces anything: the
- * ask, then every segment in order, each carrying whatever its production has landed so far —
- * the playlist (each record marked `recorded` when the bucket holds it), then the slots (words,
- * the writer's numbers, the card's intro, refs — never audio). A segment's status is derived
- * from presence (doc.ts); the telemetry columns (proposed, candidates, program) stay in the
- * database, off the wire. no-store while the document can still grow.
+ * ask, the clock (so the browser knows the low-water mark), then every slot in order, each
+ * carrying whatever its production has landed so far — the proposal, then the pick with its
+ * tags and whether the bucket holds it, the chart, the copy, the timing, then the clip key —
+ * status derived from presence (doc.ts), never audio, never the receipts. no-store while the
+ * document can still grow. A missing clock row is a 500 naming it.
  */
 
 interface SessionRow {
@@ -16,14 +17,6 @@ interface SessionRow {
   prompt: string;
   voice_id: string;
   created_at: Date;
-}
-
-interface SegmentRow {
-  id: string;
-  num: number;
-  rationale: string | null;
-  tracks: { id: string }[] | null;
-  dropped: unknown;
 }
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[id]">) {
@@ -35,39 +28,33 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[id]">
   );
   if (!rows.length) return Response.json({ error: "unknown session" }, { status: 404 });
   const s = rows[0];
-  const { rows: segments } = await pool().query<SegmentRow>(
-    "select id, num, rationale, tracks, dropped from session_segment where session_id = $1 order by num",
-    [id],
-  );
-  const { rows: slots } = await pool().query<SlotRow & { segment_id: string }>(
-    `select s.segment_id, ${SLOT_COLUMNS} from ${SLOT_FROM}
-     where s.segment_id = any($1::uuid[]) order by s.seq`,
-    [segments.map((g) => g.id)],
-  );
-  // Which of the session's records the bucket holds — one query across every segment.
-  const { rows: held } = await pool().query<{ id: string }>(
-    "select id from track where id = any($1::text[])",
-    [segments.flatMap((g) => g.tracks ?? []).map((t) => t.id)],
-  );
-  const recorded = new Set(held.map((r) => r.id));
-  return Response.json(
-    {
-      sessionId: s.id,
-      prompt: s.prompt,
-      voiceId: s.voice_id,
-      createdAt: s.created_at.toISOString(),
-      segments: segments.map((g) => {
-        const own = slots.filter((r) => r.segment_id === g.id);
-        return {
-          num: g.num,
-          status: statusOf(g.tracks, own),
-          rationale: g.rationale,
-          tracks: trackDocs(g.tracks, recorded),
-          dropped: g.dropped ?? [],
-          slots: own.map(slotDoc),
-        };
-      }),
-    },
-    { headers: { "Cache-Control": "no-store" } },
-  );
+  try {
+    const [clock, { rows: slots }] = await Promise.all([
+      loadClock(),
+      pool().query<SlotRow>(`select ${SLOT_COLUMNS} from session_slot where session_id = $1 order by seq`, [
+        id,
+      ]),
+    ]);
+    // Which of the session's picks the bucket holds — one query across every slot.
+    const { rows: held } = await pool().query<{ id: string }>(
+      "select id from track where id = any($1::text[])",
+      [slots.map((r) => r.qobuz_id).filter((x): x is string => x !== null)],
+    );
+    const holds = new Set(held.map((r) => r.id));
+    return Response.json(
+      {
+        sessionId: s.id,
+        prompt: s.prompt,
+        voiceId: s.voice_id,
+        createdAt: s.created_at.toISOString(),
+        clock,
+        slots: slots.map((r) => slotDoc(r, holds)),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[session ${id.slice(0, 8)}] snapshot failed: ${message}`);
+    return Response.json({ error: message }, { status: 500 });
+  }
 }

@@ -2,7 +2,7 @@
   "name": "web",
   "version": "0.1.0",
   "private": true,
-  "description": "Next.js app: the desk, the session page (the deck: Spotify Web Playback SDK in the browser), the sessions API, and the control room.",
+  "description": "Next.js app: the desk, the session page (the deck: the clips and the tracks mixed in the browser), the sessions API, and the control room.",
   "scripts": {
     "dev": "next dev --experimental-https -H dev.radio.pof4.com",
     "build": "next build",

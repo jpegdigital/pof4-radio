@@ -1,8 +1,8 @@
 /**
  * AWS Signature Version 4 for one request, by hand: the payload hashed into
  * `x-amz-content-sha256` (S3), `x-amz-date`, the canonical request, the string to sign, the HMAC
- * chain, the `Authorization` header. Web Crypto only — no Node-only APIs, no SDK. Used for the two
- * verbs the clips bucket needs (`PUT`, `GET`); tested against the AWS test vector.
+ * chain, the `Authorization` header. Web Crypto only — no Node-only APIs, no SDK. Used for the three
+ * verbs the clips bucket needs (`PUT`, `GET`, `HEAD`); tested against the AWS test vector.
  */
 
 export interface SignInput {

@@ -21,8 +21,8 @@ export interface SessionSummary {
   prompt: string;
   /** The DJ's name — the roster's, or the roster's first when the session's voice is gone from it. */
   dj: string;
-  /** Segments with a playlist. */
-  segments: number;
+  /** Slots on the rundown, proposed or played. */
+  slots: number;
   createdAt: string;
 }
 
@@ -126,10 +126,7 @@ export function HomeDesk({ djs, sessions }: { djs: Dj[]; sessions: SessionSummar
                       {when(s.createdAt)}
                     </time>
                     <span className="min-w-0 truncate">
-                      {s.dj} ·{" "}
-                      {s.segments === 0
-                        ? "nothing yet"
-                        : `${s.segments} segment${s.segments === 1 ? "" : "s"}`}
+                      {s.dj} · {s.slots === 0 ? "nothing yet" : `${s.slots} slot${s.slots === 1 ? "" : "s"}`}
                     </span>
                   </span>
                   <span className="line-clamp-2 font-mono text-sm leading-relaxed text-zinc-300">

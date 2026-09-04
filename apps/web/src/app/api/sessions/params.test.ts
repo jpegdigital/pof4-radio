@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULTS, Knobs, SessionParams } from "./params";
+import { SessionParams, SlotBody } from "./params";
 
-/**
- * Two schemas, one each side of the split: creation takes only the ask and the voice; a
- * production rung takes a partial Knobs body where anything not sent lands on the default.
- */
+/** Two bodies: creation takes the ask and the voice; the slot rung takes the browser's clock and, maybe, `again`. */
 
 describe("SessionParams — the ask and the voice, nothing else", () => {
   it("accepts a prompt and a voiceId, trimmed", () => {
@@ -23,26 +20,24 @@ describe("SessionParams — the ask and the voice, nothing else", () => {
   });
 });
 
-describe("Knobs — the tunables, with defaults", () => {
-  it("an empty body → every knob at its default", () => {
-    expect(Knobs.parse({})).toEqual(DEFAULTS);
+describe("SlotBody — the clock, and maybe another take", () => {
+  it("clockMs alone is enough", () => {
+    expect(SlotBody.parse({ clockMs: 31_000_000 })).toEqual({ clockMs: 31_000_000 });
   });
 
-  it("explicit knobs override the defaults", () => {
-    const p = Knobs.parse({ propose: 20, candidates: 3, playlist: 10, min: 6 });
-    expect(p).toEqual({ propose: 20, candidates: 3, playlist: 10, min: 6 });
+  it("again is optional and passes through", () => {
+    expect(SlotBody.parse({ clockMs: 0, again: true })).toEqual({ clockMs: 0, again: true });
   });
 
-  it.each<{ id: string; over: object }>([
-    { id: "propose zero", over: { propose: 0 } },
-    { id: "propose absurd", over: { propose: 999 } },
-    { id: "candidates zero", over: { candidates: 0 } },
-    { id: "candidates beyond the search cap", over: { candidates: 11 } },
-    { id: "playlist zero", over: { playlist: 0 } },
-    { id: "min zero", over: { min: 0 } },
-    { id: "fractional knob", over: { playlist: 7.5 } },
-    { id: "min above playlist", over: { playlist: 8, min: 9 } },
-  ])("rejects $id", ({ over }) => {
-    expect(Knobs.safeParse(over).success).toBe(false);
+  it.each<{ id: string; body: unknown }>([
+    { id: "no clockMs", body: { again: true } },
+    { id: "an empty body", body: {} },
+    { id: "a clock past midnight", body: { clockMs: 86_400_001 } },
+    { id: "a negative clock", body: { clockMs: -1 } },
+    { id: "a fractional clock", body: { clockMs: 1.5 } },
+    { id: "again that is not a boolean", body: { clockMs: 0, again: "yes" } },
+    { id: "not an object", body: null },
+  ])("rejects $id", ({ body }) => {
+    expect(SlotBody.safeParse(body).success).toBe(false);
   });
 });

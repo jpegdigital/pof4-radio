@@ -2,10 +2,11 @@ import { env } from "./env";
 import { sign } from "./sigv4";
 
 /**
- * The clips bucket (Railway's `radio-clips`, S3-compatible): two verbs over `fetch` with the
+ * The clips bucket (Railway's `radio-clips`, S3-compatible): three verbs over `fetch` with the
  * request signed by hand (sigv4.ts). Path-style URLs (`<endpoint>/<bucket>/<key>`). The voice clips
- * live under `sessions/`, the records under `tracks/` (the routes name the keys). Null when the
- * five `BUCKET_*` vars aren't all set — the audio routes answer 503 then.
+ * live under `sessions/`, the tracks under `tracks/` (the routes name the keys). `head` is how the
+ * pull finds bytes it has no row for (a `track` row is rebuilt from the tags, no download). Null
+ * when the five `BUCKET_*` vars aren't all set — the audio routes answer 503 then.
  */
 
 export interface Bucket {
@@ -13,6 +14,8 @@ export interface Bucket {
   open(
     key: string,
   ): Promise<{ body: ReadableStream<Uint8Array>; contentType: string; contentLength: number | null } | null>;
+  /** Whether the key holds bytes, and how many; null when it does not. */
+  head(key: string): Promise<{ contentLength: number | null } | null>;
 }
 
 interface Config {
@@ -98,6 +101,16 @@ function createBucket(c: Config): Bucket {
         contentType: res.headers.get("content-type") ?? "application/octet-stream",
         contentLength: len ? Number(len) : null,
       };
+    },
+    async head(key) {
+      const url = urlOf(key);
+      const headers = await sign({ ...creds, method: "HEAD", url });
+      const res = await fetch(url, { method: "HEAD", headers });
+      await res.arrayBuffer().catch(() => {});
+      if (res.status === 404) return null;
+      if (!res.ok) throw await failure(`head ${key}`, res);
+      const len = res.headers.get("content-length");
+      return { contentLength: len ? Number(len) : null };
     },
   };
 }

@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radio — the domain model</title>
+<style>
+  :root { color-scheme: light dark;
+    --bg:#fbfaf7; --fg:#1f1d1a; --muted:#6b665e; --line:#e4e0d8; --code:#f2efe8; --accent:#b4531a; --nav:#f5f2ec;
+    --amber:#b45309; --amberbg:#fdf3e2; --good:#166534; --goodbg:#e8f3e8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161513; --fg:#e8e4dc; --muted:#a09a90; --line:#2c2a26; --code:#211f1c; --accent:#f0a06a; --nav:#1c1a17;
+    --amber:#fbbf24; --amberbg:#3a2a10; --good:#86efac; --goodbg:#122a17; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 16px/1.6 Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  .wrap { display:grid; grid-template-columns: 260px minmax(0,1fr); min-height:100vh; }
+  nav { position:sticky; top:0; height:100vh; overflow:auto; padding:28px 20px; background:var(--nav); border-right:1px solid var(--line);
+        font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  nav .t { font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:12px; font-size:11px; }
+  nav a { display:block; color:var(--fg); text-decoration:none; padding:3px 0; }
+  nav a.l3 { padding-left:14px; color:var(--muted); }
+  nav a:hover { color:var(--accent); }
+  main { padding: 48px 56px 96px; max-width: 960px; }
+  h1 { font-size:2.2rem; line-height:1.15; margin:0 0 .3em; letter-spacing:-.01em; }
+  h2 { font-size:1.5rem; margin:2.4em 0 .6em; padding-top:.6em; border-top:1px solid var(--line); }
+  h3 { font-size:1.15rem; margin:1.8em 0 .5em; }
+  h1+p { color:var(--muted); font-style:italic; }
+  p, li { max-width: 76ch; }
+  a { color:var(--accent); }
+  code { font: 0.86em/1.5 ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; background:var(--code); padding:.1em .35em; border-radius:4px; }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:14px 16px; overflow-x:auto; font-size:.8rem; line-height:1.45; position:relative; }
+  pre code { background:none; padding:0; font-size:inherit; }
+  pre[data-lang]::before { content: attr(data-lang); position:absolute; top:6px; right:10px; font: 10px ui-sans-serif, system-ui; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; font-size:.9rem; margin:1em 0; }
+  th, td { text-align:left; vertical-align:top; padding:8px 12px; border-bottom:1px solid var(--line); }
+  th { font: 600 .78rem ui-sans-serif, system-ui; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .note { border-left:3px solid var(--accent); padding:.4em 1em; margin:1.2em 0; background:var(--code); border-radius:0 8px 8px 0; }
+  .tag { display:inline-block; font: 11px/1.6 ui-sans-serif, system-ui; border-radius:999px; padding:0 .7em; vertical-align:2px; letter-spacing:.04em; }
+  .built { color:var(--good); background:var(--goodbg); border:1px solid var(--good); }
+  .decided { color:var(--amber); background:var(--amberbg); border:1px solid var(--amber); }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } nav { position:static; height:auto; } main { padding:24px 20px 64px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <div class="t">Radio — the domain model</div>
+  <a href="#breath">In one breath</a>
+  <a href="#words">1. The words</a>
+  <a href="#session">2. session</a>
+  <a href="#slot">3. session_slot</a>
+  <a class="l3" href="#slot-life">The life of a slot</a>
+  <a class="l3" href="#slot-shape">The row</a>
+  <a class="l3" href="#slot-status">Status is derived</a>
+  <a class="l3" href="#slot-kinds">The kinds</a>
+  <a href="#track">4. track</a>
+  <a class="l3" href="#given-judged">Given and judged</a>
+  <a href="#clock">5. The clock</a>
+  <a href="#outside">6. What lives outside the database</a>
+  <a href="#gone">7. What goes away</a>
+  <div class="t" style="margin-top:24px">Companion</div>
+  <a href="slot-first.md">slot-first.md — the refactor</a>
+  <a href="sessions.html">sessions.html — the API dance</a>
+</nav>
+<main>
+
+<h1>Radio — the domain model</h1>
+<p>Decided 2026-09-04 in the slot-first design session; in the schema since 2026-09-04 (<code>db/schema/*.sql</code> is the source of truth, this page the reading of it). Replaced <code>api.html</code>, which described the segment world this one retires. The refactor that got us here is narrated in <a href="slot-first.md">slot-first.md</a>; how the pieces talk is <a href="sessions.html">sessions.html</a>.</p>
+
+<h2 id="breath">In one breath</h2>
+<p>A <strong>session</strong> is one listening: the ask and the voice. It owns <strong>slots</strong>, numbered from 1, each one clip over one track — the unit of the show and the only unit there is. A slot is born as a <em>proposal</em> (the proposer names a song and says why), grows its <em>hits</em> (what Qobuz found for that name), and is then written whole in one call: the <em>pick</em> (which hit), the <em>chart</em> (the writer's read of the track: ramp, post, outro, feel), the <em>copy</em> (the words) and the <em>timing</em> (two numbers). Then it is voiced: the <em>clip</em>. The <strong>track</strong> is the library's, not the session's: one row per record ever pulled into the bucket, carrying what Qobuz says about it and nothing anyone guessed. There is no playlist as a thing of its own — the playlist is the slots that have not been written yet. There are no segments: a break is a kind of slot, and the clock says which slots are breaks. Status is never stored; it is derived from what is present. Everything produced is kept forever.</p>
+
+<pre data-lang="shape"><code>session ─┬─ session_slot (seq 1)   ← always a break
+         ├─ session_slot (seq 2)
+         ├─ …
+         └─ session_slot (seq N)   ← a break every breakEvery slots
+
+track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot points at it by its pick</code></pre>
+
+<h2 id="words">1. The words</h2>
+<p>Radio's word where radio has one, Qobuz's where the thing is Qobuz's. Code uses these names and no synonyms: no <em>record</em>, <em>song</em>, <em>card</em>, <em>candidate</em>, <em>playlist</em>, <em>segment</em>, <em>program</em>.</p>
+<table>
+<tr><th>Word</th><th>What it is</th><th>Lives on</th></tr>
+<tr><td><strong>track</strong></td><td>One Qobuz track, keyed by its Qobuz id: the entity, and the bytes in the bucket.</td><td><code>track</code></td></tr>
+<tr><td><strong>tags</strong></td><td>What Qobuz says about a track: title, artists, album, art, duration. Given, never judged.</td><td><code>track</code>; inside each hit before the pick</td></tr>
+<tr><td><strong>slot</strong></td><td>One clip over one track at position <code>seq</code>. The unit of the show.</td><td><code>session_slot</code></td></tr>
+<tr><td><strong>proposal</strong></td><td>The proposer's ask for a slot: title, artist, why. Exists before any hit.</td><td><code>session_slot</code></td></tr>
+<tr><td><strong>hits</strong></td><td>The Qobuz search results for a proposal, tags included — the versions the writer may pick from.</td><td><code>session_slot.hits</code></td></tr>
+<tr><td><strong>pick</strong></td><td>The hit the writer chose: its Qobuz id.</td><td><code>session_slot.qobuz_id</code></td></tr>
+<tr><td><strong>chart</strong></td><td>The writer's read of the track for this slot: <strong>ramp</strong> (the instrumental run before the vocal), <strong>post</strong> (where the vocal lands, and whether the writer is sure), <strong>outro</strong> (cold or fade, and how long), and the <strong>feel</strong> (energy, tempo, mood). Judged.</td><td><code>session_slot</code></td></tr>
+<tr><td><strong>copy</strong></td><td>The words: the kind, the lead line, everything said, the legal ID when it is due, and why this treatment here.</td><td><code>session_slot</code></td></tr>
+<tr><td><strong>timing</strong></td><td>The two numbers: how far before the voice ends the record starts under it (a break), how far into the record the voice comes in (a talkup).</td><td><code>session_slot</code></td></tr>
+<tr><td><strong>clip</strong></td><td>The voiced copy, in the bucket.</td><td><code>session_slot.clip_key</code>, <code>voiced_at</code></td></tr>
+<tr><td><strong>fill</strong></td><td>One proposer call's batch of new slots appended to the show.</td><td>a rung, not a row</td></tr>
+<tr><td><strong>plan</strong></td><td>The deck's schedule for one slot, laid in the browser from the chart, the timing and the house constants.</td><td><code>plan.ts</code>, never stored</td></tr>
+<tr><td><strong>the clock</strong></td><td>The station's settings that shape the show: how often a break falls, how many slots a fill adds, how few unwritten slots trigger the next fill.</td><td><code>settings</code></td></tr>
+</table>
+
+<h2 id="session">2. <code>session</code></h2>
+<p>Unchanged. Created instantly by <code>POST /api/sessions</code>; the ask, verbatim, and the voice. Doubles as the production lock: the fill rung and the slot rung take <code>select … for update nowait</code> on it, so at most one thing produces for a session at a time and a second producer gets a 409. The pull of a track is not under it — the track is the library's.</p>
+<table>
+<tr><th>Column</th><th>Type</th><th>What it is</th></tr>
+<tr><td><code>id</code></td><td>uuid</td><td>Primary key.</td></tr>
+<tr><td><code>prompt</code></td><td>text</td><td>The listener's ask, verbatim.</td></tr>
+<tr><td><code>voice_id</code></td><td>text</td><td>The roster voice. The whole session is voiced in it.</td></tr>
+<tr><td><code>created_at</code>, <code>updated_at</code></td><td>timestamptz</td><td>Bookkeeping.</td></tr>
+</table>
+
+<h2 id="slot">3. <code>session_slot</code></h2>
+<p>One clip over one track. The whole show is this table, one row per position, and the row is written in phases by producers that never overlap in columns.</p>
+
+<h3 id="slot-life">The life of a slot</h3>
+<table>
+<tr><th>Phase</th><th>Written by</th><th>Lands</th><th>When</th></tr>
+<tr><td><strong>proposed</strong></td><td>the fill rung: one Claude call (the proposer), then a Qobuz search per proposal in parallel</td><td>the proposal and its hits</td><td>at open, and whenever the unwritten slots run low</td></tr>
+<tr><td><strong>written</strong></td><td>the slot rung: one Claude call (the writer)</td><td>the pick, the chart, the copy, the timing</td><td>one slot at a time, in order, just ahead of play</td></tr>
+<tr><td><strong>voiced</strong></td><td>the slot rung, right after the write: ElevenLabs</td><td>the clip</td><td>same request; <code>{ again: true }</code> re-voices only</td></tr>
+</table>
+<p>A proposal with no streamable hit never becomes a row: the fill closes the gap, and asks the proposer for a couple more than it needs so a miss costs nothing. The pick is the first moment the track is known, so the track's pull is fired the moment the slot response lands and runs while the clip is voiced. While slot <em>k</em> plays, slot <em>k+1</em> is written, pulled and voiced.</p>
+
+<h3 id="slot-shape">The row</h3>
+<pre data-lang="sql"><code>create table session_slot (
+  id            uuid primary key default gen_random_uuid(),
+  session_id    uuid not null references session (id) on delete cascade,
+  seq           integer not null,          -- 1-based position in the show
+
+  -- the proposal, landed by the fill rung
+  title         text not null,             -- the song as the proposer named it
+  artist        text not null,
+  why           text not null,             -- the proposer's line: why this song, here
+  hits          jsonb not null,            -- [{id, title, artists, album, image, durationMs}] — the versions Qobuz found
+
+  -- the pick, the chart, the copy and the timing: one Claude call, one update, immutable after
+  qobuz_id      text,                      -- the pick: one of hits[].id
+  ramp_ms       integer,                   -- chart: the instrumental run before the vocal; 0 if it opens on the vocal
+  sure          boolean,                   -- chart: the writer is confident of ramp_ms to within a second or two
+  post          text,                      -- chart: where the vocal lands, in words — never the lyric
+  outro         text,                      -- chart: cold | fade
+  outro_ms      integer,                   -- chart: how long the ending runs
+  energy        integer,                   -- chart, feel: 1 (a ballad) to 5 (a floor-filler)
+  tempo         text,                      -- chart, feel: down | mid | up
+  mood          text,                      -- chart, feel: one line
+  kind          text,                      -- copy: break | talkup | sweeper | segue
+  words         text,                      -- copy: everything said; null for a segue
+  lead_line     text,                      -- copy, breaks: the one sentence that talks the record in, said last
+  legal_id      text,                      -- copy: said dry before the bed; the server's, when it is due
+  treatment     text,                      -- copy: the writer's line: why this kind, here
+  fallback      jsonb,                     -- {from, to, reason} when a house rule stepped the kind down
+  record_under_ms integer,                 -- timing, breaks: how far before the voice ends the record starts under it
+  voice_in_ms   integer,                   -- timing, talkups: how far into the record the voice comes in
+  thinking      text,                      -- the writer's reasoning, a receipt; never on the wire
+
+  -- the clip
+  clip_key      text,                      -- bucket key; written only after the PUT succeeded
+  voiced_at     timestamptz,               -- set ⇒ done, nothing more will ever happen to this slot
+
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  unique (session_id, seq)
+);</code></pre>
+
+<h3 id="slot-status">Status is derived, never stored</h3>
+<table>
+<tr><th>Status</th><th>Derivation</th><th>The client can…</th></tr>
+<tr><td><code>proposed</code></td><td>row exists, <code>qobuz_id</code> null</td><td>show the title and artist as "coming up"; request the slot</td></tr>
+<tr><td><code>written</code></td><td><code>qobuz_id</code> set, <code>voiced_at</code> null</td><td>paint the tags from the pick, show the rundown's words, fire the pull</td></tr>
+<tr><td><code>voiced</code></td><td><code>voiced_at</code> set</td><td>play it, once the track's bytes are held</td></tr>
+</table>
+<p>The pick's tags come from the hit it names, so the snapshot never joins <code>track</code> for words or art — only for whether the bytes are held (<code>pulled</code>, one <code>where id = any(…)</code> across the session). Readiness of the clip is as before: <code>clip_key</code> present always means the media exists; <code>voiced_at</code> without a key is a segue, done with nothing to say.</p>
+
+<h3 id="slot-kinds">The kinds</h3>
+<p>The writer chooses the kind, except where the clock does: slot 1 is a break, and so is every slot the clock names. The house rules check the writer's timing against the writer's own chart and the house limits, stepping a kind down and recording why in <code>fallback</code>.</p>
+<table>
+<tr><th>Kind</th><th>What you hear</th><th>Copy needs</th><th>Timing</th></tr>
+<tr><td><code>break</code></td><td>Voice over a bed, the last line talks the record in under it. Legal ID first, dry, when it is due. The weather and the headlines are in the brief only here.</td><td><code>words</code>, <code>lead_line</code></td><td><code>record_under_ms</code></td></tr>
+<tr><td><code>talkup</code></td><td>The record starts full; the voice comes in over the ramp and ends a beat before the post.</td><td><code>words</code></td><td><code>voice_in_ms</code></td></tr>
+<tr><td><code>sweeper</code></td><td>A short dry ID, then a hard intro.</td><td><code>words</code></td><td>—</td></tr>
+<tr><td><code>segue</code></td><td>Straight out of the last record.</td><td>nothing</td><td>—</td></tr>
+</table>
+
+<h2 id="track">4. <code>track</code></h2>
+<p>One row per record the bucket holds: the MP3 320 pulled from Qobuz once and kept forever, shared by every session that plays it. Keyed by the Qobuz id, the id a slot's pick carries. A row exists only after the <code>PUT</code> succeeded, so a row always means the bytes exist. The tags are copied from the picked hit at pull time, so the table reads as the library on its own.</p>
+<table>
+<tr><th>Column</th><th>Type</th><th>What it is</th></tr>
+<tr><td><code>id</code></td><td>text</td><td>The Qobuz track id.</td></tr>
+<tr><td><code>title</code>, <code>artists</code>, <code>album</code>, <code>image</code>, <code>duration_ms</code></td><td>text, jsonb, text, text, integer</td><td>The tags, as Qobuz gave them. The art is Qobuz's CDN URL, not copied, until that breaks.</td></tr>
+<tr><td><code>audio_key</code></td><td>text</td><td><code>tracks/&lt;id&gt;.mp3</code> in the bucket.</td></tr>
+<tr><td><code>bytes</code></td><td>integer</td><td>The MP3's size, for the bill.</td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>Bookkeeping.</td></tr>
+</table>
+
+<h3 id="given-judged">Given and judged</h3>
+<p>The line between the two tables is not <em>song versus show</em>; it is <em>given versus judged</em>. What Qobuz hands us is given and lives on <code>track</code>, stable because nobody guessed it. What the writer decides — its read of the track as much as what it says over it — is judged and lives on the slot that judged it. Twelve words over a 14-second ramp and forty words over the same ramp are different charts of the same track, and both are right for their slot. Nothing from Claude ever lands on <code>track</code>. Earlier charts of the same track are offered to the writer in its brief as other DJs' notes, read-only; a session's charts never drift because a later session read the record differently. If a ramp is ever <em>measured</em>, that number is given, goes on <code>track</code>, and the brief says so.</p>
+
+<h2 id="clock">5. The clock</h2>
+<p>Three settings rows shape every show; none is a client knob.</p>
+<table>
+<tr><th>Setting</th><th>What it does</th><th>Default</th></tr>
+<tr><td><code>breakEvery</code></td><td>A break falls at slot 1 and every <code>breakEvery</code> slots after (1, 1 + <em>k</em>, 1 + 2<em>k</em> …). Between breaks the writer chooses.</td><td>5</td></tr>
+<tr><td><code>fill</code></td><td>How many slots a fill appends. The proposer is asked for a couple more to absorb misses.</td><td>6</td></tr>
+<tr><td><code>lowWater</code></td><td>When the count of proposed-but-unwritten slots drops to this, the client fires the next fill.</td><td>2</td></tr>
+</table>
+
+<h2 id="outside">6. What lives outside the database</h2>
+<table>
+<tr><th>Thing</th><th>Where</th><th>Keyed by</th></tr>
+<tr><td>The clips</td><td>the <code>radio-clips</code> bucket</td><td><code>sessions/&lt;sessionId&gt;/&lt;seq&gt;.mp3</code>, immutable; another take gets a new key</td></tr>
+<tr><td>The tracks</td><td>the same bucket</td><td><code>tracks/&lt;qobuz id&gt;.mp3</code>, immutable, one per record ever played</td></tr>
+<tr><td>The bed</td><td><code>public/bed.mp3</code></td><td>static</td></tr>
+<tr><td>The identity, the voice roster, the clock</td><td>the <code>settings</code> table, edited on <code>/settings</code></td><td>setting name; read per request, throw if missing</td></tr>
+<tr><td>The plan and the playback</td><td>the browser — the clips and the tracks streamed from the bucket through the app, mixed in one Web Audio graph; Qobuz is never touched at play time</td><td>—</td></tr>
+<tr><td>The Qobuz token</td><td>the env (<code>QOBUZ_TOKEN</code>), the listener's own web-player token</td><td>rotates when Qobuz changes auth</td></tr>
+</table>
+
+<h2 id="gone">7. What goes away</h2>
+<table>
+<tr><th>Thing</th><th>Why</th></tr>
+<tr><td><code>session_segment</code></td><td>A segment was a break and its songs. The break is now a kind of slot and the clock places it; the playlist is the unwritten slots. Nothing is left for the segment to hold.</td></tr>
+<tr><td><code>card</code></td><td>The card was the chart made in a separate call and cached per track. The chart is now made in the same call as the copy, because the chart only ever serves the copy; a cross-check between two calls was the only thing the separate call bought. Prior slots are the cache.</td></tr>
+<tr><td>The compose call</td><td>The proposer locks the order; there is nothing left to compose. The writer picks the version.</td></tr>
+<tr><td>The program rung and the audio rung</td><td>Folded into one slot rung: pick, chart, copy, timing, clip, one request.</td></tr>
+<tr><td><code>station</code>, <code>segment</code></td><td>The first build's, unused since 2026-09-03.</td></tr>
+</table>
+
+</main>
+</div>
+</body>
+</html>
