@@ -132,6 +132,131 @@ export function toTrack(t: RawTrack): Track {
   };
 }
 
+// ---- the catalog, pure: what the proposer's lookups read --------------------------------------
+
+/** An album as `catalog/search` and `album/get` describe it. */
+export interface Album {
+  id: string;
+  /** Title with the version folded in, as for a track. */
+  title: string;
+  artist: string;
+  tracks: number;
+  /** ISO date of the original release; how the proposer tells a new record from its memory. */
+  released: string;
+  streamable: boolean;
+}
+
+export interface RawAlbum {
+  id: string;
+  title: string;
+  version?: string | null;
+  artist?: { name: string } | null;
+  tracks_count: number;
+  release_date_original: string;
+  streamable: boolean;
+}
+
+export function toAlbum(a: RawAlbum): Album {
+  const version = a.version?.trim();
+  return {
+    id: a.id,
+    title: version ? `${a.title} (${version})` : a.title,
+    artist: a.artist?.name ?? "",
+    tracks: a.tracks_count,
+    released: a.release_date_original,
+    streamable: a.streamable,
+  };
+}
+
+/** One track as `album/get` lists it: its place on the record, no album of its own. */
+export interface AlbumTrack {
+  id: string;
+  title: string;
+  artist: string;
+  disc: number;
+  number: number;
+  durationMs: number;
+  streamable: boolean;
+}
+
+export interface RawAlbumTrack {
+  id: number;
+  title: string;
+  version?: string | null;
+  duration: number;
+  streamable: boolean;
+  performer?: { name: string } | null;
+  track_number: number;
+  media_number: number;
+}
+
+export function toAlbumTrack(t: RawAlbumTrack): AlbumTrack {
+  const version = t.version?.trim();
+  return {
+    id: String(t.id),
+    title: version ? `${t.title} (${version})` : t.title,
+    artist: t.performer?.name ?? "",
+    disc: t.media_number,
+    number: t.track_number,
+    durationMs: t.duration * 1000,
+    streamable: t.streamable,
+  };
+}
+
+export interface Artist {
+  id: string;
+  name: string;
+  albums: number;
+}
+
+export interface Playlist {
+  id: string;
+  name: string;
+  tracks: number;
+  /** The playlist's owner: Qobuz's own, or a listener's. */
+  by: string;
+}
+
+/** What one `catalog/search` answers: every bucket present, empty when the search was typed to another. */
+export interface Found {
+  albums: Album[];
+  tracks: Track[];
+  artists: Artist[];
+  playlists: Playlist[];
+}
+
+export interface RawFound {
+  albums?: { items: RawAlbum[] };
+  tracks?: { items: RawTrack[] };
+  artists?: { items: { id: number; name: string; albums_count: number }[] };
+  playlists?: {
+    items: { id: number; name: string; tracks_count: number; owner?: { name: string } | null }[];
+  };
+}
+
+/** The four buckets, streamable albums and tracks only; a bucket the search did not answer is empty. */
+export function toFound(r: RawFound): Found {
+  return {
+    albums: (r.albums?.items ?? []).map(toAlbum).filter((a) => a.streamable),
+    tracks: (r.tracks?.items ?? []).map(toTrack).filter((t) => t.streamable),
+    artists: (r.artists?.items ?? []).map((a) => ({
+      id: String(a.id),
+      name: a.name,
+      albums: a.albums_count,
+    })),
+    playlists: (r.playlists?.items ?? []).map((p) => ({
+      id: String(p.id),
+      name: p.name,
+      tracks: p.tracks_count,
+      by: p.owner?.name ?? "",
+    })),
+  };
+}
+
+/** What a catalog search can be asked for: one bucket, or all four at once. */
+export const FIND_KINDS = ["all", "albums", "tracks", "artists", "playlists"] as const;
+export type FindKind = (typeof FIND_KINDS)[number];
+
 // ---- the client ---------------------------------------------------------------------------------
 
 export interface QobuzConfig {
@@ -273,6 +398,23 @@ export function qobuz(cfg: QobuzConfig) {
         await app(),
       );
       return r.tracks.items.map(toTrack).filter((t) => t.streamable);
+    },
+
+    /** `catalog/search` typed to one bucket, or untyped for all four: the proposer's lookup. */
+    async find(q: string, kind: FindKind, limit: number): Promise<Found> {
+      const params: Record<string, string> = { query: q, limit: String(limit) };
+      if (kind !== "all") params.type = kind;
+      return toFound(await call<RawFound>("catalog/search", params, await app()));
+    },
+
+    /** `album/get`: the record and its tracks in order. */
+    async album(albumId: string): Promise<{ album: Album; tracks: AlbumTrack[] }> {
+      const r = await call<RawAlbum & { tracks: { items: RawAlbumTrack[] } }>(
+        "album/get",
+        { album_id: albumId },
+        await app(),
+      );
+      return { album: toAlbum(r), tracks: r.tracks.items.map(toAlbumTrack) };
     },
 
     /** The record's CDN URL, MP3 320, good for minutes — fetch it now. */

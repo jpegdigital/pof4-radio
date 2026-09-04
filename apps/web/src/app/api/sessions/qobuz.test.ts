@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileUrlSig, parseBundle, toTrack } from "./qobuz";
+import { fileUrlSig, parseBundle, toAlbum, toAlbumTrack, toFound, toTrack } from "./qobuz";
 
 /**
  * A stand-in for play.qobuz.com's bundle.js: the three shapes the scrape reads, with secrets built
@@ -101,5 +101,117 @@ describe("toTrack", () => {
 
   it("has no image when the album has none", () => {
     expect(toTrack({ ...raw, album: { ...raw.album, image: null } }).image).toBeNull();
+  });
+});
+
+describe("toAlbum", () => {
+  const raw = {
+    id: "fraij70hsn3sv",
+    title: "Age of the Exhibitionist",
+    version: null,
+    artist: { name: "Rebecca Black" },
+    tracks_count: 12,
+    release_date_original: "2026-09-04",
+    streamable: true,
+  };
+
+  it("flattens the album hit to what the proposer reads", () => {
+    expect(toAlbum(raw)).toEqual({
+      id: "fraij70hsn3sv",
+      title: "Age of the Exhibitionist",
+      artist: "Rebecca Black",
+      tracks: 12,
+      released: "2026-09-04",
+      streamable: true,
+    });
+  });
+
+  it.each([
+    ["a version folds into the title", { ...raw, version: "Deluxe" }, "Age of the Exhibitionist (Deluxe)"],
+    ["a blank version does not", { ...raw, version: "  " }, "Age of the Exhibitionist"],
+  ])("%s", (_id, give, want) => {
+    expect(toAlbum(give).title).toBe(want);
+  });
+
+  it("has no artist name when the album carries none", () => {
+    expect(toAlbum({ ...raw, artist: null }).artist).toBe("");
+  });
+});
+
+describe("toAlbumTrack", () => {
+  const raw = {
+    id: 429119774,
+    title: "Anaheim Star",
+    version: null,
+    duration: 166,
+    streamable: true,
+    performer: { name: "Rebecca Black" },
+    track_number: 1,
+    media_number: 1,
+  };
+
+  it("keeps the position on the record", () => {
+    expect(toAlbumTrack(raw)).toEqual({
+      id: "429119774",
+      title: "Anaheim Star",
+      artist: "Rebecca Black",
+      disc: 1,
+      number: 1,
+      durationMs: 166_000,
+      streamable: true,
+    });
+  });
+
+  it("folds the version into the title", () => {
+    expect(toAlbumTrack({ ...raw, version: "Live" }).title).toBe("Anaheim Star (Live)");
+  });
+});
+
+describe("toFound", () => {
+  const track = {
+    id: 1,
+    title: "Friday",
+    duration: 228,
+    streamable: true,
+    performer: { name: "Rebecca Black" },
+    album: { title: "Friday", artist: { name: "Rebecca Black" }, image: null },
+  };
+  const album = {
+    id: "a1",
+    title: "SALVATION",
+    version: null,
+    artist: { name: "Rebecca Black" },
+    tracks_count: 7,
+    release_date_original: "2025-02-27",
+    streamable: true,
+  };
+
+  it("reads all four buckets", () => {
+    const out = toFound({
+      albums: { items: [album] },
+      tracks: { items: [track] },
+      artists: { items: [{ id: 1057763, name: "Rebecca Black", albums_count: 53 }] },
+      playlists: {
+        items: [{ id: 37356567, name: "Rebecca Black", tracks_count: 158, owner: { name: "Qobuz" } }],
+      },
+    });
+    expect(out.albums.map((a) => a.id)).toEqual(["a1"]);
+    expect(out.tracks.map((t) => t.id)).toEqual(["1"]);
+    expect(out.artists).toEqual([{ id: "1057763", name: "Rebecca Black", albums: 53 }]);
+    expect(out.playlists).toEqual([{ id: "37356567", name: "Rebecca Black", tracks: 158, by: "Qobuz" }]);
+  });
+
+  it("a typed search answers with one bucket; the others are empty, never missing", () => {
+    const out = toFound({ albums: { items: [album] } });
+    expect(out).toEqual({ albums: [toAlbum(album)], tracks: [], artists: [], playlists: [] });
+  });
+
+  it("drops what the plan cannot play", () => {
+    const out = toFound({
+      albums: { items: [{ ...album, streamable: false }] },
+      tracks: { items: [{ ...track, streamable: false }] },
+    });
+    expect(out.albums).toEqual([]);
+    expect(out.tracks).toEqual([]);
   });
 });

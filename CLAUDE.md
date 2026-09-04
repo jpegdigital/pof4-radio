@@ -57,7 +57,8 @@ Three places, each owning what it alone needs:
   pool drags `pg` into the browser bundle and the build fails).
 - **`apps/web/src/app/api/sessions/`** — the server, one folder: the routes and, beside them, the
   files they read: `params` (the two bodies), `shapes` (the zod each Claude call is held to:
-  `Proposal`, `Written`), `fill` (the proposer call, the search, the dedupe), `write` (the writer's
+  `Proposal`, `Written`), `fill` (the proposer call with its two catalog tools, the search, the
+  dedupe), `write` (the writer's
   brief and call), `rules` (the clock's law: `isBreak`, `legalIdDue`, `checkSlot`), `qobuz` (search
   and the pull, on the listener's token), `weather`, `headlines`, `doc` (the slot on the wire). Tests
   sit next to the pure parts.
@@ -92,9 +93,14 @@ idempotent and under the session's row lock (`for update nowait`; a second produ
 the track pull, lock-free:
 
 - `POST …/fill` — Claude **proposes** `clock.fill + 2` songs by name knowing what has played and what
-  is coming up (a repeat is dropped), Qobuz search finds each one's versions, and one row per proposal
-  with a hit is appended: the proposal and its hits, nothing judged. Nothing found → 502 with the
-  reasons.
+  is coming up (a repeat is dropped), **with the catalog in the room**: two tools on the call,
+  `search` (Qobuz `catalog/search`, typed to albums / tracks / artists / playlists or untyped for
+  all four) and `album` (`album/get`, the tracks in order), so a record it has never heard of — a
+  release after its training — is a lookup, not a guess, and an album named in the ask is played in
+  its order across fills (the SDK's tool runner loops the lookups, `LOOKUPS` at most, and the last
+  message is the structured answer). Then Qobuz search finds each one's versions, and one row per
+  proposal with a hit is appended: the proposal and its hits, nothing judged. Nothing found → 502
+  with the reasons.
 - `POST …/slots/:seq` `{ clockMs, again? }` — **write, then voice**, one request. The clock says
   whether this slot is the break (`isBreak`: slot 1 and every `breakEvery` after) and whether the
   legal ID is due (`legalIdDue`: slot 1, or the hour turned since the last break). The brief carries
@@ -122,8 +128,10 @@ the track pull, lock-free:
 missing row is a fault naming it. Defaults as seeded: 5, 6, 2.
 
 **The prompts are inline** at each call site (`fill.ts`, `write.ts`) — structured outputs via
-`messages.parse` + `zodOutputFormat`, one zod shape per call in `shapes.ts`; the fill's count is
-enforced with `numbered(key, n, item)` (song1…songN) because the grammar does not bound arrays.
+`messages.parse` + `zodOutputFormat` for the writer, `beta.messages.toolRunner` +
+`betaZodOutputFormat` for the proposer (tools and a shape on one call; the last message's text is
+parsed by hand), one zod shape per call in `shapes.ts`; the fill's count is enforced with
+`numbered(key, n, item)` (song1…songN) because the grammar does not bound arrays.
 
 **The loop lives in the browser, one slot ahead.** The session page fetches the snapshot and asks
 `nextMove` (`loop.ts`, pure) for the one call: a fill when there are no slots or the proposed ones
@@ -158,10 +166,10 @@ start; every rule for their coming apart is pure and tested in `transport.ts`.
   clone → `git add --renormalize .` once.
 - Node via fnm (`.node-version`), pnpm workspaces. `pnpm check` (= lint + format:check + typecheck +
   test) then `pnpm --filter web build` is the pre-push gate; CI runs the same.
-- Tests: pure logic only (`*.test.ts` next to the code: the rules, the shapes, the fill's dedupe and
-  search query, the writer's brief, the slot on the wire, the clock, the loop, the plan, the
-  transport, the weather and headline readers, the roster, the Qobuz bundle parser and signature, the
-  SigV4 signer against the AWS vectors). Anything needing Postgres, Qobuz, Claude, ElevenLabs or the
+- Tests: pure logic only (`*.test.ts` next to the code: the rules, the shapes, the fill's dedupe,
+  search query, brief and the text its tools hand the proposer, the writer's brief, the slot on the
+  wire, the clock, the loop, the plan, the transport, the weather and headline readers, the roster,
+  the Qobuz bundle parser, signature and catalog parsers, the SigV4 signer against the AWS vectors). Anything needing Postgres, Qobuz, Claude, ElevenLabs or the
   bucket is verified live: `apps/web/scripts/bucket-smoke.mts` proves the signer (PUT, GET, HEAD)
   against the real bucket, `qobuz-smoke.mts` the whole track path against Qobuz (search → signed URL
   → the MP3 in the temp dir), each run with plain `node` under `op run` — so nothing they import may
