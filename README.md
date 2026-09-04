@@ -3,18 +3,18 @@
 An AI DJ over Spotify. See `CLAUDE.md` for the shape and the rules.
 
 ```
-apps/web         Next.js — Guard gate, the station (Spotify sign-in, state machine + player: all in the browser),
-                 /api/station/next (the DJ) and /api/tts (the voice)
-packages/db      Postgres: declarative schema (schema/*.sql via pg-delta) + typed queries
-packages/dj      The DJ: prompt, tools, the Claude loop, history trimming/caching (pure, tested)
-packages/spotify Spotify Web API: client-credentials (server) + PKCE user flow (browser), search, play
+apps/web         Next.js — the desk (/), the session page (/sessions/:id: the loop and the deck, all in the
+                 browser), the sessions API (/api/sessions/*: create, snapshot, three rungs), the control room
+                 (/settings). Lib lives at the level that uses it: app/(app)/lib, app/api/sessions, src/lib.
+db               The declarative Postgres schema (schema/*.sql, diffed and applied with pg-delta) and its three
+                 scripts: schema.mts (plan / apply), sql.mts (one read-only query), clear.mts (wipe sessions)
 ```
 
 ## Run locally
 
 ```sh
 fnm use && corepack enable && pnpm install
-pnpm db:plan && pnpm db:apply        # first time, and after any schema/*.sql change
+pnpm db:plan && pnpm db:apply        # first time, and after any db/schema/*.sql change
 pnpm dev                             # https://dev.radio.pof4.com:3000
 ```
 
@@ -29,10 +29,11 @@ One-time per machine:
 
 ## Status
 
-The loop works end to end: prompt → Run → the DJ opens the show → 3–4 tracks → a bridge into the
-next block, forever, one segment ahead. Stop/Run, transport (skip talk, prev/next, pause), voice
-settings in the page. See `specs/001-client-driven-station/` for the spec, plan and quickstart
-(the live validation scenarios). `pnpm db:clear` wipes stations and segments.
+A prompt becomes a session: the playlist rung composes 4 records, the program rung writes the
+break and every talk-up, sweeper and segue in one call (with the weather and the headlines in the
+brief), the audio rung voices each slot as the deck reaches it. The deck plays one cue at a time on
+three lanes — mic, bed, record. Next: open segment 2 while segment 1 is on air. `docs/sessions.html`
+is the API dance, `docs/api.html` the data model. `pnpm db:clear` wipes the tables.
 
 ## Deploy
 

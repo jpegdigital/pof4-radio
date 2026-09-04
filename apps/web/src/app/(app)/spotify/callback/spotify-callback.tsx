@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { finishLogin } from "@/components/station/spotify-account";
+import { finishLogin } from "../../lib/spotify-account";
 
 /** Where the login began (the session page sets it); home otherwise. */
 export const RETURN_KEY = "radio.spotify.return";

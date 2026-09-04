@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SpotifyDevice } from "@/components/station/use-spotify-device";
-import { getBed, getClip } from "@/components/station/voice-cache";
+import type { SpotifyDevice } from "../../lib/use-spotify-device";
+import { getBed, getClip } from "../../lib/voice-cache";
 import {
   BED_GAIN,
   bedGainAt,

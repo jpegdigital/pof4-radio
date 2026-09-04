@@ -1,13 +1,11 @@
-import { clockOf, headlinesText, weatherText } from "@radio/dj";
 import { z } from "zod";
-import { db } from "@/lib/db";
-import { fetchHeadlines } from "@/lib/producer/headlines";
-import { fetchWeather, WEATHER_PLACE } from "@/lib/producer/weather";
-import { loadIdentity } from "@/lib/prompts";
-import { loadVoices } from "@/lib/voices";
+import { pool } from "@/lib/db";
+import { loadIdentity, loadVoices } from "@/lib/settings";
 import { ensureCards } from "../../../../cards";
 import { SLOT_COLUMNS, SLOT_FROM, type SlotRow, slotDoc } from "../../../../doc";
-import { legalIdOf, produceProgram, type ProgramTrack } from "../../../../program";
+import { fetchHeadlines, headlinesText } from "../../../../headlines";
+import { clockOf, legalIdOf, produceProgram, type ProgramTrack } from "../../../../program";
+import { fetchWeather, WEATHER_PLACE, weatherText } from "../../../../weather";
 
 /**
  * POST /api/sessions/:id/segments/:num/program — one rung, idempotent: ensure this segment's
@@ -67,7 +65,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[id]/s
   const parsed = Body.safeParse(body);
   if (!parsed.success) return Response.json({ error: z.prettifyError(parsed.error) }, { status: 400 });
 
-  const client = await db().pool.connect();
+  const client = await pool().connect();
   try {
     await client.query("begin");
     let session: { prompt: string; voice_id: string } | undefined;

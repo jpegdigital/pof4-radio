@@ -9,9 +9,9 @@ import {
   clearAccount,
   identityOf,
   type SpotifyAccount,
-} from "@/components/station/spotify-account";
-import { Card, focusRing, Label, SpotifyMark } from "@/components/station/ui";
-import { useSpotifyDevice } from "@/components/station/use-spotify-device";
+} from "../../lib/spotify-account";
+import { Card, focusRing, Label, SpotifyMark } from "../../lib/ui";
+import { useSpotifyDevice } from "../../lib/use-spotify-device";
 import { RETURN_KEY } from "../../spotify/callback/spotify-callback";
 import { Player } from "./player";
 import { Rundown } from "./rundown";

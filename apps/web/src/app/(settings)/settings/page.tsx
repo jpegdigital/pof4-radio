@@ -1,24 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Identity, parseVoices, PROMPT_SLOTS, type PromptKey, type Voice, VOICES_KEY } from "@radio/dj";
-import { db } from "@/lib/db";
-import { IDENTITY_KEY } from "@/lib/prompts";
+import { pool } from "@/lib/db";
+import { IDENTITY_KEY, Identity } from "@/lib/identity";
+import { parseVoices, type Voice, VOICES_KEY } from "@/lib/voices";
 import { IdentityEditor } from "./identity-editor";
-import { PromptEditor } from "./prompt-editor";
 import { VoiceEditor } from "./voice-editor";
 
 export const metadata: Metadata = { title: "Settings · Radio" };
 export const dynamic = "force-dynamic";
 
 /**
- * /settings — the producer's script, the station's identity and the DJs' voices, one at a time.
- * A rail on the left — the four prompt slots, the identity, then the voice roster — chosen by
- * `?slot=` or `?voice=` so the page stays a Server Component; the editor for the pick on the
- * right. Everything is a `settings` row — the only place it lives; a slot with no row is a fault
- * the rail flags, a roster with no row is empty. Saving applies to the next segment produced.
+ * /settings — the station's identity and the DJs' voices, one at a time. A rail on the left —
+ * the identity, then the voice roster — chosen by `?voice=` so the page stays a Server
+ * Component; the editor for the pick on the right. Everything is a `settings` row — the only
+ * place it lives; a roster with no row is empty. Saving applies to the next segment produced.
  */
-const isKey = (s: unknown): s is PromptKey => PROMPT_SLOTS.some((p) => p.key === s);
 
 const railItem = (active: boolean) =>
   `flex min-h-10 items-center gap-3 whitespace-nowrap rounded-md px-3 text-sm transition ${
@@ -28,11 +25,14 @@ const railItem = (active: boolean) =>
 const railList = "-mx-5 flex gap-1 overflow-x-auto px-5 md:mx-0 md:flex-col md:overflow-visible md:px-0";
 
 export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
-  const [{ slot: requestedSlot, voice: requestedVoice }, rows] = await Promise.all([
+  const [{ voice: requestedVoice }, { rows }] = await Promise.all([
     searchParams,
-    db().listSettings(),
+    pool().query<{ key: string; value: string; updated_at: Date }>(
+      "select key, value, updated_at from settings where key = any($1::text[])",
+      [[IDENTITY_KEY, VOICES_KEY]],
+    ),
   ]);
-  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const byKey = new Map(rows.map((r) => [r.key, { value: r.value, updatedAt: r.updated_at }]));
   const rosterRow = byKey.get(VOICES_KEY);
   let voices: Voice[] = [];
   let rosterFault: string | null = null;
@@ -42,15 +42,11 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
     rosterFault = err instanceof Error ? err.message : String(err);
   }
 
-  // What's open: a voice if `?voice=` names one (or "new"), else a prompt slot.
+  // What's open: a voice if `?voice=` names one (or "new"), else the identity.
   const openVoice =
     typeof requestedVoice === "string" ? voices.find((v) => v.id === requestedVoice) : undefined;
   const newVoice = requestedVoice === "new";
   const showVoice = Boolean(openVoice) || newVoice;
-  const showIdentity = requestedSlot === IDENTITY_KEY;
-  const key: PromptKey = isKey(requestedSlot) ? requestedSlot : PROMPT_SLOTS[0].key;
-  const slot = PROMPT_SLOTS.find((s) => s.key === key)!;
-  const row = byKey.get(key);
   const identityRow = byKey.get(IDENTITY_KEY);
   let identity: Identity | null = null;
   try {
@@ -63,30 +59,13 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
     <div className="grid items-start gap-8 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-12">
       <nav aria-label="Settings" className="flex flex-col gap-6 md:sticky md:top-8">
         <div>
-          <p className="mb-3 font-display text-sm uppercase tracking-[0.2em] text-zinc-500">DJ script</p>
+          <p className="mb-3 font-display text-sm uppercase tracking-[0.2em] text-zinc-500">Station</p>
           <ul className={railList}>
-            {PROMPT_SLOTS.map((s) => {
-              const active = !showVoice && !showIdentity && s.key === key;
-              const on = byKey.has(s.key);
-              return (
-                <li key={s.key} className="shrink-0">
-                  <Link
-                    href={`/settings?slot=${s.key}`}
-                    aria-current={active ? "page" : undefined}
-                    className={railItem(active)}
-                  >
-                    <Lamp on={on} />
-                    <span className="flex-1">{s.label}</span>
-                    {!on && <Fault>missing</Fault>}
-                  </Link>
-                </li>
-              );
-            })}
             <li className="shrink-0">
               <Link
-                href={`/settings?slot=${IDENTITY_KEY}`}
-                aria-current={showIdentity ? "page" : undefined}
-                className={railItem(showIdentity)}
+                href="/settings"
+                aria-current={!showVoice ? "page" : undefined}
+                className={railItem(!showVoice)}
               >
                 <Lamp on={identity !== null} />
                 <span className="flex-1">Identity</span>
@@ -140,18 +119,12 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         </div>
 
         <p className="hidden text-xs leading-relaxed text-zinc-600 md:block">
-          This is the script, the identity and the roster themselves — there is no copy in code. A change
-          reaches the next segment produced; what&rsquo;s already kept keeps its own.
+          This is the identity and the roster themselves — there is no copy in code. A change reaches the next
+          segment produced; what&rsquo;s already kept keeps its own.
         </p>
       </nav>
 
-      {showIdentity ? (
-        <IdentityEditor
-          key={identityRow?.updatedAt.toISOString() ?? "missing"}
-          value={identity}
-          updatedAt={identityRow?.updatedAt.toISOString() ?? null}
-        />
-      ) : showVoice ? (
+      {showVoice ? (
         <VoiceEditor
           key={`${openVoice?.id ?? "new"}:${rosterRow?.updatedAt.toISOString() ?? ""}`}
           voice={openVoice ?? null}
@@ -160,11 +133,10 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           updatedAt={rosterRow?.updatedAt.toISOString() ?? null}
         />
       ) : (
-        <PromptEditor
-          key={`${key}:${row?.updatedAt.toISOString() ?? "missing"}`}
-          slot={slot}
-          value={row?.value ?? ""}
-          updatedAt={row?.updatedAt.toISOString() ?? null}
+        <IdentityEditor
+          key={identityRow?.updatedAt.toISOString() ?? "missing"}
+          value={identity}
+          updatedAt={identityRow?.updatedAt.toISOString() ?? null}
         />
       )}
     </div>

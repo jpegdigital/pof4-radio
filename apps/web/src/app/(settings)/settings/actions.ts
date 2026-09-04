@@ -1,42 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import {
-  Identity,
-  parseVoices,
-  PROMPT_SLOTS,
-  type PromptKey,
-  type Voice,
-  VOICES_KEY,
-  VoiceSchema,
-  VoicesSchema,
-} from "@radio/dj";
-import { z } from "zod";
-import { db } from "@/lib/db";
-import { IDENTITY_KEY } from "@/lib/prompts";
+import { pool } from "@/lib/db";
+import { IDENTITY_KEY, Identity } from "@/lib/identity";
+import { loadVoices } from "@/lib/settings";
+import { type Voice, VOICES_KEY, VoiceSchema, VoicesSchema } from "@/lib/voices";
 
 /**
- * /settings Server Actions. Prompts: save one slot; the next segment produced reads the change
- * (`loadPromptTemplate`), segments already kept keep theirs. Identity: one JSON row, copied onto
- * each station at creation. Voices: the roster is one JSON row (`settings.voices`); every change
- * reads it, edits it, writes it back — the next segment voiced reads the change, clips already
- * kept keep their voice.
+ * /settings Server Actions. Identity: one JSON row, read per segment when the brief is written.
+ * Voices: the roster is one JSON row (`settings.voices`); every change reads it, edits it, writes
+ * it back — the next clip voiced reads the change, clips already kept keep their voice.
  */
 
 export type SaveState = { error?: string; savedAt?: string };
 
-const Key = z.enum(PROMPT_SLOTS.map((s) => s.key) as [PromptKey, ...PromptKey[]]);
-const Save = z.object({
-  key: Key,
-  value: z.string().trim().min(1, "The prompt can't be empty.").max(20_000),
-});
-
-export async function savePrompt(_prev: SaveState, formData: FormData): Promise<SaveState> {
-  const parsed = Save.safeParse({ key: formData.get("key"), value: formData.get("value") ?? "" });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the prompt." };
-  await db().saveSetting(parsed.data.key, parsed.data.value);
-  revalidatePath("/settings");
-  return { savedAt: new Date().toISOString() };
+/** One settings row, written or replaced. */
+async function saveSetting(key: string, value: string): Promise<void> {
+  await pool().query(
+    "insert into settings (key, value) values ($1, $2) on conflict (key) do update set value = excluded.value",
+    [key, value],
+  );
 }
 
 // ---- identity -----------------------------------------------------------------
@@ -49,7 +32,7 @@ export async function saveIdentity(_prev: SaveState, formData: FormData): Promis
   const parsed = Identity.safeParse({ calls: field("calls"), city: field("city"), onAir: field("onAir") });
   if (!parsed.success)
     return { error: "Every field is needed: call letters, city, the name as said on air." };
-  await db().saveSetting(IDENTITY_KEY, JSON.stringify(parsed.data));
+  await saveSetting(IDENTITY_KEY, JSON.stringify(parsed.data));
   revalidatePath("/settings");
   revalidatePath("/");
   return { savedAt: new Date().toISOString() };
@@ -57,13 +40,8 @@ export async function saveIdentity(_prev: SaveState, formData: FormData): Promis
 
 // ---- voices -------------------------------------------------------------------
 
-async function readRoster(): Promise<Voice[]> {
-  const row = await db().getSetting(VOICES_KEY);
-  return row ? parseVoices(row.value) : [];
-}
-
 async function writeRoster(voices: Voice[]): Promise<void> {
-  await db().saveSetting(VOICES_KEY, JSON.stringify(VoicesSchema.parse(voices)));
+  await saveSetting(VOICES_KEY, JSON.stringify(VoicesSchema.parse(voices)));
   revalidatePath("/settings");
 }
 
@@ -83,7 +61,7 @@ export async function saveVoice(_prev: VoiceState, formData: FormData): Promise<
   const voice = parsed.data;
   const wasRaw = formData.get("was");
   const was = typeof wasRaw === "string" ? wasRaw : "";
-  const roster = await readRoster();
+  const roster = await loadVoices();
   const at = roster.findIndex((v) => v.id === was);
   if (roster.some((v, i) => v.id === voice.id && i !== at))
     return { error: "Another voice already has that id." };
@@ -93,12 +71,12 @@ export async function saveVoice(_prev: VoiceState, formData: FormData): Promise<
 }
 
 export async function deleteVoice(id: string): Promise<void> {
-  await writeRoster((await readRoster()).filter((v) => v.id !== id));
+  await writeRoster((await loadVoices()).filter((v) => v.id !== id));
 }
 
 /** Move a voice one step up (-1) or down (+1); the first in the roster is the default. */
 export async function moveVoice(id: string, by: -1 | 1): Promise<void> {
-  const roster = await readRoster();
+  const roster = await loadVoices();
   const i = roster.findIndex((v) => v.id === id);
   const j = i + by;
   if (i === -1 || j < 0 || j >= roster.length) return;

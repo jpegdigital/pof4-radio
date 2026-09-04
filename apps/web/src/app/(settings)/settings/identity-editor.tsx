@@ -1,6 +1,6 @@
 "use client";
 
-import type { Identity } from "@radio/dj";
+import type { Identity } from "@/lib/identity";
 import { useActionState, useState } from "react";
 import { type SaveState, saveIdentity } from "./actions";
 

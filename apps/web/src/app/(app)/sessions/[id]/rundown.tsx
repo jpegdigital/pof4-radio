@@ -1,6 +1,6 @@
 import { ChevronDown, Mic, RefreshCw } from "lucide-react";
 import { useState } from "react";
-import { focusRing, Label } from "@/components/station/ui";
+import { focusRing, Label } from "../../lib/ui";
 import { type Cue, clock, cueKey, KIND_LABEL, type Segment, secs, type Slot, type Track } from "./types";
 
 /**

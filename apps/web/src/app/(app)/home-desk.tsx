@@ -4,9 +4,9 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
-import { DjPicker } from "@/components/station/dj-picker";
-import { Card, focusRing, Label } from "@/components/station/ui";
-import { type Dj, findDj, loadDj, saveDj } from "@/components/station/voice-store";
+import { DjPicker } from "./lib/dj-picker";
+import { Card, focusRing, Label } from "./lib/ui";
+import { type Dj, findDj, loadDj, saveDj } from "./lib/voice-store";
 
 /**
  * The front desk: the ask and who's on the mic, then the log — every session so far, newest

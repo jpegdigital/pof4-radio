@@ -1,6 +1,5 @@
-import { summarize } from "@radio/dj";
-import { db } from "@/lib/db";
-import { loadVoices } from "@/lib/voices";
+import { pool } from "@/lib/db";
+import { loadVoices } from "@/lib/settings";
 import { HomeDesk, type SessionSummary } from "./home-desk";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +23,7 @@ const LOG_LENGTH = 20;
 export default async function HomePage() {
   const [voices, { rows }] = await Promise.all([
     loadVoices(),
-    db().pool.query<SessionRow>(
+    pool().query<SessionRow>(
       `select s.id, s.prompt, s.voice_id, s.created_at, count(g.tracks) as segments
        from session s left join session_segment g on g.session_id = s.id
        group by s.id order by s.created_at desc limit $1`,
@@ -38,5 +37,7 @@ export default async function HomePage() {
     segments: Number(r.segments),
     createdAt: r.created_at.toISOString(),
   }));
-  return <HomeDesk djs={voices.map(summarize)} sessions={sessions} />;
+  return (
+    <HomeDesk djs={voices.map((v) => ({ id: v.id, name: v.name, gender: v.gender }))} sessions={sessions} />
+  );
 }

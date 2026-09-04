@@ -4,8 +4,7 @@
  * them, then the text the brief would carry. Proves the redirects, the parser and the shapes
  * against the live feeds.
  */
-import { headlinesText } from "@radio/dj";
-import { fetchHeadlines, HEADLINES_URLS } from "../src/lib/producer/headlines.ts";
+import { fetchHeadlines, HEADLINES_URLS, headlinesText } from "../src/app/api/sessions/headlines.ts";
 
 for (const [k, u] of Object.entries(HEADLINES_URLS)) console.log(`${k.padEnd(7)} ${u}`);
 const t = Date.now();

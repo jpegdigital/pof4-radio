@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { db } from "@/lib/db";
+import { pool } from "@/lib/db";
 import { SessionParams } from "./params";
 
 /**
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return Response.json({ error: z.prettifyError(parsed.error) }, { status: 400 });
   const { prompt, voiceId } = parsed.data;
 
-  const client = await db().pool.connect();
+  const client = await pool().connect();
   try {
     await client.query("begin");
     const { rows } = await client.query<{ id: string }>(

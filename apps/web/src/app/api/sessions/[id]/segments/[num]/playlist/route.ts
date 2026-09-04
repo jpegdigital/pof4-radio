@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { db } from "@/lib/db";
+import { pool } from "@/lib/db";
 import { Knobs } from "../../../../params";
 import { PlaylistError, producePlaylist } from "../../../../playlist";
 
@@ -39,7 +39,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[id]/s
   if (!knobsParsed.success)
     return Response.json({ error: z.prettifyError(knobsParsed.error) }, { status: 400 });
 
-  const client = await db().pool.connect();
+  const client = await pool().connect();
   try {
     await client.query("begin");
     let session: { prompt: string } | undefined;

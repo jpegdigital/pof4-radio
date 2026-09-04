@@ -75,7 +75,7 @@
          └─ session_segment (num 2) ─ …</code></pre>
 
 <h2 id="session">1. <code>session</code> <span class="tag built">in schema</span></h2>
-<p><code>packages/db/schema/session.sql</code>. Created instantly by <code>POST /api/sessions</code>, in one transaction with segment 1 — a session never exists without its first segment. It never changes after creation (the <code>updated_at</code> trigger is there for hygiene, not workflow).</p>
+<p><code>db/schema/session.sql</code>. Created instantly by <code>POST /api/sessions</code>, in one transaction with segment 1 — a session never exists without its first segment. It never changes after creation (the <code>updated_at</code> trigger is there for hygiene, not workflow).</p>
 <table>
 <tr><th>Column</th><th>Type</th><th>What it is</th></tr>
 <tr><td><code>id</code></td><td>uuid</td><td>Primary key, generated.</td></tr>
@@ -86,7 +86,7 @@
 <p>The session row doubles as the <strong>production lock</strong>: every rung takes <code>select … for update nowait</code> on it, so at most one thing produces for a session at a time and a second producer gets a clean 409 instead of a duplicate model call.</p>
 
 <h2 id="segment">2. <code>session_segment</code> <span class="tag built">in schema</span></h2>
-<p><code>packages/db/schema/session_segment.sql</code>. One sweep of the show. Named <code>session_segment</code> only because the old station world still owns <code>segment</code>; rename when that world is deleted.</p>
+<p><code>db/schema/session_segment.sql</code>. One sweep of the show. Named <code>session_segment</code> only because the old station world still owns <code>segment</code>; rename when that world is deleted.</p>
 <table>
 <tr><th>Column</th><th>Type</th><th>What it is</th></tr>
 <tr><td><code>id</code></td><td>uuid</td><td>Primary key.</td></tr>
@@ -165,7 +165,7 @@ create table session_slot (
 <div class="note"><strong>Why rows, not a jsonb array on the segment.</strong> The old world grew four parallel arrays on the segment row one item at a time (<code>lines</code>, <code>log.slots</code>, <code>elements</code>, <code>notes</code>) — that parallel-array bookkeeping is a good part of what made it spaghetti. Rows give each slot its own <code>voiced_at</code> instead of "array length = progress", make the audio rung's idempotency a one-row check, and let the two halves land as plain column updates under the session lock.</div>
 
 <h3 id="slot-kinds">The four kinds</h3>
-<p>Same vocabulary as the old world's <code>Intro</code> (<code>packages/dj/src/program/shapes.ts</code>) — the pure clock rules, timings and assembly ladder carry over unchanged.</p>
+<p>The clock rules live beside the program rung in <code>apps/web/src/app/api/sessions/rules.ts</code>, table-tested.</p>
 <table>
 <tr><th>Kind</th><th>What you hear</th><th>Program half needs</th><th>Voice half needs</th></tr>
 <tr><td><code>break</code></td><td>Voice over a bed, the last line talks the record in under it. Slot 1 is always the break.</td><td><code>words</code>, <code>lead_line</code>, <code>legal_id</code> if the hour turned, <code>record_under_ms</code></td><td><code>clip_key</code></td></tr>
@@ -175,13 +175,13 @@ create table session_slot (
 </table>
 
 <h2 id="card">4. <code>card</code> — carried over <span class="tag built">in schema</span></h2>
-<p>The record's card (<code>packages/db/schema/card.sql</code>) survives the refactor as-is: intro length, <code>sure</code>, the post (<em>where</em> the vocal comes in, never the lyric), ending, energy, talking points — keyed by Spotify track id, shared by every session, the first session to play a record pays for its card. The program rung reads cards to know which tracks can carry a talk-up (a talk-up needs a ≥ 7 s intro); the snapshot joins each slot's <code>introMs</code> from its card so the player can end a talk-up a beat before the vocal. Cards may be corrected in place; voiced slots never re-read them.</p>
+<p>The record's card (<code>db/schema/card.sql</code>) survives the refactor as-is: intro length, <code>sure</code>, the post (<em>where</em> the vocal comes in, never the lyric), ending, energy, talking points — keyed by Spotify track id, shared by every session, the first session to play a record pays for its card. The program rung reads cards to know which tracks can carry a talk-up (a talk-up needs a ≥ 7 s intro); the snapshot joins each slot's <code>introMs</code> from its card so the player can end a talk-up a beat before the vocal. Cards may be corrected in place; voiced slots never re-read them.</p>
 
 <h2 id="outside">5. What lives outside the database</h2>
 <table>
 <tr><th>Thing</th><th>Where</th><th>Keyed by</th></tr>
 <tr><td>The voice clips</td><td>the <code>radio-clips</code> bucket</td><td><code>sessions/&lt;sessionId&gt;/&lt;num&gt;/&lt;seq&gt;.mp3</code>, immutable</td></tr>
-<tr><td>The bed, the produced sweepers</td><td><code>public/bed.mp3</code>, <code>public/sweepers/*.mp3</code></td><td>static, shipped with the app</td></tr>
+<tr><td>The bed</td><td><code>public/bed.mp3</code></td><td>static, shipped with the app; a sweeper is a slot, voiced like any other</td></tr>
 <tr><td>The prompts, the identity, the voice roster</td><td>the <code>settings</code> table, edited on <code>/settings</code></td><td>slot name; read per request, throw if missing</td></tr>
 <tr><td>Playback</td><td>the browser — the tab is the Spotify device, the listener's own token, never the server's</td><td>—</td></tr>
 </table>

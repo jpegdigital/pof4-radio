@@ -1,8 +1,9 @@
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import type { Card, Identity } from "@radio/dj";
 import { z } from "zod";
 import { claude } from "@/lib/claude";
 import { env } from "@/lib/env";
+import type { Identity } from "@/lib/identity";
+import type { Card } from "./cards";
 import { checkProgram, type ProgramSlot, RULES_TEXT } from "./rules";
 import { numbered, Slot } from "./shapes";
 
@@ -51,6 +52,13 @@ export interface Program {
 }
 
 export const legalIdOf = (i: Identity) => `${i.calls}, ${i.city}. ${i.onAir}.`;
+
+/** "8:43 pm" from ms since midnight — the clock as the brief says it. */
+export function clockOf(ms: number): string {
+  const m = Math.floor(ms / 60000);
+  const h = Math.floor(m / 60);
+  return `${h % 12 || 12}:${String(m % 60).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
+}
 
 const cardLine = (c: Card | undefined) => {
   if (!c) return "no card — nothing is known of its intro, so it can only be a segue (or the break)";

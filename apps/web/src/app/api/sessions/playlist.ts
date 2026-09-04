@@ -2,10 +2,10 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { claude } from "@/lib/claude";
 import { env } from "@/lib/env";
-import { search } from "@/lib/spotify";
 import type { Knobs } from "./params";
 import { type Candidate, searchQuery, selectTracks } from "./select";
 import { Choice, numbered, Pick } from "./shapes";
+import { search } from "./spotify";
 
 /**
  * One prompt becomes a playlist in three moves, straight through: Claude PROPOSES records by

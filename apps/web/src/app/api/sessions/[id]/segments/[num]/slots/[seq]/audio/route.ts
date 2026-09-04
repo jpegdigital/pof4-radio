@@ -1,9 +1,9 @@
-import { ttsBody } from "@radio/dj";
 import { z } from "zod";
 import { bucket } from "@/lib/bucket";
-import { db } from "@/lib/db";
+import { pool } from "@/lib/db";
 import { env } from "@/lib/env";
-import { loadVoices } from "@/lib/voices";
+import { loadVoices } from "@/lib/settings";
+import { ttsBody } from "@/lib/voices";
 import { SLOT_COLUMNS, SLOT_FROM, type SlotRow, slotDoc } from "../../../../../../doc";
 
 /**
@@ -63,7 +63,7 @@ export async function POST(req: Request, ctx: Route) {
   const key = env().ELEVENLABS_KEY;
   if (!key) return Response.json({ error: "ELEVENLABS_KEY is not set on the server" }, { status: 503 });
 
-  const client = await db().pool.connect();
+  const client = await pool().connect();
   try {
     await client.query("begin");
     let session: { voice_id: string } | undefined;
@@ -167,7 +167,7 @@ export async function GET(_req: Request, ctx: Route) {
   const store = bucket();
   if (!store)
     return Response.json({ error: "the clips bucket is not configured (BUCKET_*)" }, { status: 503 });
-  const { rows } = await db().pool.query<{ clip_key: string | null }>(
+  const { rows } = await pool().query<{ clip_key: string | null }>(
     `select s.clip_key from session_slot s join session_segment g on g.id = s.segment_id
      where g.session_id = $1 and g.num = $2 and s.seq = $3`,
     [w.id, w.num, w.seq],

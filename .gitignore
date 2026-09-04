@@ -9,10 +9,3 @@ out/
 .DS_Store
 *.log
 .clauderc
-
-# the program maker's output (/program/make writes public/program/make/) and the sweeper bench's
-apps/web/public/program/
-
-# the home page's hand-supplied audio: the talk bed and the produced sweepers (copied in by hand,
-# like the sandbox's under public/program/)
-apps/web/public/sweepers/

@@ -11,12 +11,27 @@ importers:
       '@biomejs/biome':
         specifier: 2.5.9
         version: 2.5.9
+      '@supabase/pg-delta':
+        specifier: 1.0.0-alpha.42
+        version: 1.0.0-alpha.42(@supabase/pg-topo@1.0.0-alpha.5)
+      '@supabase/pg-topo':
+        specifier: 1.0.0-alpha.5
+        version: 1.0.0-alpha.5
+      '@types/node':
+        specifier: ^24
+        version: 24.13.3
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
       eslint:
         specifier: ^9.39.5
         version: 9.39.5(jiti@2.7.0)
       eslint-config-next:
         specifier: 16.3.1
         version: 16.3.1(@typescript-eslint/parser@8.68.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -32,15 +47,6 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.120.0
         version: 0.120.0(zod@4.4.3)
-      '@radio/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@radio/dj':
-        specifier: workspace:*
-        version: link:../../packages/dj
-      '@radio/spotify':
-        specifier: workspace:*
-        version: link:../../packages/spotify
       jose:
         specifier: 6.2.10
         version: 6.2.10
@@ -50,6 +56,9 @@ importers:
       next:
         specifier: 16.3.1
         version: 16.3.1(@babel/core@7.29.7)(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
       react:
         specifier: 19.2.8
         version: 19.2.8
@@ -66,6 +75,9 @@ importers:
       '@types/node':
         specifier: ^24
         version: 24.13.3
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
       '@types/react':
         specifier: ^19
         version: 19.2.18
@@ -75,56 +87,6 @@ importers:
       tailwindcss:
         specifier: ^4
         version: 4.3.3
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/db:
-    dependencies:
-      '@radio/dj':
-        specifier: workspace:*
-        version: link:../dj
-      pg:
-        specifier: ^8.23.0
-        version: 8.23.0
-    devDependencies:
-      '@supabase/pg-delta':
-        specifier: 1.0.0-alpha.42
-        version: 1.0.0-alpha.42(@supabase/pg-topo@1.0.0-alpha.5)
-      '@supabase/pg-topo':
-        specifier: 1.0.0-alpha.5
-        version: 1.0.0-alpha.5
-      '@types/pg':
-        specifier: ^8.23.1
-        version: 8.23.1
-      tsx:
-        specifier: ^4.23.12
-        version: 4.23.12
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/dj:
-    dependencies:
-      '@anthropic-ai/sdk':
-        specifier: ^0.120.0
-        version: 0.120.0(zod@4.4.3)
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@types/node':
-        specifier: ^24
-        version: 24.13.3
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/spotify:
-    devDependencies:
-      '@types/node':
-        specifier: ^24
-        version: 24.13.3
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -2972,7 +2934,7 @@ snapshots:
       '@babel/helper-globals': 7.29.7
       '@babel/parser': 7.29.8
       '@babel/template': 7.29.7
-      '@babel/types': 7.28.5
+      '@babel/types': 7.29.8
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
@@ -4202,6 +4164,7 @@ snapshots:
       '@esbuild/win32-arm64': 0.28.2
       '@esbuild/win32-ia32': 0.28.2
       '@esbuild/win32-x64': 0.28.2
+    optional: true
 
   escalade@3.2.0: {}
 
@@ -5456,6 +5419,7 @@ snapshots:
       esbuild: 0.28.2
     optionalDependencies:
       fsevents: 2.3.3
+    optional: true
 
   type-check@0.4.0:
     dependencies:

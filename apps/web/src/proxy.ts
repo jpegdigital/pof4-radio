@@ -6,13 +6,13 @@ import { failureKind, guardUrl, isNavigation, returnUrl, verifyGuard } from "./l
  * auth code in the app. `GUARD_OPEN` below opens everything but `ALWAYS_GUARDED`. Valid `pof4_jwt` → through. Otherwise a browser navigation
  * is sent to Guard (`/refresh` for a lapsed token, `/login` for anything else) with
  * this URL to come back to, and a programmatic request gets a 401 the client turns
- * into a reload (components/live-feed.tsx, app/error.tsx).
+ * into a reload.
  * Contract: pof4-infra/specs/001-guard-auth/contracts/app-gate.md.
  */
 
 /**
  * TEMPORARY: the station is open so friends can test without a pof4 login; only the control
- * room (/settings — prompts and voices, plus its voice-preview endpoint) still asks for the passkey. Flip to false to gate everything.
+ * room (/settings — the identity and the voices, plus its voice-preview endpoint) still asks for the passkey. Flip to false to gate everything.
  */
 const GUARD_OPEN = true;
 const ALWAYS_GUARDED = ["/settings", "/api/tts/preview"];

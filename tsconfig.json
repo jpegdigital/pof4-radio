@@ -1,6 +1,19 @@
 {
-  // Root-level tooling only (test config). Apps and packages have their own.
-  "extends": "./tsconfig.base.json",
-  "compilerOptions": { "types": ["node"] },
-  "include": ["vitest.config.ts"]
+  // Root-level tooling only: the test config and db/ (the schema scripts). The app has its own in apps/web.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["vitest.config.mts", "db/*.mts"]
 }

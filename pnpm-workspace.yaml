@@ -1,6 +1,5 @@
 packages:
   - "apps/*"
-  - "packages/*"
 
 # Supply-chain guard: never resolve a version published less than 3 days ago
 # (minutes). Gives the registry/community time to catch a compromised release.

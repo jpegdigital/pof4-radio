@@ -2,7 +2,7 @@
   "name": "web",
   "version": "0.1.0",
   "private": true,
-  "description": "Next.js app: the player (Spotify Web Playback SDK in the browser), the Spotify sign-in, and the pages that read from Postgres.",
+  "description": "Next.js app: the desk, the session page (the deck: Spotify Web Playback SDK in the browser), the sessions API, and the control room.",
   "scripts": {
     "dev": "next dev --experimental-https -H dev.radio.pof4.com",
     "build": "next build",
@@ -12,12 +12,10 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
-    "@radio/db": "workspace:*",
-    "@radio/dj": "workspace:*",
-    "@radio/spotify": "workspace:*",
     "jose": "6.2.10",
     "lucide-react": "^1.34.0",
     "next": "16.3.1",
+    "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "^4.4.3"
@@ -25,6 +23,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "tailwindcss": "^4",

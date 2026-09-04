@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { db } from "@/lib/db";
+import { pool } from "@/lib/db";
 import { SLOT_COLUMNS, SLOT_FROM, type SlotRow, slotDoc, statusOf } from "../doc";
 
 /**
@@ -28,17 +28,17 @@ interface SegmentRow {
 export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[id]">) {
   const { id } = await ctx.params;
   if (!z.uuid().safeParse(id).success) return Response.json({ error: "unknown session" }, { status: 404 });
-  const { rows } = await db().pool.query<SessionRow>(
+  const { rows } = await pool().query<SessionRow>(
     "select id, prompt, voice_id, created_at from session where id = $1",
     [id],
   );
   if (!rows.length) return Response.json({ error: "unknown session" }, { status: 404 });
   const s = rows[0];
-  const { rows: segments } = await db().pool.query<SegmentRow>(
+  const { rows: segments } = await pool().query<SegmentRow>(
     "select id, num, rationale, tracks, dropped from session_segment where session_id = $1 order by num",
     [id],
   );
-  const { rows: slots } = await db().pool.query<SlotRow & { segment_id: string }>(
+  const { rows: slots } = await pool().query<SlotRow & { segment_id: string }>(
     `select s.segment_id, ${SLOT_COLUMNS} from ${SLOT_FROM}
      where s.segment_id = any($1::uuid[]) order by s.seq`,
     [segments.map((g) => g.id)],

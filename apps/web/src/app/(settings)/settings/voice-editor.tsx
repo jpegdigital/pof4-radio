@@ -1,6 +1,6 @@
 "use client";
 
-import { type Voice, VOICE_DEFAULTS, VOICE_MODELS, type VoiceModelId } from "@radio/dj";
+import { type Voice, VOICE_DEFAULTS, VOICE_MODELS, type VoiceModelId } from "@/lib/voices";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { guarded } from "@/lib/guard-client";

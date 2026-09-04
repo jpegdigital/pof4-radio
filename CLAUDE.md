@@ -1,147 +1,134 @@
 # Radio
 
-An AI radio station over Spotify: a Claude producer plans an hour of records, writes each segment (a
-break over a bed, then 3–5 songs with talk-ups, sweepers and segues), ElevenLabs voices it, and the
-browser plays it — clips woven around Spotify tracks played through the Web Playback SDK. The show is
-produced **live, one segment ahead**, and everything produced is **kept forever**. The browser is the
-state machine; the server is stateless functions. Sibling of `../dreamweaver` and built the same way;
-when in doubt, do what dreamweaver does (its `CLAUDE.md` is the fuller philosophy).
+An AI radio station over Spotify. A listener types an ask; Claude composes a playlist from it,
+writes a program over it (a break, then a talk-up, sweeper or segue for every record), ElevenLabs
+voices each slot, and the browser plays it — the clips woven around Spotify tracks played through
+the Web Playback SDK. Everything produced is **kept forever**. The browser is the state machine;
+the server is stateless functions. Sibling of `../dreamweaver` and built the same way; when in
+doubt, do what dreamweaver does (its `CLAUDE.md` is the fuller philosophy).
 
 ## Philosophy — minimize cost, maximize simplicity
 
 - One service (`radio-web`) in the **`pof4`** Railway project, sharing the one Postgres (database
   `radio`) and one bucket (`radio-clips`, for the voice mp3s). No worker, no queue: nothing runs when
-  nobody is listening. Infra is not in this repo: `../pof4-infra/.railway/railway.ts` is the
-  only place Railway resources are declared — edit there, `pnpm plan` → `pnpm apply` **from that directory**.
-  Secrets stay `preserve()`d, set via `railway variables`.
-- One database, on purpose: `pnpm dev` talks to the same Railway Postgres (and bucket) as prod over its public proxy.
-- Fewest moving parts: route handlers, plain `pg` + SQL (no ORM), declarative schema diffed and applied
-  from the dev machine (`pnpm db:plan` / `db:apply`, no migration files).
+  nobody is listening. Infra is not in this repo: `../pof4-infra/.railway/railway.ts` is the only
+  place Railway resources are declared — edit there, `pnpm plan` → `pnpm apply` **from that
+  directory**. Secrets stay `preserve()`d, set via `railway variables`.
+- One database, on purpose: `pnpm dev` talks to the same Railway Postgres (and bucket) as prod over its
+  public proxy.
+- Fewest moving parts: route handlers, plain `pg` + SQL at the call site (no ORM, no query layer),
+  declarative schema diffed and applied from the dev machine (`pnpm db:plan` / `db:apply`, no
+  migration files — `db/schema/*.sql`).
 - **Always minimize dependencies.** Before adding a package, ask whether `fetch`, Web Crypto, the
-  platform, or thirty lines of our own would do — that is how `packages/spotify` is plain `fetch` + PKCE
-  by hand, and the bucket client is AWS SigV4 by hand (`apps/web/src/lib/sigv4.ts`, tested against the
-  AWS vectors) over `fetch` — no Spotify SDK, no AWS SDK, no auth or state-management library in the tree.
-  Same rule for services: if the browser can do it (tokens, playback, audio mixing), the server doesn't.
-- `packages/*` own pure logic and never read `process.env`; `apps/*` own process/env concerns. That is
-  what keeps the producer's rules (`packages/dj`) and the queries unit-testable without Next in the way.
+  platform, or thirty lines of our own would do: Spotify is plain `fetch` (client credentials on the
+  server, PKCE by hand in the browser), the bucket client is AWS SigV4 by hand
+  (`apps/web/src/lib/sigv4.ts`, tested against the AWS vectors), the weather and the headlines are two
+  public feeds read by hand. No Spotify SDK, no AWS SDK, no auth or state-management library. Same
+  rule for services: if the browser can do it (tokens, playback, audio mixing), the server doesn't.
+- **WET over DRY, lib at the level that uses it.** Code lives beside the route that reads it; a
+  helper is promoted one level up only when a *third* consumer appears. A hot path stays one
+  readable file — no small functions that obfuscate straight-line code. Extract only pure judgment
+  worth table-testing. `.claude/rules/coding-standards.md` governs (WET → SOLID → YAGNI, TDD).
 - Private behind Guard (`guard.pof4.com`): one gate, `apps/web/src/proxy.ts` (**temporarily open** —
-  `GUARD_OPEN = true` there, so friends can test without a login — only `/settings` still asks for the passkey; flip it back); exempt = `api/health` +
-  static, nothing else. No user table. Dev runs at `https://dev.radio.pof4.com:3000` because the cookie is
-  bound to `pof4.com` — no localhost bypass.
+  `GUARD_OPEN = true` there, so friends can test without a login — only `/settings` and the voice
+  preview still ask for the passkey; flip it back). Exempt = `api/health` + static, nothing else. No
+  user table. Dev runs at `https://dev.radio.pof4.com:3000` because the cookie is bound to `pof4.com` —
+  no localhost bypass.
+
+## Where things live
+
+Three places, each owning what it alone needs:
+
+- **`apps/web/src/lib/`** — app-level process concerns, shared by the station and the control room:
+  `env` (zod over `process.env`, read lazily), `db` (one `pg.Pool`, `pool()`), `claude` (one client, no
+  SDK retries), `bucket` + `sigv4`, `guard`, `voices` (the roster's shape: schema, models, `ttsBody` —
+  pure, client-safe), `identity` (call letters, city, on-air name — pure), `settings` (the two loaders,
+  `loadVoices` / `loadIdentity`, server only: a client component that imports a module touching the
+  pool drags `pg` into the browser bundle and the build fails).
+- **`apps/web/src/app/api/sessions/`** — the server, one folder: the routes and, beside them, the
+  files they read: `params` (the knobs), `shapes` (the zod each Claude call is held to), `playlist`,
+  `select`, `spotify` (search on the app token), `cards`, `program`, `rules`, `weather`, `headlines`,
+  `doc` (the segment on the wire). Tests sit next to the pure parts.
+- **`apps/web/src/app/(app)/`** — the browser: the home (`page.tsx` + `home-desk.tsx`), the session
+  page (`sessions/[id]/`: `session-view`, `player`, `rundown`, `use-deck`, `plan`, `transport`,
+  `types`), the Spotify callback, and `lib/` for what those share (`spotify-account` — PKCE and the
+  tokens, `use-spotify-device`, `voice-cache`, `voice-store`, `dj-picker`, `ui`).
+- **`apps/web/src/app/(settings)/`** — the control room, desktop-wide: the identity and the voice
+  roster, every row in the `settings` table. `/api/tts/preview` is its "hear it".
+
+`docs/sessions.html` is the API dance and `docs/api.html` the data model — the source of truth for
+how the pieces talk; keep them current.
 
 ## How it works (the shape)
 
 **Spotify gives us control, not audio.** The browser tab *is* the playback device (Web Playback SDK,
-Premium account required); each visitor plays through their *own* account. Two token flows, kept apart:
+Premium account required); each visitor plays through their *own* account. Two token flows, kept
+apart: **playback** is the user's token, browser only (PKCE needs no secret, so the whole flow lives
+in `(app)/lib/spotify-account.ts`: consent → `/spotify/callback` (a page, not an API route) → tokens
+in localStorage, refreshed in place with one shared in-flight refresh, because PKCE rotates the
+refresh token and racing refreshes log you out; the server never sees a user token). **Search** is
+the app's client-credentials token, server only, inside the playlist rung.
 
-- **playback** → the user's token, **browser only**. PKCE needs no secret, so the whole flow lives in
-  `components/station/spotify-account.ts`: consent → `/spotify/callback` (a page, not an API route) →
-  tokens in localStorage, refreshed in place (one shared in-flight refresh — PKCE rotates the refresh
-  token, racing refreshes log you out). No account table, no token route; the server never sees a user
-  token. Who is connected (id, name, product — never a token) also goes in a cookie so the page paints the
-  name and the Premium gate on first load. Playback is `PUT /me/player/play?device_id=…` from the browser.
-- **search** → the app's client-credentials token (needs the secret), used only inside discovery.
+**The session is the show.** `POST /api/sessions` is creation only and instant: the ask and the
+voice become a `session` row plus `session_segment` 1 at open. `GET /api/sessions/:id` is the
+snapshot: the whole tree, status per segment *derived from presence* (open → playlisted →
+programmed → voiced), never audio, never the telemetry receipts. Then three **rungs** per segment,
+each idempotent and under the session's row lock (`for update nowait`; a second producer gets 409):
 
-**The unit is the segment** (`specs/003-segment-station/`): one break followed by 3–5 songs. A station
-row holds the hour's **skeleton** (records in play order, where each segment starts — laid every 3–5 by
-`layBreaks`) and its identity; a segment row holds its records, its **lines** (`{seq, treatment, legalId?,
-words, leadLine?}`), its **log** (treatments after the clock rules), the player's `Element[]` and a
-**note** per clip (words, `clipMs`/`bedInMs`/`leadMs`/`atMs`, any fallback and why) — all four growing
-one slot at a time (`log.slots.length` = slots produced; the records past it are still to come) until
-the last slot sets `voiced_at`: **complete**, immutable after. A record's **card** (intro length,
-`sure`, post — *where* the vocal comes in, never the lyric — ending, energy, talking points) lives in
-the `card` table keyed by Spotify track id, shared by every station: the first station to play a
-record pays for its card. Cards may be corrected in place; kept segments never re-read them.
+- `POST …/segments/:num/playlist` — Claude **proposes** records by name (wide: six for four), Spotify
+  search **hydrates** each into candidates, Claude **composes** the playlist by id (it cannot invent a
+  track), `selectTracks` validates and joins. Fewer than `min` kept → 502 with the dropped reasons.
+- `POST …/segments/:num/program` — the **cards** (the `card` table first, keyed by Spotify id and shared
+  by every session; the missing ones made now, in parallel; a refusal retried once, then no card and
+  that slot can only be a segue), then **one** Claude call writes the whole segment: a kind
+  (break / talkup / sweeper / segue), the words, the break's lead line, two timing numbers
+  (`recordUnderSec`, `voiceInSec`), and why — with the ask, the clock (the browser's `clockMs`), the
+  identity, the weather (NWS) and the headlines (Google News) in the brief; a failed pull is logged and
+  the show goes on. `checkProgram` enforces the clock rules after, every step-down kept as the slot's
+  fallback. Every `session_slot` row lands in one transaction. The legal ID is the server's, on
+  segment 1's break.
+- `POST …/segments/:num/slots/:seq/audio` — one clip: the slot's text (legal ID, words, lead line)
+  through ElevenLabs in the session's voice, `PUT` to the bucket at
+  `sessions/<session>/<num>/<seq>.mp3`, then the row stamped — bucket first, row second. A segue is
+  stamped voiced with no clip. `{ again: true }` is another take under a new key. `GET` streams the
+  bytes, immutable. No timestamps, no alignment: the mix is the player's.
 
-**The unit of production is the slot** — one record's card, line and clip — so the first note waits
-for one card, one short write and one clip, never for the whole segment. **The server is three calls**
-(`contracts/api.md`), each under the station's row lock (a second tab gets 409):
+**The prompts are inline** at each call site (`playlist.ts`, `cards.ts`, `program.ts`) — structured
+outputs via `messages.parse` + `zodOutputFormat`, one zod shape per call in `shapes.ts`; counts are
+enforced with `numbered(key, n, item)` (song1…songN) because the grammar does not bound arrays.
 
-- `POST /api/station/open` — request → station (identity copied from settings) → **discover** the hour
-  (one call + Spotify search; a hit counts only when its name is the title *and* its artist is the
-  pick's, the shortest such preferred; no such hit → the pick is dropped with why; records already
-  played on the station excluded; ≥ 6 resolved or 502) → the first run's records kept as an **open**
-  segment: no card, no words, no clip. No other model call.
-- `POST /api/station/:id/next` — the same for the segment after the last kept one (409 while that one
-  is still producing); the skeleton is re-discovered when it runs short or the request changed; the
-  break carries the legal ID when the wall clock crossed an hour since the previous segment was opened
-  (`hourTurnedBetween`; the browser sends its own clock as `clockMs`).
-- `POST /api/segment/:id/slot/:seq` — one slot end to end, in order, idempotent: the **card** (table
-  first; made at medium effort, never quoting a lyric — the post is *where* the vocal comes in; a
-  refusal or the API's output filter retried once, then *no card*: the slot is a segue, the record is
-  never dropped) → **write** the slot (one call at medium effort: the treatment and every word; the
-  brief carries the segment's records with this one marked, the card, everything said on the station
-  so far, the legal ID for slot 0 at the top of the hour) → `checkSlot` (slot 0 is the break, a break
-  elsewhere is a sweeper, a talk-up needs a card with a ≥ 7 s intro) → the **clip** through ElevenLabs
-  `/with-timestamps`, timings at *known character offsets* (`timingsOf`: the bed comes in after the
-  legal ID, the lead starts `leadLine.length` from the end), `PUT` to the bucket at
-  `stations/<station>/<segment>/<seq>.mp3` → `assembleSlot` (the ladder: post → late → none; lead →
-  end; break → sweeper → segue; a null bed = dry) → the row grown; the last slot completes it,
-  immutable after. A failed clip is a fallback, never an error. `GET /api/clip/:segmentId/:seq`
-  streams a clip back, immutable.
-
-Orchestration is `apps/web/src/lib/producer/` (reads env, db, the bucket, Claude, Spotify, ElevenLabs;
-`segment.ts` opens, `slot.ts` produces); the pure parts — shapes, `clock-rules`, `timings`, `assemble`,
-the prompt slots and tool schemas — are `packages/dj/src/program/`, all tested. `GET /api/station/:id`
-returns a kept station whole.
-
-**The loop lives in the browser** (`apps/web/src/components/station/`): the three-lane reducer
-(`reducer.ts`, tested) and one effects hook (`use-program.ts`). Lanes: `music` is the Spotify device
-(songs only; the one knob is volume, stepped from a timer), `mic` is the voice `<audio>` element and
-`bed` a looping buffer, both in one Web Audio graph — the bed's gain is scheduled on the audio clock
-so it lands exactly. One cursor walks the `Element[]`; `segments[]` maps index ranges back to kept
-segments (the rundown groups by it) — the last one grows as slots land (`SEGMENT_OPENED`, then a
-`SEGMENT_SLOT` per slot). **Produce as you go:** Run on a fresh page calls `open` (the records paint at
-once), then slot 0 — the break — and plays it the moment its clip is fetched (`voice-cache.ts`, one
-object URL per clip URL for the life of the page); the remaining slots land one by one under the music;
-as the segment's last element goes on air, `next` opens the segment after it and its slots follow. A
-record whose slot hasn't landed when it is due plays as a clean segue (its late clip is kept, not
-played); a fresh show waits in silence for its opening break instead. A failed request or a 409 is
-retried on the next element. Stop keeps the cursor; a page load is a fresh show unless a past station
-is picked from "Resume a show" — every kept segment loads at once (`LOAD_SHOW`), nothing is re-made,
-and Run finishes an unfinished segment and produces the next one. The rundown (`rundown.tsx`) is the
-show as produced — a row per element with its treatment, the on-air marker, and behind a chevron the
-words, timings, card facts and fallback badge; the records still to come in the dim tone; the ask
-where it changes — read-only. `use-media-session.ts` mirrors the player onto the lock screen.
-
-**The prompts are settings.** Four slots — `prompt.system`, `prompt.discover` (`{request}`, `{dj}`,
-`{identity}`, `{clock}`, `{played}`), `prompt.card` (`{record}`), `prompt.write` — one slot's brief —
-(`{request}`, `{dj}`, `{identity}`, `{clock}`, `{slot}`, `{records}`, `{cards}`, `{previous_words}`,
-`{legal_id}`) — plus
-`station.identity` (`{calls, city, onAir}`), all `settings` rows edited on `/settings`. **The text lives
-only in the table** — no copy or fallback in code (`PROMPT_SLOTS`, `fillVars` in
-`packages/dj/src/program/prompt.ts`); the rules of the clock (`RULES_TEXT`) and the three tool schemas
-stay in code and are appended per call. `loadPromptTemplate()` / `loadIdentity()` read the rows per
-request and throw if one is missing. A fresh database needs the four prompt rows, the identity row and
-a `voices` row (the roster: `[{id, name, gender, modelId, stability, similarityBoost, style, speed,
-speakerBoost}]`, first is the default; a station is voiced in the voice picked when it was opened).
-No provenance yet: a station doesn't record which prompt text produced it.
-
-**Three shells, route groups.** `app/(app)` is the station, phone-wide; `app/(settings)` is the control
-room, desktop-wide (prompts, identity, voices); `app/(winamp)` is the same station wearing a Winamp skin.
-The root layout holds only fonts and the ground colour.
-
-**`app/(program)` is a sandbox, kept only to lift from.** It is the hand-run, file-based maker the
-segment station was cut from (`program/make/` — five stages writing under `public/program/make/`,
-gitignored; dev only, 404 in production) and its own player. **Nothing on the home path imports it**
-(`grep -rn "(program)" apps/web/src | grep -v "app/(program)/"` must stay empty) — it is deletable as a
-folder and the home page builds without it. Its prompts live in `make/prompts.ts`, its bed and sweepers
-under `public/program/`; the home page's are `public/bed.mp3` and `public/sweepers/*.mp3`, copied in by
-hand (`scripts/sweepers-prep.mjs` produces sweepers).
+**The loop lives in the browser.** The session page fetches the snapshot, derives the frontier (the
+last segment and its first unvoiced slot), calls the one rung it asks for, folds the response in,
+repeats. Resume is free: a reload lands in the same place. One **deck** (`use-deck.ts`) holds one cue:
+loading it makes its clip if needed, reads its length, lays the **plan** (`plan.ts`, pure — the
+writer's two numbers plus house constants: bed gain and fades, the beat before the vocal, the duck),
+and runs three lanes from one clock — the mic (the voice `<audio>`) and the bed (a looping buffer) in
+one Web Audio graph with the bed's gain scheduled on the audio clock, and the record on the Spotify
+device, started at its mark and ducked under the voice (the device's volume is the one knob). The
+transport is start/stop; rows and ⏮ ⏭ pick the slot; the record ending advances to the next
+(`transport.ts`, pure). **Next up:** open segment 2 while segment 1 is on air — `nextRung` in
+`session-view.tsx` stops at "voiced" today.
 
 ## Working here
 
-- Line endings are LF everywhere, in the repo and the working tree, on every machine: `.gitattributes`
-  (`* text=auto eol=lf`) overrides any local `core.autocrlf`; `.editorconfig` and Biome (`lineEnding: lf`)
-  write the same. If a fresh clone shows phantom "modified" files, `git add --renormalize .` once.
-- Node via fnm (`.node-version`), pnpm workspaces. `pnpm check` (= lint + format:check + typecheck + test)
-  then `pnpm --filter web build` is the pre-push gate; CI runs the same.
-- Tests: pure logic only (`*.test.ts` next to the code: the reducer, the shapes, the clock rules, the
-  timings, the assembly ladder, the SigV4 signer against the AWS vectors). Anything needing Postgres,
-  Spotify, Claude, ElevenLabs or the bucket is verified live (`specs/*/quickstart.md`;
-  `apps/web/scripts/bucket-smoke.mts` proves the signer against the real bucket).
+- Line endings are LF everywhere: `.gitattributes` (`* text=auto eol=lf`) overrides any local
+  `core.autocrlf`; `.editorconfig` and Biome write the same. Phantom "modified" files after a fresh
+  clone → `git add --renormalize .` once.
+- Node via fnm (`.node-version`), pnpm workspaces. `pnpm check` (= lint + format:check + typecheck +
+  test) then `pnpm --filter web build` is the pre-push gate; CI runs the same.
+- Tests: pure logic only (`*.test.ts` next to the code: the rules, the shapes, the selection, the
+  plan, the transport, the weather and headline readers, the roster, the SigV4 signer against the AWS
+  vectors). Anything needing Postgres, Spotify, Claude, ElevenLabs or the bucket is verified live
+  (`apps/web/scripts/bucket-smoke.mts` proves the signer against the real bucket). Red test first.
 - Env for local dev comes from 1Password via `op run --env-file=.env.op` (see that file for the vault
   items; the five `BUCKET_*` come from `pof4-radio-clips-bucket`).
 - Spotify app: registered at developer.spotify.com; the redirect URIs (dev + prod) must be listed there
   exactly. The Recommendations / Audio Features endpoints are unavailable to new apps — the producer
   picks, Spotify resolves.
+- `db/` at the root is the database: `schema/*.sql` (one file per table) and three scripts run with plain
+  `node` — `schema.mts` (`pnpm db:plan` / `db:apply`), `sql.mts` (`pnpm db:sql "select …"`, read-only),
+  `clear.mts` (`pnpm db:clear` wipes sessions; cards stay). No workspace packages: `apps/web` is the one
+  app and imports nothing from outside itself. The `station` and
+  `segment` tables are the first build's, unused; dropping them is a schema edit + `db:apply`.
+- `specs/001–003` and `docs/handoff.*`, `docs/the-program.html`, `docs/superpowers/` describe the
+  first build (deleted 2026-09-03) — history, not guidance.

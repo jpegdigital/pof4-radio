@@ -1,4 +1,3 @@
-import { checkSlot, MIN_TALKUP_INTRO_MS } from "@radio/dj";
 import type { Slot } from "./shapes";
 
 /**
@@ -36,6 +35,8 @@ export interface ProgramSlot {
   fallback?: SlotFallback;
 }
 
+/** A talk-up needs a real instrumental intro: at least this long. */
+export const MIN_TALKUP_INTRO_MS = 7000;
 /** A break's record can start no earlier than this before the voice ends, whatever the writer says. */
 export const MAX_RECORD_UNDER_MS = 10_000;
 /** A talk-up's voice can wait no longer than this into the record. */
@@ -53,6 +54,32 @@ export const RULES_TEXT = [
   "- Never quote a lyric. Never read the legal ID yourself: when the brief gives one, it is said before your words.",
 ].join("\n");
 
+/**
+ * The hard rules on one slot's kind: slot 1 is the break; a break anywhere else is a sweeper; a
+ * talk-up needs a card with an intro long enough. The step down, if any, is the fallback.
+ */
+function checkKind(
+  seq: number,
+  kind: SlotKind,
+  card: { introMs: number } | undefined,
+): { kind: SlotKind; fallback?: SlotFallback } {
+  if (seq === 1) {
+    return kind === "break"
+      ? { kind }
+      : { kind: "break", fallback: { from: kind, to: "break", reason: "the first slot is the break" } };
+  }
+  if (kind === "break") {
+    return {
+      kind: "sweeper",
+      fallback: { from: "break", to: "sweeper", reason: "a segment has one break, at its top" },
+    };
+  }
+  if (kind !== "talkup") return { kind };
+  if (card && card.introMs >= MIN_TALKUP_INTRO_MS) return { kind };
+  const reason = !card ? "no card" : `${card.introMs} ms intro is under ${MIN_TALKUP_INTRO_MS} ms`;
+  return { kind: "segue", fallback: { from: "talkup", to: "segue", reason } };
+}
+
 export function checkProgram(
   raw: Slot[],
   tracks: { id: string }[],
@@ -64,11 +91,9 @@ export function checkProgram(
   return raw.map((r, i) => {
     const seq = i + 1;
     const track = tracks[i];
-    const checked = checkSlot(i, r.kind, cards.get(track.id));
-    let kind: SlotKind = checked.intro;
-    let fallback: SlotFallback | undefined = checked.fallback
-      ? { from: checked.fallback.from, to: checked.fallback.to, reason: checked.fallback.reason }
-      : undefined;
+    const checked = checkKind(seq, r.kind, cards.get(track.id));
+    let kind: SlotKind = checked.kind;
+    let fallback: SlotFallback | undefined = checked.fallback;
     const words = r.words.trim();
     if ((kind === "talkup" || kind === "sweeper") && !words) {
       fallback = { from: kind, to: "segue", reason: "no words" };

@@ -1,7 +1,7 @@
 import { Mic, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, useEffect, useState } from "react";
-import { focusRing } from "@/components/station/ui";
-import type { Playback } from "@/components/station/use-spotify-device";
+import { focusRing } from "../../lib/ui";
+import type { Playback } from "../../lib/use-spotify-device";
 import type { Plan } from "./plan";
 import { onMic } from "./transport";
 import { type Cue, clock, KIND_LABEL, secs } from "./types";
