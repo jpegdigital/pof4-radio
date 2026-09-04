@@ -12,30 +12,31 @@ import {
   RISE_MS,
 } from "./plan";
 import { resumes } from "./transport";
-import type { Cue, Slot, Track } from "./types";
+import type { Cue, Slot } from "./types";
 
 /**
  * The deck: one slot on air at a time, three lanes from one clock. Load a cue and its clip and
- * its record are made if they aren't yet (POST audio on the slot and on the track, both
- * idempotent, side by side), fetched and measured, the plan laid (plan.ts), then the mic — the
- * voice <audio> element — the bed — a looping buffer — and the record — the MP3 in its own
- * <audio> element — run in one Web Audio graph, the bed's and the record's gain scheduled on the
- * audio clock, the record started at its mark. The run can start anywhere on the timeline (a
- * scrub, a resume): the mic is seeked into its clip, the bed's gain picks up mid-ramp, the record
- * starts that far in. Under the voice the record is ducked — its gain ramped down as the voice
+ * its track are fetched and measured (the track pulled into the bucket first if the page has not
+ * managed it yet — POST on the slot's track, idempotent), the plan laid (plan.ts), then the mic —
+ * the voice <audio> element — the bed — a looping buffer — and the track — the MP3 in its own
+ * <audio> element — run in one Web Audio graph, the bed's and the track's gain scheduled on the
+ * audio clock, the track started at its mark. The run can start anywhere on the timeline (a
+ * scrub, a resume): the mic is seeked into its clip, the bed's gain picks up mid-ramp, the track
+ * starts that far in. Under the voice the track is ducked — its gain ramped down as the voice
  * comes in over it and back up once it is done (plan.duck). Pause silences all three and freezes
- * the head; play again resumes the record when it alone is sounding, else runs the mix from the
- * head (transport.ts). The head is ms since the slot's top; the record's own clock is its
- * element's, read every frame.
+ * the head; play again resumes the track when it alone is sounding, else runs the mix from the
+ * head (transport.ts). The head is ms since the slot's top; the track's own clock is its
+ * element's, read every frame. Writing and voicing a slot is the page's business (the loop), not
+ * the deck's: a cue arrives voiced.
  */
 
 const BED_URL = "/bed.mp3";
 /** A few ms of silence (WAV); playing it inside a tap unlocks an element for later `play()`s on iOS. */
 const SILENCE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
 
-export type DeckPhase = "idle" | "voicing" | "loading" | "playing" | "paused" | "error";
+export type DeckPhase = "idle" | "loading" | "playing" | "paused" | "error";
 
-/** The record's own clock, as of the last frame. */
+/** The track's own clock, as of the last frame. */
 export interface RecordClock {
   positionMs: number;
   durationMs: number;
@@ -50,7 +51,7 @@ export interface Deck {
   plan: Plan | null;
   /** ms since the slot's top; frozen while paused. */
   headMs: number;
-  /** Where the record stands, once it is loaded. */
+  /** Where the track stands, once it is loaded. */
   record: RecordClock | null;
   /** Call synchronously from a tap: the context and the elements must first make sound in a gesture. */
   unlock: () => void;
@@ -60,10 +61,8 @@ export interface Deck {
   toggle: () => void;
   /** Move the head: the mix runs again from there if playing, or waits there if paused. */
   seek: (ms: number) => void;
-  /** Move within the record. */
+  /** Move within the track. */
   seekRecord: (ms: number) => void;
-  /** Pull a cue's record into the bucket and onto the page ahead of its turn; nothing is heard. */
-  warm: (cue: Cue) => void;
 }
 
 interface State {
@@ -72,7 +71,7 @@ interface State {
   message: string | null;
   plan: Plan | null;
   clipUrl: string | null;
-  recordUrl: string | null;
+  trackUrl: string | null;
   headMs: number;
   record: RecordClock | null;
 }
@@ -114,14 +113,11 @@ function ensureGraph(): Graph {
   return graph;
 }
 
-const slotAudioUrl = (sessionId: string, num: number, seq: number) =>
-  `/api/sessions/${sessionId}/segments/${num}/slots/${seq}/audio`;
 /** The clip's URL names its take: the GET is cached forever, and another take is another URL. */
-const clipUrlOf = (sessionId: string, num: number, seq: number, clipKey: string) =>
-  `${slotAudioUrl(sessionId, num, seq)}?take=${encodeURIComponent(clipKey)}`;
-/** The record's URL: POST pulls it into the bucket (idempotent), GET streams it, cached forever. */
-const recordUrlOf = (sessionId: string, num: number, seq: number) =>
-  `/api/sessions/${sessionId}/segments/${num}/tracks/${seq}/audio`;
+const clipUrlOf = (sessionId: string, seq: number, clipKey: string) =>
+  `/api/sessions/${sessionId}/slots/${seq}/clip?take=${encodeURIComponent(clipKey)}`;
+/** The track's URL: POST pulls it into the bucket (idempotent), GET streams it, cached forever. */
+export const trackUrlOf = (sessionId: string, seq: number) => `/api/sessions/${sessionId}/slots/${seq}/track`;
 
 const IDLE: State = {
   cue: null,
@@ -129,38 +125,35 @@ const IDLE: State = {
   message: null,
   plan: null,
   clipUrl: null,
-  recordUrl: null,
+  trackUrl: null,
   headMs: 0,
   record: null,
 };
 
-const clockOf = (rec: HTMLAudioElement, track: Track): RecordClock => ({
+const clockOf = (rec: HTMLAudioElement, durationMs: number): RecordClock => ({
   positionMs: rec.currentTime * 1000,
-  durationMs: Number.isFinite(rec.duration) && rec.duration > 0 ? rec.duration * 1000 : track.durationMs,
+  durationMs: Number.isFinite(rec.duration) && rec.duration > 0 ? rec.duration * 1000 : durationMs,
   playing: !rec.paused,
 });
 
 export function useDeck({
   sessionId,
   onSlot,
-  onTrack,
   onEnded,
 }: {
   sessionId: string;
-  /** A slot came back voiced from the audio rung: the page folds it into the document. */
-  onSlot: (num: number, slot: Slot) => void;
-  /** A record came back held from the record rung: the page folds it into the document. */
-  onTrack: (num: number, track: Track) => void;
-  /** The record played to its end. */
+  /** A slot changed (its track came to be held): the page folds it into the document. */
+  onSlot: (slot: Slot) => void;
+  /** The track played to its end. */
   onEnded: () => void;
 }): Deck {
   const [state, setState] = useState<State>(IDLE);
   // The latest state and handlers, for the callbacks (which run from taps and timers, not renders).
   const st = useRef(state);
-  const h = useRef({ onSlot, onTrack, onEnded });
+  const h = useRef({ onSlot, onEnded });
   useEffect(() => {
     st.current = state;
-    h.current = { onSlot, onTrack, onEnded };
+    h.current = { onSlot, onEnded };
   });
   const run = useRef<Run | null>(null);
   // A load overtaken by a later one must not start playing.
@@ -190,21 +183,21 @@ export function useDeck({
 
   useEffect(() => () => void halt(), [halt]);
 
-  /** The frame loop: the head and the record's clock follow while the deck runs. */
+  /** The frame loop: the head and the track's clock follow while the deck runs. */
   const tick = useCallback(function tick() {
     const r = run.current;
     if (!r) return;
     setState((s) => ({
       ...s,
       headMs: performance.now() - r.startedAt,
-      record: graph && s.cue ? clockOf(graph.rec, s.cue.track) : s.record,
+      record: graph && s.cue ? clockOf(graph.rec, s.cue.pick.durationMs) : s.record,
     }));
     r.frame = requestAnimationFrame(tick);
   }, []);
 
   /** The three lanes from one clock, from `fromMs` on the timeline. */
   const start = useCallback(
-    async (cue: Cue, plan: Plan, clipUrl: string | null, recordUrl: string, fromMs: number) => {
+    async (cue: Cue, plan: Plan, clipUrl: string | null, trackUrl: string, fromMs: number) => {
       const g = ensureGraph();
       void g.ctx.resume();
       const from = Math.max(0, Math.min(plan.lengthMs, fromMs));
@@ -246,7 +239,7 @@ export function useDeck({
         bed.start(t0 + Math.max(0, b.atMs - from) / 1000);
         bed.stop(t0 + (b.outMs - from) / 1000 + 0.1);
       }
-      // The record's level: where the curve stands now, then each ramp still to come, on the audio clock.
+      // The track's level: where the curve stands now, then each ramp still to come, on the audio clock.
       {
         const t0 = g.ctx.currentTime;
         const { gain } = g.recGain;
@@ -264,8 +257,8 @@ export function useDeck({
             if (ms > from) gain.linearRampToValueAtTime(v, t0 + (ms - from) / 1000);
         }
       }
-      if (g.rec.src !== recordUrl) {
-        g.rec.src = recordUrl;
+      if (g.rec.src !== trackUrl) {
+        g.rec.src = trackUrl;
         g.rec.load();
       }
       g.rec.onended = () => h.current.onEnded();
@@ -282,9 +275,9 @@ export function useDeck({
         message: null,
         plan,
         clipUrl,
-        recordUrl,
+        trackUrl,
         headMs: from,
-        record: clockOf(g.rec, cue.track),
+        record: clockOf(g.rec, cue.pick.durationMs),
       });
     },
     [tick],
@@ -304,16 +297,15 @@ export function useDeck({
     }
   }, []);
 
-  /** The record, held and on the page: POST the rung when the bucket lacks it, then fetch the bytes once. */
-  const recordOf = useCallback(
+  /** The track, held and on the page: POST the pull when the bucket lacks it (a retry of a failed one), then fetch the bytes once. */
+  const trackOf = useCallback(
     async (cue: Cue): Promise<{ url: string; durationMs: number }> => {
-      const url = recordUrlOf(sessionId, cue.num, cue.slot.seq);
-      if (!cue.track.recorded) {
+      const url = trackUrlOf(sessionId, cue.seq);
+      if (!cue.held) {
         const res = await fetch(url, { method: "POST" });
-        const data = (await res.json().catch(() => null)) as Track | { error?: string } | null;
-        if (!res.ok || !data || !("id" in data))
-          throw new Error(data && "error" in data && data.error ? data.error : `HTTP ${res.status}`);
-        h.current.onTrack(cue.num, data);
+        const data = (await res.json().catch(() => null)) as { held?: boolean; error?: string } | null;
+        if (!res.ok || !data?.held) throw new Error(data?.error ?? `HTTP ${res.status}`);
+        h.current.onSlot({ ...cue, held: true });
       }
       const entry = await getClip(url);
       if ("error" in entry) throw new Error(entry.error);
@@ -326,48 +318,27 @@ export function useDeck({
     (cue: Cue) => {
       halt();
       const seq = ++loads.current;
-      setState({ ...IDLE, cue, phase: cue.slot.voiced ? "loading" : "voicing" });
+      setState({ ...IDLE, cue, phase: "loading" });
       (async () => {
-        // The voice and the record side by side: the slot's rung holds the session lock, the record's does not.
+        // The clip and the track side by side.
         const voice = (async () => {
-          let s = cue.slot;
-          if (!s.voiced) {
-            const res = await fetch(slotAudioUrl(sessionId, cue.num, s.seq), { method: "POST" });
-            const data = (await res.json().catch(() => null)) as Slot | { error?: string } | null;
-            if (!res.ok || !data || !("seq" in data))
-              throw new Error(data && "error" in data && data.error ? data.error : `HTTP ${res.status}`);
-            s = data;
-            h.current.onSlot(cue.num, s);
-            if (seq === loads.current) setState((x) => ({ ...x, phase: "loading" }));
-          }
-          let clipMs: number | null = null;
-          let clipUrl: string | null = null;
-          if (s.clipKey) {
-            const entry = await getClip(clipUrlOf(sessionId, cue.num, s.seq, s.clipKey));
-            if ("error" in entry) throw new Error(entry.error);
-            clipMs = entry.durationMs;
-            clipUrl = entry.url;
-          }
-          return { slot: s, clipMs, clipUrl };
+          if (!cue.clipKey) return { clipMs: null, clipUrl: null };
+          const entry = await getClip(clipUrlOf(sessionId, cue.seq, cue.clipKey));
+          if ("error" in entry) throw new Error(entry.error);
+          return { clipMs: entry.durationMs, clipUrl: entry.url };
         })();
-        const [v, rec] = await Promise.all([voice, recordOf(cue)]);
+        const [v, rec] = await Promise.all([voice, trackOf(cue)]);
         const plan = planSlot({
-          kind: v.slot.kind,
+          kind: cue.kind,
           clipMs: v.clipMs,
-          recordUnderMs: v.slot.recordUnderMs,
-          voiceInMs: v.slot.voiceInMs,
-          introMs: v.slot.introMs,
-          legalIdChars: v.slot.legalId?.length ?? 0,
+          recordUnderMs: cue.recordUnderMs,
+          voiceInMs: cue.voiceInMs,
+          rampMs: cue.chart?.rampMs,
+          legalIdChars: cue.legalId?.length ?? 0,
         });
         if (plan.bed) await getBed(ensureGraph().ctx, BED_URL);
         if (seq !== loads.current) return;
-        await start(
-          { ...cue, slot: v.slot, track: { ...cue.track, recorded: true } },
-          plan,
-          v.clipUrl,
-          rec.url,
-          0,
-        );
+        await start({ ...cue, held: true }, plan, v.clipUrl, rec.url, 0);
       })().catch((err: unknown) => {
         if (seq !== loads.current) return;
         setState((x) => ({
@@ -377,7 +348,7 @@ export function useDeck({
         }));
       });
     },
-    [sessionId, halt, start, recordOf],
+    [sessionId, halt, start, trackOf],
   );
 
   const toggle = useCallback(() => {
@@ -388,15 +359,15 @@ export function useDeck({
       return;
     }
     if (!s.cue) return;
-    if (s.phase === "paused" && s.plan && s.recordUrl) {
+    if (s.phase === "paused" && s.plan && s.trackUrl) {
       if (resumes(s.plan, s.headMs)) {
-        // The voice is done: whatever level the pause caught, the record alone is full.
+        // The voice is done: whatever level the pause caught, the track alone is full.
         const g = ensureGraph();
         void g.ctx.resume();
         const now = g.ctx.currentTime;
         g.recGain.gain.cancelScheduledValues(now);
         g.recGain.gain.setValueAtTime(RECORD_FULL, now);
-        void g.rec.play().catch((e: unknown) => console.warn("[deck] record:", e));
+        void g.rec.play().catch((e: unknown) => console.warn("[deck] track:", e));
         run.current = {
           timers: [],
           bed: null,
@@ -404,7 +375,7 @@ export function useDeck({
           startedAt: performance.now() - s.headMs,
         };
         setState((x) => ({ ...x, phase: "playing" }));
-      } else void start(s.cue, s.plan, s.clipUrl, s.recordUrl, s.headMs);
+      } else void start(s.cue, s.plan, s.clipUrl, s.trackUrl, s.headMs);
       return;
     }
     if (s.phase === "idle" || s.phase === "error") load(s.cue);
@@ -413,11 +384,11 @@ export function useDeck({
   const seek = useCallback(
     (ms: number) => {
       const s = st.current;
-      if (!s.cue || !s.plan || !s.recordUrl) return;
+      if (!s.cue || !s.plan || !s.trackUrl) return;
       const headMs = Math.max(0, Math.min(s.plan.lengthMs, ms));
       if (s.phase === "playing") {
         halt();
-        void start(s.cue, s.plan, s.clipUrl, s.recordUrl, headMs);
+        void start(s.cue, s.plan, s.clipUrl, s.trackUrl, headMs);
       } else if (s.phase === "paused") setState((x) => ({ ...x, headMs }));
     },
     [halt, start],
@@ -426,17 +397,10 @@ export function useDeck({
   const seekRecord = useCallback((ms: number) => {
     const g = graph;
     const s = st.current;
-    if (!g || !s.cue || !s.recordUrl) return;
+    if (!g || !s.cue || !s.trackUrl) return;
     g.rec.currentTime = Math.max(0, ms) / 1000;
-    setState((x) => ({ ...x, record: x.cue ? clockOf(g.rec, x.cue.track) : x.record }));
+    setState((x) => ({ ...x, record: x.cue ? clockOf(g.rec, x.cue.pick.durationMs) : x.record }));
   }, []);
-
-  const warm = useCallback(
-    (cue: Cue) => {
-      recordOf(cue).catch((e: unknown) => console.warn("[deck] warm:", e));
-    },
-    [recordOf],
-  );
 
   return {
     cue: state.cue,
@@ -450,6 +414,5 @@ export function useDeck({
     toggle,
     seek,
     seekRecord,
-    warm,
   };
 }

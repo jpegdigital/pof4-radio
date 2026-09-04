@@ -18,7 +18,7 @@ import {
 
 /**
  * The plan is the mix on paper: when the mic, the bed and the record start and stop, from the
- * kind, the clip's length, the writer's two numbers and the card's intro. Nothing measured,
+ * kind, the clip's length, the writer's two numbers and the chart's ramp. Nothing measured,
  * nothing searched for — the numbers are opportunistic and the player follows them.
  */
 
@@ -44,7 +44,7 @@ describe("planSlot", () => {
   });
 
   it("a talk-up: the record from 0, the voice in where the writer said", () => {
-    const p = planSlot({ kind: "talkup", clipMs: 4000, voiceInMs: 1500, introMs: 12_000, legalIdChars: 0 });
+    const p = planSlot({ kind: "talkup", clipMs: 4000, voiceInMs: 1500, rampMs: 12_000, legalIdChars: 0 });
     expect(p.music.atMs).toBe(0);
     expect(p.mic).toEqual({ atMs: 1500, endMs: 5500 });
     expect(p.bed).toBeNull();
@@ -52,12 +52,12 @@ describe("planSlot", () => {
   });
 
   it("a talk-up that would run into the vocal starts earlier, to end a beat before it", () => {
-    const p = planSlot({ kind: "talkup", clipMs: 8000, voiceInMs: 3000, introMs: 9000, legalIdChars: 0 });
+    const p = planSlot({ kind: "talkup", clipMs: 8000, voiceInMs: 3000, rampMs: 9000, legalIdChars: 0 });
     expect(p.mic).toEqual({ atMs: 9000 - BEAT_MS - 8000, endMs: 9000 - BEAT_MS });
   });
 
   it("a talk-up longer than the whole intro starts at 0 and says so", () => {
-    const p = planSlot({ kind: "talkup", clipMs: 12_000, voiceInMs: 2000, introMs: 9000, legalIdChars: 0 });
+    const p = planSlot({ kind: "talkup", clipMs: 12_000, voiceInMs: 2000, rampMs: 9000, legalIdChars: 0 });
     expect(p.mic?.atMs).toBe(0);
     expect(p.note).toContain("past the vocal");
   });
@@ -88,21 +88,21 @@ describe("the vocal and the timeline's length", () => {
       kind: "break",
       clipMs: 20_000,
       recordUnderMs: 3000,
-      introMs: 15_000,
+      rampMs: 15_000,
       legalIdChars: 0,
     });
     expect(p.vocalMs).toBe(17_000 + 15_000);
     expect(p.lengthMs).toBe(17_000 + 15_000 + VOCAL_TAIL_MS);
   });
 
-  it("a talk-up marks the vocal where the card says", () => {
-    const p = planSlot({ kind: "talkup", clipMs: 4000, voiceInMs: 1500, introMs: 12_000, legalIdChars: 0 });
+  it("a talk-up marks the vocal where the chart says", () => {
+    const p = planSlot({ kind: "talkup", clipMs: 4000, voiceInMs: 1500, rampMs: 12_000, legalIdChars: 0 });
     expect(p.vocalMs).toBe(12_000);
     expect(p.lengthMs).toBe(12_000 + VOCAL_TAIL_MS);
   });
 
   it("a short intro never makes the timeline shorter than the tail", () => {
-    const p = planSlot({ kind: "segue", clipMs: null, introMs: 1000, legalIdChars: 0 });
+    const p = planSlot({ kind: "segue", clipMs: null, rampMs: 1000, legalIdChars: 0 });
     expect(p.vocalMs).toBe(1000);
     expect(p.lengthMs).toBe(TAIL_MS);
   });
@@ -140,7 +140,7 @@ describe("the duck: the record under the voice", () => {
   });
 
   it("a talk-up: the whole voice", () => {
-    const p = planSlot({ kind: "talkup", clipMs: 4000, voiceInMs: 1500, introMs: 12_000, legalIdChars: 0 });
+    const p = planSlot({ kind: "talkup", clipMs: 4000, voiceInMs: 1500, rampMs: 12_000, legalIdChars: 0 });
     expect(p.duck).toEqual({ atMs: 1500, endMs: 5500 });
   });
 

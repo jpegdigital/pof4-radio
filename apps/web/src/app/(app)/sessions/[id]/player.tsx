@@ -9,10 +9,10 @@ import type { DeckPhase, RecordClock } from "./use-deck";
 /**
  * The transport, lifted from the old station: the art slot, three lines, a progress line, three
  * buttons — the voice and the record share the frame so the show reads as one sequence. New in
- * this one: the cue, three lanes on one scale — the mic, the bed with its ramps, the record up
+ * this one: the cue, three lanes on one scale — the mic, the bed with its ramps, the track up
  * to its vocal, dimmed where it is ducked under the voice — with the head sweeping across while
- * the slot's mix runs; drag it to scrub the mix. The record's own clock is its element's, read by
- * the deck every frame, and scrubs the record.
+ * the slot's mix runs; drag it to scrub the mix. The track's own clock is its element's, read by
+ * the deck every frame, and scrubs the track.
  */
 
 /** A keyboard nudge on either scrubber. */
@@ -44,15 +44,15 @@ export function Player({
   onToggle: () => void;
   /** Move the head on the cue. */
   onScrub: (ms: number) => void;
-  /** Move within the record. */
+  /** Move within the track. */
   onSeekRecord: (ms: number) => void;
 }) {
-  const { slot, track } = cue;
-  const making = phase === "voicing" || phase === "loading";
+  const { pick } = cue;
+  const making = phase === "loading";
   const running = phase === "playing" || phase === "paused";
   const talking = plan !== null && running && onMic(plan, headMs);
   const paused = phase !== "playing";
-  const rec = record ?? { positionMs: 0, durationMs: track.durationMs, playing: false };
+  const rec = record ?? { positionMs: 0, durationMs: pick.durationMs, playing: false };
 
   return (
     <div className="flex flex-col gap-4">
@@ -64,9 +64,9 @@ export function Player({
           >
             <Mic className="size-8" strokeWidth={1.75} />
           </div>
-        ) : track.image ? (
+        ) : pick.image ? (
           // biome-ignore lint/performance/noImgElement: album art is a remote Qobuz CDN url
-          <img src={track.image} alt="" className="size-20 shrink-0 rounded-lg bg-zinc-800 object-cover" />
+          <img src={pick.image} alt="" className="size-20 shrink-0 rounded-lg bg-zinc-800 object-cover" />
         ) : (
           <div className="size-20 shrink-0 rounded-lg bg-zinc-800" />
         )}
@@ -75,31 +75,24 @@ export function Player({
             <>
               <div className="truncate text-base font-medium">On the mic</div>
               <div className="truncate text-sm text-zinc-400">
-                {KIND_LABEL[slot.kind]} · into {track.name}
+                {KIND_LABEL[cue.kind]} · into {pick.title}
               </div>
-              <div className="truncate font-mono text-xs text-zinc-500">
-                {slot.words ?? slot.legalId ?? ""}
-              </div>
+              <div className="truncate font-mono text-xs text-zinc-500">{cue.words ?? cue.legalId ?? ""}</div>
             </>
           ) : (
             <>
-              <div className="truncate text-base font-medium">{track.name}</div>
-              <div className="truncate text-sm text-zinc-400">{track.artists.join(", ")}</div>
-              <div className="truncate text-xs text-zinc-500">{track.album}</div>
+              <div className="truncate text-base font-medium">{pick.title}</div>
+              <div className="truncate text-sm text-zinc-400">{pick.artists.join(", ")}</div>
+              <div className="truncate text-xs text-zinc-500">{pick.album}</div>
             </>
           )}
         </div>
       </div>
 
       {plan ? (
-        <Lanes
-          plan={plan}
-          headMs={running ? headMs : null}
-          track={track}
-          onScrub={running ? onScrub : null}
-        />
+        <Lanes plan={plan} headMs={running ? headMs : null} track={pick} onScrub={running ? onScrub : null} />
       ) : making ? (
-        <Loading label={phase === "voicing" ? "voicing…" : "loading…"} />
+        <Loading label="loading…" />
       ) : null}
 
       <Progress clock={rec} onSeek={record && running ? onSeekRecord : null} />
@@ -167,7 +160,7 @@ function useScrub(lengthMs: number, onCommit: ((ms: number) => void) | null) {
   return { drag, handlers };
 }
 
-/** The cue: three lanes on one scale — the mic in the lamp's amber, the bed with its ramps, the record to its vocal — and the head. */
+/** The cue: three lanes on one scale — the mic in the lamp's amber, the bed with its ramps, the track to its vocal — and the head. */
 function Lanes({
   plan,
   headMs,
@@ -176,7 +169,7 @@ function Lanes({
 }: {
   plan: Plan;
   headMs: number | null;
-  track: { name: string };
+  track: { title: string };
   onScrub: ((ms: number) => void) | null;
 }) {
   const pct = (ms: number) => `${Math.min(100, Math.max(0, (ms / plan.lengthMs) * 100))}%`;
@@ -249,7 +242,7 @@ function Lanes({
                 <div
                   className="absolute inset-y-0 rounded-l bg-zinc-500"
                   style={{ left: pct(plan.music.atMs), width: pct(plan.vocalMs - plan.music.atMs) }}
-                  title={`${track.name} at ${secs(plan.music.atMs)}, intro to ${secs(plan.vocalMs)}`}
+                  title={`${track.title} at ${secs(plan.music.atMs)}, ramp to ${secs(plan.vocalMs)}`}
                 />
                 <div
                   className="absolute inset-y-0 right-0 rounded-r bg-zinc-300"
@@ -261,7 +254,7 @@ function Lanes({
               <div
                 className="absolute inset-y-0 right-0 rounded bg-zinc-300"
                 style={{ left: pct(plan.music.atMs) }}
-                title={`${track.name} at ${secs(plan.music.atMs)}`}
+                title={`${track.title} at ${secs(plan.music.atMs)}`}
               />
             )}
           </div>
@@ -293,7 +286,7 @@ function Lanes({
   );
 }
 
-/** The record's clock, as the deck reads it each frame; a scrub moves within the record. */
+/** The track's clock, as the deck reads it each frame; a scrub moves within the track. */
 function Progress({ clock: c, onSeek }: { clock: RecordClock; onSeek: ((ms: number) => void) | null }) {
   const { drag, handlers } = useScrub(c.durationMs, onSeek);
   const shown = drag ?? c.positionMs;
@@ -302,7 +295,7 @@ function Progress({ clock: c, onSeek }: { clock: RecordClock; onSeek: ((ms: numb
     <div>
       <div
         role="slider"
-        aria-label="The record"
+        aria-label="The track"
         aria-valuemin={0}
         aria-valuemax={Math.round(c.durationMs / 1000)}
         aria-valuenow={Math.round(shown / 1000)}

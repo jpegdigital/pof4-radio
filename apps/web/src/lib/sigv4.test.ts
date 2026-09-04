@@ -47,4 +47,19 @@ describe("sign", () => {
     expect(h.authorization).toContain("SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date");
     expect(h.authorization).toMatch(/Signature=[0-9a-f]{64}$/);
   });
+
+  it("signs a HEAD like a GET: same headers signed, same date, a signature of its own", async () => {
+    const url = new URL("https://bucket.example.com/radio-clips/tracks/1.mp3");
+    const get = await sign({ ...vector, service: "s3", method: "GET", url });
+    const head = await sign({ ...vector, service: "s3", method: "HEAD", url });
+    expect(head["x-amz-date"]).toBe(get["x-amz-date"]);
+    expect(head["x-amz-content-sha256"]).toBe(get["x-amz-content-sha256"]);
+    expect(head.authorization).toContain("SignedHeaders=host;x-amz-content-sha256;x-amz-date");
+    expect(head.authorization).toMatch(/Signature=[0-9a-f]{64}$/);
+    // The method is in the canonical request: the two signatures differ, and only there.
+    expect(head.authorization.replace(/Signature=.*/, "")).toBe(
+      get.authorization.replace(/Signature=.*/, ""),
+    );
+    expect(head.authorization).not.toBe(get.authorization);
+  });
 });

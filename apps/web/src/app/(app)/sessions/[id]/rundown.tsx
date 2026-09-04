@@ -1,28 +1,29 @@
 import { ChevronDown, Mic, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { focusRing, Label } from "../../lib/ui";
-import { type Cue, clock, cueKey, KIND_LABEL, type Segment, secs, type Slot, type Track } from "./types";
+import { type Cue, clock, cueKey, isCue, KIND_LABEL, secs, type Slot } from "./types";
 
 /**
- * The show as produced, lifted from the old station's rundown: a segment at a time, every row a
- * slot with its kind, the record it plays, the on-air marker on the amber rail, and behind a
- * chevron the words, the writer's numbers, the card's intro and any fallback. A segment whose
- * program hasn't landed paints its records in the dim tone. Tap a row and it goes in the deck;
- * the arrows beside a voiced row ask for another take of its clip, read with the roster as it
- * stands now (the words never change).
+ * The show as one list, in order. A proposed slot is a dim row — "coming up", the proposer's
+ * title and artist, nothing to tap. A written slot paints the pick's tags, its kind (the mic
+ * icon for a break), whether the bucket holds it yet, the on-air marker on the amber rail, and
+ * behind a chevron the words, the lead line, the legal ID, the writer's numbers, the chart and
+ * any fallback. A row goes in the deck on a tap once it is voiced and held; the arrows beside a
+ * voiced row ask for another take of its clip, read with the roster as it stands now (the words
+ * never change). The row being produced right now says so.
  */
 
 export function Rundown({
-  segments,
+  slots,
   producing,
   cursor,
   retaking,
   onPick,
   onRetake,
 }: {
-  segments: Segment[];
-  /** What the page is producing right now, by segment number, in words. */
-  producing: { num: number; label: string } | null;
+  slots: Slot[];
+  /** What the page is producing right now: the slot (null for a fill) and the label. */
+  producing: { seq: number | null; label: string } | null;
   /** The cue in the deck, if any. */
   cursor: string | null;
   /** The cue whose clip is being voiced again, if any. */
@@ -30,69 +31,29 @@ export function Rundown({
   onPick: (cue: Cue) => void;
   onRetake: (cue: Cue) => void;
 }) {
-  const cues = segments.flatMap((g) =>
-    g.slots.flatMap((slot) => {
-      const track = g.tracks.find((t) => t.id === slot.trackId);
-      return track ? [{ num: g.num, slot, track }] : [];
-    }),
-  );
-  const at = cursor === null ? -1 : cues.findIndex((c) => cueKey(c) === cursor);
+  const at = cursor === null ? -1 : slots.findIndex((s) => String(s.seq) === cursor);
   return (
     <div className="flex flex-col gap-3">
-      <Label>The show</Label>
+      <div className="flex items-baseline justify-between gap-3">
+        <Label>The show</Label>
+        {producing?.seq === null && <span className="text-xs text-zinc-600">{producing.label}</span>}
+      </div>
       <ol className="flex flex-col">
-        {segments.map((g) => {
-          const busy = producing?.num === g.num ? producing.label : "";
-          const here = cursor !== null && cursor.startsWith(`${g.num}:`);
+        {slots.map((slot, i) => {
+          const tone: Tone = at < 0 ? "ahead" : i === at ? "on" : i < at ? "played" : "ahead";
+          const busy = producing?.seq === slot.seq ? producing.label : null;
+          if (!isCue(slot)) return <ToCome key={slot.seq} slot={slot} label={busy ?? "coming up"} />;
+          const key = cueKey(slot);
           return (
-            <li
-              key={g.num}
-              className={`flex flex-col ${g.num > 1 ? "mt-3 border-t border-zinc-800/80" : ""}`}
-            >
-              <div className={`rail-row pt-4 pb-1.5 pl-4 ${here ? "lit" : ""}`}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span
-                    className={`shrink-0 font-display text-[11px] font-semibold uppercase tracking-[0.22em] ${
-                      here ? "text-lamp" : "text-zinc-500"
-                    }`}
-                  >
-                    Segment {g.num}
-                  </span>
-                  {busy && <span className="min-w-0 truncate text-xs text-zinc-600">{busy}</span>}
-                </div>
-                {g.rationale && (
-                  <p className="mt-1 pr-3 text-xs leading-relaxed text-zinc-500">{g.rationale}</p>
-                )}
-                {g.dropped.length > 0 && (
-                  <p className="mt-1 pr-3 text-xs text-amber-300/80">Not found: {g.dropped.join(" · ")}</p>
-                )}
-              </div>
-              <div className="mt-1 flex flex-col">
-                {g.slots.length > 0
-                  ? g.slots.map((slot) => {
-                      const track = g.tracks.find((t) => t.id === slot.trackId);
-                      if (!track) return null;
-                      const cue = { num: g.num, slot, track };
-                      const i = cues.findIndex((c) => c.num === g.num && c.slot.seq === slot.seq);
-                      const tone: Tone = at < 0 ? "ahead" : i === at ? "on" : i < at ? "played" : "ahead";
-                      const key = cueKey(cue);
-                      return (
-                        <Row
-                          key={slot.seq}
-                          slot={slot}
-                          track={track}
-                          tone={tone}
-                          retaking={retaking === key}
-                          onTap={() => onPick(cue)}
-                          onRetake={slot.voiced && slot.words ? () => onRetake(cue) : null}
-                        />
-                      );
-                    })
-                  : g.tracks.map((t, i) => (
-                      <ToCome key={t.id} track={t} label={i === 0 && busy ? busy : "next"} />
-                    ))}
-              </div>
-            </li>
+            <Row
+              key={slot.seq}
+              cue={slot}
+              tone={tone}
+              busy={busy}
+              retaking={retaking === key}
+              onTap={slot.voiced && slot.held ? () => onPick(slot) : null}
+              onRetake={slot.voiced && slot.words ? () => onRetake(slot) : null}
+            />
           );
         })}
       </ol>
@@ -105,52 +66,58 @@ type Tone = "played" | "on" | "ahead";
 const TONE: Record<Tone, string> = { played: "text-zinc-500", on: "text-lamp", ahead: "text-zinc-400" };
 
 function Row({
-  slot,
-  track,
+  cue,
   tone,
+  busy,
   retaking,
   onTap,
   onRetake,
 }: {
-  slot: Slot;
-  track: Track;
+  cue: Cue;
   tone: Tone;
+  /** What is happening to this row right now, if anything. */
+  busy: string | null;
   retaking: boolean;
-  onTap: () => void;
+  /** Put it in the deck, or null while it cannot play yet. */
+  onTap: (() => void) | null;
   /** Another take of the clip, or null when there is nothing said to read again. */
   onRetake: (() => void) | null;
 }) {
   const [open, setOpen] = useState(false);
+  const { pick } = cue;
+  const marker = busy ?? (cue.voiced ? (cue.held ? null : "pulling…") : "voicing…");
   return (
-    <div className={`rail-row ${tone === "ahead" ? "" : "lit"}`}>
+    <li className={`rail-row ${tone === "ahead" ? "" : "lit"}`}>
       <div className={`flex w-full items-start gap-2 pr-1 pl-4 ${TONE[tone]}`}>
         <button
           type="button"
-          onClick={onTap}
+          onClick={onTap ?? undefined}
+          disabled={!onTap}
           aria-current={tone === "on" ? "true" : undefined}
-          className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-2 text-left transition hover:bg-zinc-800/50 ${focusRing}`}
+          className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-2 text-left transition enabled:hover:bg-zinc-800/50 disabled:cursor-default ${focusRing}`}
         >
-          {slot.kind === "break" ? (
+          {cue.kind === "break" ? (
             <Mic className="size-3.5 shrink-0 opacity-70" strokeWidth={1.75} aria-hidden="true" />
           ) : (
-            <Chip>{KIND_LABEL[slot.kind]}</Chip>
+            <Chip>{KIND_LABEL[cue.kind]}</Chip>
           )}
           <span className="min-w-0 flex-1 truncate text-sm">
-            <span className={tone === "on" ? "" : "text-zinc-200"}>{track.name}</span>
+            <span className={tone === "on" ? "" : "text-zinc-200"}>{pick.title}</span>
             <span className={tone === "ahead" ? "text-zinc-500" : "opacity-70"}>
               {" "}
-              · {track.artists.join(", ")}
+              · {pick.artists.join(", ")}
             </span>
           </span>
-          {slot.fallback && (
+          {marker && <span className="shrink-0 text-[11px] text-zinc-600">{marker}</span>}
+          {cue.fallback && (
             <span
-              title={slot.fallback.reason}
+              title={cue.fallback.reason}
               className="shrink-0 rounded-full border border-amber-700/60 bg-amber-900/30 px-1.5 py-px font-mono text-[10px] text-amber-300"
             >
-              {slot.fallback.from} → {slot.fallback.to}
+              {cue.fallback.from} → {cue.fallback.to}
             </span>
           )}
-          <span className="font-mono text-xs tabular-nums opacity-50">{clock(track.durationMs)}</span>
+          <span className="font-mono text-xs tabular-nums opacity-50">{clock(pick.durationMs)}</span>
         </button>
         {onRetake && (
           <button
@@ -180,32 +147,30 @@ function Row({
           <ChevronDown className={`size-4 transition ${open ? "rotate-180" : ""}`} strokeWidth={1.75} />
         </button>
       </div>
-      {open && <Detail slot={slot} />}
-    </div>
+      {open && <Detail cue={cue} />}
+    </li>
   );
 }
 
-/** The words as written, the writer's numbers, the card's intro, the fallback and its reason. Nothing editable. */
-function Detail({ slot }: { slot: Slot }) {
+/** The words as written, the writer's numbers, the chart, the treatment, the fallback and its reason. Nothing editable. */
+function Detail({ cue }: { cue: Cue }) {
   const numbers: [string, number | undefined][] = [
-    ["record under", slot.recordUnderMs],
-    ["voice in", slot.voiceInMs],
-    ["intro", slot.introMs],
+    ["record under", cue.recordUnderMs],
+    ["voice in", cue.voiceInMs],
   ];
+  const chart = cue.chart;
   return (
     <div className="mb-2 ml-4 flex flex-col gap-2 rounded-lg border border-zinc-800/70 bg-zinc-950/60 px-3 py-2.5 text-xs text-zinc-400">
-      {slot.legalId && <p className="font-mono text-[12px] italic text-zinc-500">{slot.legalId}</p>}
-      {slot.words && (
-        <p className="whitespace-pre-line font-mono text-[12px] leading-relaxed text-zinc-300">
-          {slot.words}
-        </p>
+      {cue.legalId && <p className="font-mono text-[12px] italic text-zinc-500">{cue.legalId}</p>}
+      {cue.words && (
+        <p className="whitespace-pre-line font-mono text-[12px] leading-relaxed text-zinc-300">{cue.words}</p>
       )}
-      {slot.leadLine && (
+      {cue.leadLine && (
         <p className="whitespace-pre-line font-mono text-[12px] italic leading-relaxed text-zinc-300">
-          {slot.leadLine}
+          {cue.leadLine}
         </p>
       )}
-      {slot.kind === "segue" && !slot.words && <p className="text-zinc-500">straight in</p>}
+      {cue.kind === "segue" && !cue.words && <p className="text-zinc-500">straight in</p>}
       <p className="flex flex-wrap gap-x-4 gap-y-1 font-mono tabular-nums">
         {numbers.map(
           ([k, v]) =>
@@ -215,12 +180,30 @@ function Detail({ slot }: { slot: Slot }) {
               </span>
             ),
         )}
-        <span>{slot.voiced ? (slot.clipKey ? takeOf(slot.clipKey) : "no clip") : "not voiced yet"}</span>
+        <span>{cue.voiced ? (cue.clipKey ? takeOf(cue.clipKey) : "no clip") : "not voiced yet"}</span>
+        <span>{cue.held ? "held" : "not held"}</span>
       </p>
-      <p className="text-zinc-500">{slot.why}</p>
-      {slot.fallback && (
+      {chart ? (
+        <p className="flex flex-wrap gap-x-4 gap-y-1 font-mono tabular-nums text-zinc-500">
+          <span>
+            ramp {secs(chart.rampMs)} ({chart.sure ? "sure" : "unsure"})
+          </span>
+          {chart.post && <span>post: {chart.post}</span>}
+          <span>
+            ends: {chart.outro} at {clock(chart.outroMs)}
+          </span>
+          <span>
+            energy {chart.energy}/5 · {chart.tempo} · {chart.mood}
+          </span>
+        </p>
+      ) : (
+        <p className="text-zinc-500">no chart</p>
+      )}
+      {cue.treatment && <p className="text-zinc-500">{cue.treatment}</p>}
+      <p className="text-zinc-600">{cue.why}</p>
+      {cue.fallback && (
         <p className="text-amber-300/90">
-          {slot.fallback.from} → {slot.fallback.to}: {slot.fallback.reason}
+          {cue.fallback.from} → {cue.fallback.to}: {cue.fallback.reason}
         </p>
       )}
     </div>
@@ -230,16 +213,15 @@ function Detail({ slot }: { slot: Slot }) {
 /** The first take's key is `<seq>.mp3`; a later take's carries a marker after the seq. */
 const takeOf = (clipKey: string) => (/-[^/]+\.mp3$/.test(clipKey) ? "voiced again" : "voiced");
 
-/** A record whose slot hasn't been written: what will play, in the dim tone. */
-function ToCome({ track, label }: { track: Track; label: string }) {
+/** A slot not written yet: what the proposer named, in the dim tone. */
+function ToCome({ slot, label }: { slot: Slot; label: string }) {
   return (
-    <div className="rail-row flex items-center gap-2.5 py-2 pr-2 pl-4 text-zinc-500">
+    <li className="rail-row flex items-center gap-2.5 py-2 pr-2 pl-4 text-zinc-500">
       <Chip>{label}</Chip>
       <span className="min-w-0 flex-1 truncate text-sm">
-        <span className="text-zinc-300">{track.name}</span> · {track.artists.join(", ")}
+        <span className="text-zinc-300">{slot.title}</span> · {slot.artist}
       </span>
-      <span className="font-mono text-xs tabular-nums opacity-50">{clock(track.durationMs)}</span>
-    </div>
+    </li>
   );
 }
 

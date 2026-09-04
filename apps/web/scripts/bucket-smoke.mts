@@ -1,8 +1,8 @@
 /**
- * `op run --env-file=.env.op -- node apps/web/scripts/bucket-smoke.mts` — one PUT and two GETs
- * against the real clips bucket with the hand-rolled signer (src/lib/sigv4.ts): proves the
- * signature, the path style and the 404 path before any segment is voiced. Writes one tiny
- * object under `stations/_smoke/`.
+ * `op run --env-file=.env.op -- node apps/web/scripts/bucket-smoke.mts` — one PUT, two GETs and
+ * two HEADs against the real clips bucket with the hand-rolled signer (src/lib/sigv4.ts): proves
+ * the signature, the path style, the 404 path and that HEAD reports a size (the pull rebuilds a
+ * `track` row from it) before any slot is voiced. Writes one tiny object under `stations/_smoke/`.
  */
 import { sign } from "../src/lib/sigv4.ts";
 
@@ -34,8 +34,24 @@ const gh = await sign({ ...creds, method: "GET", url: put });
 const gr = await fetch(put, { headers: gh });
 console.log("GET", gr.status, gr.headers.get("content-type"), JSON.stringify(await gr.text()));
 
+const hh = await sign({ ...creds, method: "HEAD", url: put });
+const hr = await fetch(put, { method: "HEAD", headers: hh });
+await hr.arrayBuffer();
+console.log(
+  "HEAD",
+  hr.status,
+  "content-length",
+  hr.headers.get("content-length"),
+  `(sent ${body.byteLength})`,
+);
+
 const missing = new URL(`${base}/stations/_smoke/does-not-exist.txt`);
 const mh = await sign({ ...creds, method: "GET", url: missing });
 const mr = await fetch(missing, { headers: mh });
 console.log("GET missing", mr.status);
 await mr.arrayBuffer();
+
+const mhh = await sign({ ...creds, method: "HEAD", url: missing });
+const mhr = await fetch(missing, { method: "HEAD", headers: mhh });
+await mhr.arrayBuffer();
+console.log("HEAD missing", mhr.status, "(404 → the pull downloads)");

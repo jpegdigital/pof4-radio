@@ -1,5 +1,7 @@
 -- One listening session: the ask and the voice, nothing else. Created instantly; everything
--- produced for it (playlists, programs, clips) lands on session_segment rows, one per sweep.
+-- produced for it lands on session_slot rows, one per position in the show. Doubles as the
+-- production lock: the fill rung and the slot rung take `select … for update nowait` on it, so a
+-- second producer gets 409; the track pull does not.
 create table session (
   id          uuid primary key default gen_random_uuid(),
   prompt      text not null,                            -- the listener's ask, verbatim

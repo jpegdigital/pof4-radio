@@ -1,45 +1,61 @@
 /** The session document as the page reads it (the snapshot, GET /api/sessions/:id). */
 
-export interface Track {
+/** What Qobuz says of a version; given, never judged. */
+export interface Tags {
   id: string;
-  name: string;
+  title: string;
   artists: string[];
   album: string;
   image: string | null;
   durationMs: number;
-  pick: number;
-  why: string;
-  /** The record is in the bucket: the deck plays it without a pull. */
-  recorded: boolean;
 }
+
+export interface Clock {
+  breakEvery: number;
+  fill: number;
+  lowWater: number;
+}
+
+export type SlotStatus = "proposed" | "written" | "voiced";
 
 export type SlotKind = "break" | "talkup" | "sweeper" | "segue";
 
+export interface Chart {
+  rampMs: number;
+  sure: boolean;
+  post: string;
+  outro: "cold" | "fade";
+  outroMs: number;
+  energy: number;
+  tempo: "down" | "mid" | "up";
+  mood: string;
+}
+
 export interface Slot {
   seq: number;
-  trackId: string;
-  kind: SlotKind;
+  status: SlotStatus;
+  // the proposal — always present
+  title: string;
+  artist: string;
+  why: string;
+  // written and after — absent while proposed
+  pick?: Tags;
+  /** The bucket holds the pick's bytes: the deck plays it without a pull. */
+  held?: boolean;
+  /** Absent on a no-chart segue (the writer gave nothing usable). */
+  chart?: Chart;
+  kind?: SlotKind;
   words?: string;
   leadLine?: string;
   legalId?: string;
-  why: string;
+  treatment?: string;
   fallback?: { from: string; to: string; reason: string };
   recordUnderMs?: number;
   voiceInMs?: number;
-  introMs?: number;
+  // voiced
   voiced: boolean;
+  /** Absent on a segue. */
   clipKey?: string;
-}
-
-export type Status = "open" | "playlisted" | "programmed" | "voiced";
-
-export interface Segment {
-  num: number;
-  status: Status;
-  rationale: string | null;
-  tracks: Track[];
-  dropped: string[];
-  slots: Slot[];
 }
 
 export interface SessionDoc {
@@ -47,17 +63,17 @@ export interface SessionDoc {
   prompt: string;
   voiceId: string;
   createdAt: string;
-  segments: Segment[];
+  clock: Clock;
+  /** In seq order, no gaps. */
+  slots: Slot[];
 }
 
-/** One slot as the deck takes it: the segment it is in, the slot, the record it plays. */
-export interface Cue {
-  num: number;
-  slot: Slot;
-  track: Track;
-}
+/** A slot the deck can take: written or voiced, so it has a pick and a kind. */
+export type Cue = Slot & { pick: Tags; kind: SlotKind };
 
-export const cueKey = (c: Cue) => `${c.num}:${c.slot.seq}`;
+export const isCue = (s: Slot): s is Cue => s.pick !== undefined && s.kind !== undefined;
+
+export const cueKey = (c: Cue) => String(c.seq);
 
 export const KIND_LABEL: Record<SlotKind, string> = {
   break: "Break",
@@ -72,3 +88,9 @@ export const clock = (ms: number) => {
 };
 
 export const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+
+/** The browser's clock as the server wants it: ms since the listener's local midnight. */
+export const clockMsNow = () => {
+  const now = new Date();
+  return now.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+};

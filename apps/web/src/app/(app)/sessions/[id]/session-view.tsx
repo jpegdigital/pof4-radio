@@ -3,45 +3,41 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, focusRing, Label } from "../../lib/ui";
+import { nextMove } from "./loop";
 import { Player } from "./player";
 import { Rundown } from "./rundown";
 import { onMic, prevTarget, RESTART_AFTER_MS } from "./transport";
-import { type Cue, cueKey, KIND_LABEL, type Segment, type SessionDoc, type Slot, type Track } from "./types";
-import { useDeck } from "./use-deck";
+import { type Cue, clockMsNow, cueKey, isCue, KIND_LABEL, type SessionDoc, type Slot } from "./types";
+import { trackUrlOf, useDeck } from "./use-deck";
 
 /**
  * A session's home, on one page: the desk (the lamp, the request), the player, the show. The
- * browser is the whole state machine. Production: GET the snapshot, look at the frontier — the
- * last segment and its status — and POST the one rung it asks for; the response is the product,
- * no polling. open → playlist, playlisted → program, and the machine stops: the slots are on the
- * page. Each rung is attempted once per page life (a failure stays on screen, a reload retries);
- * a 409 means another producer holds the session.
+ * browser is the whole state machine. Production: GET the snapshot, ask the frontier (loop.ts)
+ * for the one call it wants — a fill when the rundown runs low, else the first unvoiced slot,
+ * one ahead of the cue in the deck — POST it, fold the response in, repeat; the response is the
+ * product, no polling. A slot that comes back with a pick the bucket does not hold has its track
+ * pulled at once, not awaited, so it is in the bucket by the time it is up. Each move is made
+ * once per page life (a failure stays on screen, a reload retries); a 409 means another producer
+ * holds the session.
  *
  * Playback: the deck (use-deck.ts) holds one cue. The transport starts and stops it; ⏮ ⏭ and a
- * tap on a row pick which slot; when the record ends the next slot goes in on its own, its record
- * already pulled while this one played. A cue's clip and record are made the first time it is
- * played; the clip can be voiced again from its row — the same words read with the roster as it
- * stands now; if that cue is in the deck the new take plays at once.
+ * tap on a row pick which slot; when the track ends the next voiced slot goes in on its own, its
+ * track already pulled while this one played. The clip can be voiced again from its row — the
+ * same words read with the roster as it stands now; if that cue is in the deck the new take
+ * plays at once.
  */
+
+type Producing = { key: string; seq: number | null; label: string };
 
 type State =
   | { phase: "loading" }
-  | { phase: "ready"; session: SessionDoc; producing: string | null; produceError: string | null }
+  | { phase: "ready"; session: SessionDoc; producing: Producing | null; produceError: string | null }
   | { phase: "error"; message: string };
 
-/** The one next call the frontier asks for, or null when the machine stops here. */
-function nextRung(seg: Segment): { key: string; label: string; path: string; body: unknown } | null {
-  if (seg.status === "open")
-    return { key: `${seg.num}:playlist`, label: "composing…", path: "playlist", body: {} };
-  if (seg.status === "playlisted") {
-    const now = new Date();
-    const clockMs = now.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    return { key: `${seg.num}:program`, label: "writing…", path: "program", body: { clockMs } };
-  }
-  return null;
-}
+const NO_SLOTS: Slot[] = [];
 
-const NO_SEGMENTS: Segment[] = [];
+/** A response that is the slot, or an error that may still carry the slot as written (R2). */
+type SlotAnswer = (Slot & { error?: undefined }) | { error?: string; slot?: Slot } | null;
 
 export function SessionView({ id }: { id: string }) {
   const [state, setState] = useState<State>({ phase: "loading" });
@@ -59,11 +55,41 @@ export function SessionView({ id }: { id: string }) {
     return data;
   }, [id]);
 
+  /** A slot came back from a rung: fold it into the document in place. */
+  const onSlot = useCallback((slot: Slot) => {
+    setState((s) => {
+      if (s.phase !== "ready") return s;
+      const slots = s.session.slots.map((x) => (x.seq === slot.seq ? slot : x));
+      return { ...s, session: { ...s.session, slots } };
+    });
+  }, []);
+
+  /** The slot's track, pulled into the bucket now rather than when it is up; not awaited. */
+  const pull = useCallback(
+    (seq: number) => {
+      fetch(trackUrlOf(id, seq), { method: "POST" })
+        .then(async (res) => {
+          const data = (await res.json().catch(() => null)) as { held?: boolean; error?: string } | null;
+          if (!res.ok || !data?.held) throw new Error(data?.error ?? `HTTP ${res.status}`);
+          setState((s) => {
+            if (s.phase !== "ready") return s;
+            const slots = s.session.slots.map((x) => (x.seq === seq ? { ...x, held: true } : x));
+            return { ...s, session: { ...s.session, slots } };
+          });
+        })
+        .catch((err: unknown) => console.warn(`[session] slot ${seq} track pull:`, err));
+    },
+    [id],
+  );
+
   useEffect(() => {
     let stale = false;
     load()
       .then((session) => {
-        if (!stale) setState({ phase: "ready", session, producing: null, produceError: null });
+        if (stale) return;
+        setState({ phase: "ready", session, producing: null, produceError: null });
+        // A pick the bucket does not hold yet (a pull that failed, or a reload mid-pull): ask again now.
+        for (const s of session.slots) if (s.pick && !s.held) pull(s.seq);
       })
       .catch((err) => {
         if (!stale) setState({ phase: "error", message: err instanceof Error ? err.message : String(err) });
@@ -71,57 +97,55 @@ export function SessionView({ id }: { id: string }) {
     return () => {
       stale = true;
     };
-  }, [load]);
+  }, [load, pull]);
 
-  // The machine's one move: the frontier segment gets the rung it asks for, once per page life.
+  const deck = useDeck({ sessionId: id, onSlot, onEnded: () => ended.current() });
+  const cueSeq = deck.cue?.seq ?? null;
+
+  // The machine's one move: what the frontier asks for, once per page life.
   useEffect(() => {
     if (state.phase !== "ready" || state.producing !== null) return;
-    const last = state.session.segments.at(-1);
-    if (!last) return;
-    const rung = nextRung(last);
-    if (!rung || attempted.current.has(rung.key)) return;
-    attempted.current.add(rung.key);
-    setState({ ...state, producing: rung.key, produceError: null });
+    const move = nextMove(state.session.slots, state.session.clock, cueSeq, attempted.current);
+    if (!move) return;
+    attempted.current.add(move.key);
+    const producing: Producing =
+      move.kind === "fill"
+        ? { key: move.key, seq: null, label: "filling…" }
+        : { key: move.key, seq: move.seq, label: `writing slot ${move.seq}…` };
+    setState({ ...state, producing, produceError: null });
     (async () => {
-      const res = await fetch(`/api/sessions/${id}/segments/${last.num}/${rung.path}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(rung.body),
-      });
-      const err = res.ok
-        ? null
-        : (((await res.json().catch(() => null)) as { error?: string } | null)?.error ??
-          `HTTP ${res.status}`);
-      const session = await load();
-      setState({ phase: "ready", session, producing: null, produceError: err });
+      let error: string | null = null;
+      if (move.kind === "fill") {
+        const res = await fetch(`/api/sessions/${id}/fill`, { method: "POST" });
+        const data = (await res.json().catch(() => null)) as { added?: Slot[]; error?: string } | null;
+        if (!res.ok || !data?.added) error = data?.error ?? `HTTP ${res.status}`;
+        else {
+          const added = data.added;
+          setState((s) =>
+            s.phase === "ready"
+              ? { ...s, session: { ...s.session, slots: [...s.session.slots, ...added] } }
+              : s,
+          );
+        }
+      } else {
+        const res = await fetch(`/api/sessions/${id}/slots/${move.seq}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ clockMs: clockMsNow() }),
+        });
+        const data = (await res.json().catch(() => null)) as SlotAnswer;
+        const slot = data && "seq" in data ? data : (data?.slot ?? null);
+        if (!res.ok) error = data?.error ?? `HTTP ${res.status}`;
+        if (slot) {
+          onSlot(slot);
+          if (slot.pick && !slot.held) pull(slot.seq);
+        }
+      }
+      setState((s) => (s.phase === "ready" ? { ...s, producing: null, produceError: error } : s));
     })().catch((err) => {
       setState({ phase: "error", message: err instanceof Error ? err.message : String(err) });
     });
-  }, [state, id, load]);
-
-  /** A slot came back from the audio rung: fold it into the document in place. */
-  const onSlot = useCallback((num: number, slot: Slot) => {
-    setState((s) => {
-      if (s.phase !== "ready") return s;
-      const segments = s.session.segments.map((g) =>
-        g.num === num ? { ...g, slots: g.slots.map((x) => (x.seq === slot.seq ? slot : x)) } : g,
-      );
-      return { ...s, session: { ...s.session, segments } };
-    });
-  }, []);
-
-  /** A record came back from the record rung: fold it into the document in place. */
-  const onTrack = useCallback((num: number, track: Track) => {
-    setState((s) => {
-      if (s.phase !== "ready") return s;
-      const segments = s.session.segments.map((g) =>
-        g.num === num ? { ...g, tracks: g.tracks.map((x) => (x.id === track.id ? track : x)) } : g,
-      );
-      return { ...s, session: { ...s.session, segments } };
-    });
-  }, []);
-
-  const deck = useDeck({ sessionId: id, onSlot, onTrack, onEnded: () => ended.current() });
+  }, [state, cueSeq, id, onSlot, pull]);
 
   // Another take of a slot's clip: POST again, fold the row in, and hear it if it is the cue in the deck.
   const [retake, setRetake] = useState<{ key: string; error: string | null } | null>(null);
@@ -130,36 +154,30 @@ export function SessionView({ id }: { id: string }) {
     const inDeck = deck.cue !== null && cueKey(deck.cue) === key;
     setRetake({ key, error: null });
     (async () => {
-      const res = await fetch(`/api/sessions/${id}/segments/${c.num}/slots/${c.slot.seq}/audio`, {
+      const res = await fetch(`/api/sessions/${id}/slots/${c.seq}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ again: true }),
+        body: JSON.stringify({ clockMs: clockMsNow(), again: true }),
       });
-      const data = (await res.json().catch(() => null)) as Slot | { error?: string } | null;
+      const data = (await res.json().catch(() => null)) as SlotAnswer;
       if (!res.ok || !data || !("seq" in data))
         throw new Error(data && "error" in data && data.error ? data.error : `HTTP ${res.status}`);
-      onSlot(c.num, data);
+      onSlot(data);
       setRetake(null);
-      if (inDeck) deck.load({ ...c, slot: data });
+      if (inDeck && isCue(data)) deck.load(data);
     })().catch((err: unknown) => {
       setRetake({ key, error: err instanceof Error ? err.message : String(err) });
     });
   };
 
-  // Every slot with its record, in show order; the deck's cue or the first of them is what the player shows.
-  const segments = state.phase === "ready" ? state.session.segments : NO_SEGMENTS;
-  const cues = useMemo<Cue[]>(
-    () =>
-      segments.flatMap((g) =>
-        g.slots.flatMap((slot) => {
-          const track = g.tracks.find((t) => t.id === slot.trackId);
-          return track ? [{ num: g.num, slot, track }] : [];
-        }),
-      ),
-    [segments],
-  );
+  // Every slot with a pick, in show order; the deck's cue or the first of them is what the player shows.
+  const slots = state.phase === "ready" ? state.session.slots : NO_SLOTS;
+  const cues = useMemo<Cue[]>(() => slots.filter(isCue), [slots]);
   const cue = deck.cue ?? cues[0] ?? null;
-  const index = cue ? cues.findIndex((c) => cueKey(c) === cueKey(cue)) : -1;
+  const index = cue ? cues.findIndex((c) => c.seq === cue.seq) : -1;
+  // What ⏭ and the end of a track go to: the next slot, once it is voiced and can play.
+  const after = cues[index + 1];
+  const nextCue = after && after.status === "voiced" ? after : null;
 
   // The unlock must stay inside the tap: the graph and its elements first make sound in a gesture.
   const go = (c: Cue) => {
@@ -176,42 +194,27 @@ export function SessionView({ id }: { id: string }) {
     if (target) go(target);
   };
   const next = () => {
-    const target = cues[index + 1];
-    if (target) go(target);
+    if (nextCue) go(nextCue);
   };
-  // The record ended on its own: the next slot goes in.
+  // The track ended on its own: the next slot goes in, if it is ready.
   const deckLoad = deck.load;
   useEffect(() => {
     ended.current = () => {
-      const target = cues[index + 1];
-      if (deck.phase === "playing" && target) deckLoad(target);
+      if (deck.phase === "playing" && nextCue) deckLoad(nextCue);
     };
   });
-  // While a record plays, the next one is pulled — into the bucket and onto the page — so it starts on time.
-  const warm = deck.warm;
-  useEffect(() => {
-    const target = cues[index + 1];
-    if (deck.phase === "playing" && target) warm(target);
-  }, [deck.phase, cues, index, warm]);
 
   const running = deck.phase === "playing";
   const talking = running && deck.plan !== null && onMic(deck.plan, deck.headMs);
   const status = (() => {
-    if (deck.phase === "voicing") return "Voicing the slot…";
     if (deck.phase === "loading") return "Loading…";
     if (deck.phase === "paused") return "Paused";
     if (deck.phase === "error") return "Stopped";
     if (!running || !deck.cue) return "Off air";
-    const seg = segments.find((g) => g.num === deck.cue?.num);
-    const n = seg ? seg.slots.findIndex((s) => s.seq === deck.cue?.slot.seq) + 1 : 0;
-    return `${KIND_LABEL[deck.cue.slot.kind]} · slot ${n} of ${seg?.slots.length ?? 0}`;
+    return `${KIND_LABEL[deck.cue.kind]} · slot ${deck.cue.seq} of ${slots.length}`;
   })();
-
-  const producing = (() => {
-    if (state.phase !== "ready" || !state.producing) return null;
-    const [num, path] = state.producing.split(":");
-    return { num: Number(num), label: path === "playlist" ? "composing…" : "writing…" };
-  })();
+  // The track ran out and the next slot is not voiced yet: say so rather than go silent.
+  const waiting = deck.phase === "playing" && deck.record?.playing === false && after && !nextCue;
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5 px-4 pt-5 pb-10">
@@ -257,7 +260,7 @@ export function SessionView({ id }: { id: string }) {
         </p>
       )}
 
-      {/* the player: mounted from the first slot on, never unmounts */}
+      {/* the player: mounted from the first written slot on, never unmounts */}
       {cue && (
         <Card className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3">
@@ -271,20 +274,21 @@ export function SessionView({ id }: { id: string }) {
             headMs={deck.headMs}
             record={deck.record}
             canPrev={index > 0 || deck.headMs > RESTART_AFTER_MS}
-            canNext={index >= 0 && index < cues.length - 1}
+            canNext={nextCue !== null}
             onPrev={prev}
             onNext={next}
             onToggle={toggle}
             onScrub={deck.seek}
             onSeekRecord={deck.seekRecord}
           />
+          {waiting && <p className="text-xs text-zinc-500">Loading the next slot…</p>}
         </Card>
       )}
 
       {state.phase === "ready" && (
         <Rundown
-          segments={segments}
-          producing={producing}
+          slots={slots}
+          producing={state.producing ? { seq: state.producing.seq, label: state.producing.label } : null}
           cursor={deck.cue ? cueKey(deck.cue) : null}
           retaking={retake && !retake.error ? retake.key : null}
           onPick={go}

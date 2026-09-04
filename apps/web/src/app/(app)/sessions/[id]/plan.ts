@@ -1,6 +1,6 @@
 /**
  * The mix on paper, pure: from the kind, the clip's length (read when it loaded), the writer's
- * two numbers and the card's intro, when the mic, the bed and the record start and stop —
+ * two numbers and the chart's ramp, when the mic, the bed and the record start and stop —
  * every time in ms from the moment play is pressed. Opportunistic by design: nothing is
  * measured in the audio, the numbers are the writer's and the house's, and the player
  * follows them. A slot with no clip is the record alone.
@@ -16,8 +16,8 @@ export interface PlanInput {
   recordUnderMs?: number;
   /** Talk-ups: how far into the record the voice comes in. */
   voiceInMs?: number;
-  /** The card's intro, when known: a talk-up must be done a beat before it ends. */
-  introMs?: number;
+  /** The chart's ramp, when known: a talk-up must be done a beat before it ends. */
+  rampMs?: number;
   /** The legal ID's length in characters: said dry, the bed waits for it. */
   legalIdChars: number;
 }
@@ -31,7 +31,7 @@ export interface Plan {
   music: { atMs: number };
   /** The record under the voice: down as the voice comes in over it, back up once it is done. */
   duck: { atMs: number; endMs: number } | null;
-  /** Where the vocal comes in, when the card knows the intro. */
+  /** Where the vocal comes in, when the chart knows the ramp. */
   vocalMs?: number;
   /** Where the plan could not do what was asked, in words. */
   note?: string;
@@ -49,7 +49,7 @@ export const BEAT_MS = 400;
 export const LEGAL_ID_MS_PER_CHAR = 70;
 /** How much of the record the timeline shows after it starts, at least. */
 export const TAIL_MS = 8000;
-/** How far past the vocal the timeline shows, when the intro is known. */
+/** How far past the vocal the timeline shows, when the ramp is known. */
 export const VOCAL_TAIL_MS = 3000;
 /** The record's level on its own (the device's volume, 0–1). */
 export const RECORD_FULL = 0.8;
@@ -77,9 +77,9 @@ export function recordLevelAt(duck: Plan["duck"], ms: number): number {
 }
 
 /** How long the timeline runs past the record's start, and where its vocal is. */
-function past(musicAt: number, introMs: number | undefined): { lengthMs: number; vocalMs?: number } {
-  if (introMs === undefined) return { lengthMs: musicAt + TAIL_MS };
-  const vocalMs = musicAt + introMs;
+function past(musicAt: number, rampMs: number | undefined): { lengthMs: number; vocalMs?: number } {
+  if (rampMs === undefined) return { lengthMs: musicAt + TAIL_MS };
+  const vocalMs = musicAt + rampMs;
   return { lengthMs: Math.max(musicAt + TAIL_MS, vocalMs + VOCAL_TAIL_MS), vocalMs };
 }
 
@@ -94,7 +94,7 @@ export function bedGainAt(bed: NonNullable<Plan["bed"]>, ms: number): number {
 export function planSlot(input: PlanInput): Plan {
   const { kind, clipMs } = input;
   if (clipMs === null || kind === "segue")
-    return { ...past(0, input.introMs), mic: null, bed: null, music: { atMs: 0 }, duck: null };
+    return { ...past(0, input.rampMs), mic: null, bed: null, music: { atMs: 0 }, duck: null };
 
   if (kind === "break") {
     const musicAt = Math.max(0, clipMs - (input.recordUnderMs ?? 0));
@@ -106,7 +106,7 @@ export function planSlot(input: PlanInput): Plan {
         : null;
     const mic = { atMs: 0, endMs: clipMs };
     return {
-      ...past(musicAt, input.introMs),
+      ...past(musicAt, input.rampMs),
       mic,
       bed,
       music: { atMs: musicAt },
@@ -117,13 +117,13 @@ export function planSlot(input: PlanInput): Plan {
   if (kind === "talkup") {
     let at = input.voiceInMs ?? 0;
     let note: string | undefined;
-    if (input.introMs !== undefined) {
-      const latest = input.introMs - BEAT_MS - clipMs;
+    if (input.rampMs !== undefined) {
+      const latest = input.rampMs - BEAT_MS - clipMs;
       if (at > latest) at = Math.max(0, latest);
-      const over = at + clipMs - (input.introMs - BEAT_MS);
+      const over = at + clipMs - (input.rampMs - BEAT_MS);
       if (over > 0) note = `the talk-up runs ${(over / 1000).toFixed(1)} s past the vocal`;
     }
-    const p = past(0, input.introMs);
+    const p = past(0, input.rampMs);
     const mic = { atMs: at, endMs: at + clipMs };
     const plan: Plan = {
       ...p,
@@ -139,7 +139,7 @@ export function planSlot(input: PlanInput): Plan {
 
   // sweeper: dry, then a hard start
   return {
-    ...past(clipMs, input.introMs),
+    ...past(clipMs, input.rampMs),
     mic: { atMs: 0, endMs: clipMs },
     bed: null,
     music: { atMs: clipMs },

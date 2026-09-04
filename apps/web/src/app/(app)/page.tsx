@@ -9,7 +9,7 @@ interface SessionRow {
   prompt: string;
   voice_id: string;
   created_at: Date;
-  segments: string;
+  slots: string;
 }
 
 /** How many earlier sessions the desk shows. */
@@ -24,8 +24,8 @@ export default async function HomePage() {
   const [voices, { rows }] = await Promise.all([
     loadVoices(),
     pool().query<SessionRow>(
-      `select s.id, s.prompt, s.voice_id, s.created_at, count(g.tracks) as segments
-       from session s left join session_segment g on g.session_id = s.id
+      `select s.id, s.prompt, s.voice_id, s.created_at, count(l.id) as slots
+       from session s left join session_slot l on l.session_id = s.id
        group by s.id order by s.created_at desc limit $1`,
       [LOG_LENGTH],
     ),
@@ -34,7 +34,7 @@ export default async function HomePage() {
     sessionId: r.id,
     prompt: r.prompt,
     dj: (voices.find((v) => v.id === r.voice_id) ?? voices[0])?.name ?? "no voice",
-    segments: Number(r.segments),
+    slots: Number(r.slots),
     createdAt: r.created_at.toISOString(),
   }));
   return (

@@ -1,14 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { CLOCK_KEY, Clock } from "@/lib/clock";
 import { pool } from "@/lib/db";
 import { IDENTITY_KEY, Identity } from "@/lib/identity";
 import { loadVoices } from "@/lib/settings";
 import { type Voice, VOICES_KEY, VoiceSchema, VoicesSchema } from "@/lib/voices";
 
 /**
- * /settings Server Actions. Identity: one JSON row, read per segment when the brief is written.
- * Voices: the roster is one JSON row (`settings.voices`); every change reads it, edits it, writes
+ * /settings Server Actions. Identity and clock: one JSON row each, read per slot when the brief
+ * is written. Voices: the roster is one JSON row (`settings.voices`); every change reads it, edits it, writes
  * it back — the next clip voiced reads the change, clips already kept keep their voice.
  */
 
@@ -35,6 +36,27 @@ export async function saveIdentity(_prev: SaveState, formData: FormData): Promis
   await saveSetting(IDENTITY_KEY, JSON.stringify(parsed.data));
   revalidatePath("/settings");
   revalidatePath("/");
+  return { savedAt: new Date().toISOString() };
+}
+
+// ---- clock --------------------------------------------------------------------
+
+export async function saveClock(_prev: SaveState, formData: FormData): Promise<SaveState> {
+  const field = (name: string) => {
+    const v = formData.get(name);
+    return typeof v === "string" && v.trim() !== "" ? Number(v) : Number.NaN;
+  };
+  const parsed = Clock.safeParse({
+    breakEvery: field("breakEvery"),
+    fill: field("fill"),
+    lowWater: field("lowWater"),
+  });
+  if (!parsed.success) {
+    const at = parsed.error.issues[0]?.path[0];
+    return { error: `${String(at ?? "every field")} needs a whole number of 1 or more.` };
+  }
+  await saveSetting(CLOCK_KEY, JSON.stringify(parsed.data));
+  revalidatePath("/settings");
   return { savedAt: new Date().toISOString() };
 }
 
