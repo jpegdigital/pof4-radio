@@ -38,10 +38,10 @@ export function useMediaSession({
     const ms = navigator.mediaSession;
     // Play and pause each do one thing: a stale lock screen must not flip the deck the wrong way.
     ms.setActionHandler("play", () => {
-      if (now.current.phase !== "playing") now.current.onToggle();
+      if (lockScreen(now.current.phase, null).playbackState !== "playing") now.current.onToggle();
     });
     ms.setActionHandler("pause", () => {
-      if (now.current.phase === "playing") now.current.onToggle();
+      if (lockScreen(now.current.phase, null).playbackState === "playing") now.current.onToggle();
     });
     ms.setActionHandler("previoustrack", () => now.current.onPrev());
     ms.setActionHandler("nexttrack", () => now.current.onNext());

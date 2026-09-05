@@ -14,6 +14,14 @@ export const RESTART_AFTER_MS = 3000;
 /** The head and the record's clock may disagree by this much before the mix is laid again. */
 export const DRIFT_MS = 500;
 
+/** An ended track resumes the wait for its successor, never the completed audio. */
+export function toggleMove(phase: DeckPhase, ended: boolean): "pause" | "wait" | "resume" | "load" | null {
+  if (phase === "playing" || phase === "waiting") return "pause";
+  if (phase === "paused" || phase === "held") return ended ? "wait" : "resume";
+  if (phase === "idle" || phase === "error") return "load";
+  return null;
+}
+
 /**
  * Whether a paused deck can pick the slot up where it was: only once the track is on and the
  * voice is done, when the track alone is sounding and the device's own position is the truth
@@ -71,13 +79,14 @@ export interface LockScreen {
 
 export function lockScreen(phase: DeckPhase, track: TrackClock | null): LockScreen {
   const playbackState: MediaSessionPlaybackState =
-    phase === "playing" || phase === "loading"
+    phase === "playing" || phase === "loading" || phase === "waiting"
       ? "playing"
       : phase === "paused" || phase === "held"
         ? "paused"
         : "none";
   const shown =
     playbackState !== "none" &&
+    phase !== "waiting" &&
     track !== null &&
     track.durationMs > 0 &&
     (track.playing || phase !== "playing");

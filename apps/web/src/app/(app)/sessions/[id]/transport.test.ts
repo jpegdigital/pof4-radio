@@ -11,6 +11,7 @@ import {
   realign,
   RESTART_AFTER_MS,
   resumes,
+  toggleMove,
 } from "./transport";
 import type { DeckPhase, TrackClock } from "./types";
 
@@ -46,6 +47,30 @@ describe("resumes", () => {
     [segue, 100, true, "a segue: the track alone, always resumable"],
   ])("%#: %s", (plan, headMs, want, _id) => {
     expect(resumes(plan, headMs)).toBe(want);
+  });
+});
+
+describe("the lock screen while the next track is being prepared", () => {
+  it("keeps pause available without showing a completed track position", () => {
+    expect(lockScreen("waiting", { positionMs: 1000, durationMs: 1000, playing: false })).toEqual({
+      playbackState: "playing",
+      position: null,
+    });
+  });
+});
+
+describe("play and pause intent", () => {
+  it.each<{ id: string; phase: DeckPhase; ended: boolean; want: string | null }>([
+    { id: "pause a playing track", phase: "playing", ended: false, want: "pause" },
+    { id: "pause automatic continuation", phase: "waiting", ended: true, want: "pause" },
+    { id: "resume waiting without replaying the ended track", phase: "paused", ended: true, want: "wait" },
+    { id: "resume a paused track", phase: "paused", ended: false, want: "resume" },
+    { id: "resume an interrupted track", phase: "held", ended: false, want: "resume" },
+    { id: "retry a failed track load", phase: "error", ended: false, want: "load" },
+    { id: "start a ready cue", phase: "idle", ended: false, want: "load" },
+    { id: "do not duplicate an active load", phase: "loading", ended: false, want: null },
+  ])("$id", ({ phase, ended, want }) => {
+    expect(toggleMove(phase, ended)).toBe(want);
   });
 });
 

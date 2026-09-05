@@ -12,7 +12,7 @@ import {
   trackLevelAt,
   RISE_MS,
 } from "./plan";
-import { onContext, realign, resumes } from "./transport";
+import { onContext, realign, resumes, toggleMove } from "./transport";
 import type { Cue, DeckPhase, Slot, TrackClock } from "./types";
 
 /**
@@ -50,6 +50,8 @@ const STALL_CHECK_MS = 300;
 export interface Deck {
   cue: Cue | null;
   phase: DeckPhase;
+  /** The track ended; pausing here must not restart it when the next slot is still being made. */
+  ended: boolean;
   /** What went wrong, while `phase` is "error". */
   message: string | null;
   plan: Plan | null;
@@ -72,6 +74,7 @@ export interface Deck {
 interface State {
   cue: Cue | null;
   phase: DeckPhase;
+  ended: boolean;
   message: string | null;
   plan: Plan | null;
   clipUrl: string | null;
@@ -139,6 +142,7 @@ export const trackUrlOf = (sessionId: string, seq: number) => `/api/sessions/${s
 const IDLE: State = {
   cue: null,
   phase: "idle",
+  ended: false,
   message: null,
   plan: null,
   clipUrl: null,
@@ -156,21 +160,18 @@ const clockOf = (rec: HTMLAudioElement, durationMs: number): TrackClock => ({
 export function useDeck({
   sessionId,
   onSlot,
-  onEnded,
 }: {
   sessionId: string;
   /** A slot changed (its track came to be held): the page folds it into the document. */
   onSlot: (slot: Slot) => void;
-  /** The track played to its end. */
-  onEnded: () => void;
 }): Deck {
   const [state, setState] = useState<State>(IDLE);
   // The latest state and handlers, for the callbacks (which run from taps and timers, not renders).
   const st = useRef(state);
-  const h = useRef({ onSlot, onEnded });
+  const h = useRef({ onSlot });
   useEffect(() => {
     st.current = state;
-    h.current = { onSlot, onEnded };
+    h.current = { onSlot };
   });
   const run = useRef<Run | null>(null);
   // A load overtaken by a later one must not start playing.
@@ -198,7 +199,13 @@ export function useDeck({
     return performance.now() - r.startedAt;
   }, []);
 
-  useEffect(() => () => void halt(), [halt]);
+  useEffect(
+    () => () => {
+      ++loads.current;
+      halt();
+    },
+    [halt],
+  );
 
   /** The frame loop: the head and the track's clock follow while the deck runs. */
   const tick = useCallback(function tick() {
@@ -285,7 +292,16 @@ export function useDeck({
         g.rec.src = trackUrl;
         g.rec.load();
       }
-      g.rec.onended = () => h.current.onEnded();
+      g.rec.onended = () => {
+        const headMs = halt();
+        setState((s) => ({
+          ...s,
+          phase: "waiting",
+          ended: true,
+          headMs,
+          track: clockOf(g.rec, cue.pick.durationMs),
+        }));
+      };
       at(plan.music.atMs, (headMs) => {
         g.rec.currentTime = (offsetsAt(plan, headMs).trackMs ?? 0) / 1000;
         g.rec.play().catch((e: unknown) => {
@@ -296,6 +312,7 @@ export function useDeck({
       setState({
         cue,
         phase: "playing",
+        ended: false,
         message: null,
         plan,
         clipUrl,
@@ -304,7 +321,7 @@ export function useDeck({
         track: clockOf(g.rec, cue.pick.durationMs),
       });
     },
-    [tick],
+    [tick, halt],
   );
 
   const unlock = useCallback(() => {
@@ -378,6 +395,10 @@ export function useDeck({
   /** Play again from the head, after the listener's pause or the platform's hold. */
   const resume = useCallback(() => {
     const s = st.current;
+    if (s.ended) {
+      setState((x) => ({ ...x, phase: "waiting" }));
+      return;
+    }
     if (!s.cue || !s.plan || !s.trackUrl) return;
     if (resumes(s.plan, s.headMs)) {
       // The voice is done: whatever level the pause caught, the track alone is full.
@@ -399,14 +420,16 @@ export function useDeck({
 
   const toggle = useCallback(() => {
     const s = st.current;
-    if (s.phase === "playing") {
+    const move = toggleMove(s.phase, s.ended);
+    if (move === "pause") {
       const headMs = halt();
       setState((x) => ({ ...x, phase: "paused", headMs }));
       return;
     }
     if (!s.cue) return;
-    if (s.phase === "paused" || s.phase === "held") resume();
-    else if (s.phase === "idle" || s.phase === "error") load(s.cue);
+    if (move === "wait") setState((x) => ({ ...x, phase: "waiting" }));
+    else if (move === "resume") resume();
+    else if (move === "load") load(s.cue);
   }, [halt, resume, load]);
 
   // The platform taking the audio (a call, Siri) interrupts the context: on air, hold — the head
@@ -434,6 +457,7 @@ export function useDeck({
       const g = graph;
       const r = run.current;
       const s = st.current;
+      if (s.ended) return;
       if (document.visibilityState !== "visible" || !g || !r) return;
       if (s.cue && s.plan && s.trackUrl) {
         const headMs = realign(s.plan, performance.now() - r.startedAt, g.rec.currentTime * 1000);
@@ -464,25 +488,38 @@ export function useDeck({
       const s = st.current;
       if (!s.cue || !s.plan || !s.trackUrl) return;
       const headMs = Math.max(0, Math.min(s.plan.lengthMs, ms));
-      if (s.phase === "playing") {
+      if (s.phase === "playing" || s.phase === "waiting") {
         halt();
         void start(s.cue, s.plan, s.clipUrl, s.trackUrl, headMs);
-      } else if (s.phase === "paused" || s.phase === "held") setState((x) => ({ ...x, headMs }));
+      } else if (s.phase === "paused" || s.phase === "held")
+        setState((x) => ({ ...x, headMs, ended: false }));
     },
     [halt, start],
   );
 
-  const seekTrack = useCallback((ms: number) => {
-    const g = graph;
-    const s = st.current;
-    if (!g || !s.cue || !s.trackUrl) return;
-    g.rec.currentTime = Math.max(0, ms) / 1000;
-    setState((x) => ({ ...x, track: x.cue ? clockOf(g.rec, x.cue.pick.durationMs) : x.track }));
-  }, []);
+  const seekTrack = useCallback(
+    (ms: number) => {
+      const g = graph;
+      const s = st.current;
+      if (!g || !s.cue || !s.trackUrl) return;
+      g.rec.currentTime = Math.max(0, ms) / 1000;
+      if (s.ended && s.plan) {
+        const headMs = s.plan.music.atMs + Math.max(0, ms);
+        if (s.phase === "waiting") {
+          void start(s.cue, s.plan, s.clipUrl, s.trackUrl, headMs);
+          return;
+        }
+        setState((x) => ({ ...x, ended: false, headMs }));
+      }
+      setState((x) => ({ ...x, track: x.cue ? clockOf(g.rec, x.cue.pick.durationMs) : x.track }));
+    },
+    [start],
+  );
 
   return {
     cue: state.cue,
     phase: state.phase,
+    ended: state.ended,
     message: state.message,
     plan: state.plan,
     headMs: state.headMs,

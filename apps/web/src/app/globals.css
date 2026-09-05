@@ -21,6 +21,32 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
+/* The listening desk: quiet signage, room for the record, amber only at the controls. */
+.station-shell {
+  @apply mx-auto w-full max-w-6xl px-5 pb-36 sm:px-8 lg:pb-16;
+  background: radial-gradient(ellipse at 15% 0%, #f2b54406, transparent 55%);
+}
+.station-header {
+  @apply mb-10 flex min-h-24 items-center justify-between gap-4 border-b border-zinc-800/80 sm:mb-14;
+}
+.station-wordmark {
+  @apply flex items-center gap-2.5 rounded-sm font-display text-lg font-semibold uppercase tracking-[0.12em] sm:text-xl;
+}
+.listening-player {
+  @apply rounded-3xl border border-zinc-800 bg-zinc-900/40 p-5 sm:p-8;
+  background-image: radial-gradient(ellipse at 50% 0%, #f2b54408, transparent 65%);
+}
+.record-placeholder {
+  background: repeating-radial-gradient(circle at center, #27272a 0 1px, #18181b 2px 13px);
+}
+.player-transport {
+  @apply fixed inset-x-0 bottom-0 z-20 flex items-center justify-center gap-8 border-t border-zinc-800 bg-zinc-950/95 px-5 pt-3 backdrop-blur-xl lg:static lg:border-0 lg:bg-transparent lg:p-0;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+.station-error {
+  @apply mb-4 rounded-xl border border-amber-900/70 bg-amber-950/20 p-4 text-sm leading-relaxed text-amber-200;
+}
+
 /* The on-air lamp: dark glass when off, lit amber when the loop runs, breathing while the DJ talks. */
 .lamp {
   background: #27272a;

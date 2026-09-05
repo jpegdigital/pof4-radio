@@ -87,7 +87,7 @@ describe("nextMove — the slot, one ahead of the cue", () => {
     });
   });
 
-  it("the same slot attempted once → nothing until a reload", () => {
+  it("the same slot attempted once → nothing until a retry clears its key", () => {
     expect(
       nextMove(slots("written", ...Array<Status>(5).fill("proposed")), clock, null, new Set(["slot:1"])),
     ).toBeNull();

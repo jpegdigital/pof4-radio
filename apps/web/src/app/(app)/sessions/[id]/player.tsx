@@ -1,9 +1,9 @@
-import { Mic, Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import { Disc3, Mic, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, useState } from "react";
 import { focusRing } from "../../lib/ui";
 import type { Plan } from "./plan";
 import { onMic } from "./transport";
-import { type Cue, clock, type DeckPhase, KIND_LABEL, secs, type TrackClock } from "./types";
+import { type Cue, clock, type DeckPhase, secs, type TrackClock } from "./types";
 
 /**
  * The transport, lifted from the old station: the art slot, three lines, a progress line, three
@@ -47,56 +47,48 @@ export function Player({
   onSeekTrack: (ms: number) => void;
 }) {
   const { pick } = cue;
-  const making = phase === "loading";
+  const making = phase === "loading" || !cue.voiced;
   const running = phase === "playing" || phase === "paused" || phase === "held";
   const talking = plan !== null && running && onMic(plan, headMs);
-  const paused = phase !== "playing";
+  const paused = phase !== "playing" && phase !== "waiting";
   const rec = track ?? { positionMs: 0, durationMs: pick.durationMs, playing: false };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-4">
-        {talking || making ? (
-          <div
-            aria-hidden="true"
-            className={`lamp on ${talking && !paused ? "talking" : ""} flex size-20 shrink-0 items-center justify-center rounded-lg text-black`}
-          >
-            <Mic className="size-8" strokeWidth={1.75} />
-          </div>
-        ) : pick.image ? (
-          // biome-ignore lint/performance/noImgElement: album art is a remote Qobuz CDN url
-          <img src={pick.image} alt="" className="size-20 shrink-0 rounded-lg bg-zinc-800 object-cover" />
-        ) : (
-          <div className="size-20 shrink-0 rounded-lg bg-zinc-800" />
-        )}
-        <div className="min-w-0 flex-1">
-          {talking || making ? (
-            <>
-              <div className="truncate text-base font-medium">On the mic</div>
-              <div className="truncate text-sm text-zinc-400">
-                {KIND_LABEL[cue.kind]} · into {pick.title}
-              </div>
-              <div className="truncate font-mono text-xs text-zinc-500">{cue.words ?? cue.legalId ?? ""}</div>
-            </>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col items-center gap-6 text-center">
+        <div className="relative w-full max-w-80">
+          {pick.image ? (
+            // biome-ignore lint/performance/noImgElement: album art is a remote Qobuz CDN url
+            <img
+              src={pick.image}
+              alt={`${pick.album} album cover`}
+              className="aspect-square w-full rounded-xl bg-zinc-800 object-cover shadow-2xl"
+            />
           ) : (
-            <>
-              <div className="truncate text-base font-medium">{pick.title}</div>
-              <div className="truncate text-sm text-zinc-400">{pick.artists.join(", ")}</div>
-              <div className="truncate text-xs text-zinc-500">{pick.album}</div>
-            </>
+            <div className="record-placeholder flex aspect-square items-center justify-center rounded-xl">
+              <Disc3 className="size-20 text-lamp/60" strokeWidth={1} aria-hidden="true" />
+            </div>
           )}
+          {talking && !paused && (
+            <span className="absolute right-3 bottom-3 left-3 flex items-center justify-center gap-2 rounded-lg bg-zinc-950/90 px-3 py-2 text-xs text-lamp">
+              <Mic className="size-3.5" aria-hidden="true" /> Your DJ is on the mic
+            </span>
+          )}
+        </div>
+        <div className="w-full min-w-0">
+          <h1 className="text-2xl font-medium tracking-tight text-zinc-100 sm:text-3xl">{pick.title}</h1>
+          <p className="mt-2 text-base text-zinc-300">{pick.artists.join(", ")}</p>
+          <p className="mt-1 text-sm text-zinc-500">{pick.album}</p>
         </div>
       </div>
 
-      {plan ? (
-        <Lanes plan={plan} headMs={running ? headMs : null} track={pick} onScrub={running ? onScrub : null} />
-      ) : making ? (
-        <Loading label="loading…" />
-      ) : null}
+      {making ? (
+        <Loading label={cue.voiced ? "Loading your track…" : "Preparing your DJ’s introduction…"} />
+      ) : (
+        <Progress clock={rec} onSeek={track && running ? onSeekTrack : null} />
+      )}
 
-      <Progress clock={rec} onSeek={track && running ? onSeekTrack : null} />
-
-      <div className="flex items-center justify-center gap-6">
+      <div className="player-transport">
         <button type="button" onClick={onPrev} disabled={!canPrev} aria-label="Previous" className={iconBtn}>
           <SkipBack className="size-6" fill="currentColor" strokeWidth={0} />
         </button>
@@ -105,7 +97,7 @@ export function Player({
           onClick={onToggle}
           disabled={making}
           aria-label={paused ? "Play" : "Pause"}
-          className={`flex size-14 items-center justify-center rounded-full bg-zinc-100 text-black transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 ${focusRing}`}
+          className={`flex size-16 items-center justify-center rounded-full bg-lamp text-zinc-950 shadow-[0_0_28px_#f2b54420] transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 ${focusRing}`}
         >
           {paused ? (
             <Play className="ml-0.5 size-6" fill="currentColor" strokeWidth={0} />
@@ -117,11 +109,28 @@ export function Player({
           <SkipForward className="size-6" fill="currentColor" strokeWidth={0} />
         </button>
       </div>
+      {plan && (
+        <details className="group border-t border-zinc-800 pt-2">
+          <summary
+            className={`cursor-pointer py-3 text-sm text-zinc-400 transition hover:text-zinc-100 ${focusRing}`}
+          >
+            Studio <span className="ml-2 text-xs text-zinc-500">The mix behind the music</span>
+          </summary>
+          <div className="pt-3 pb-2">
+            <Lanes
+              plan={plan}
+              headMs={running ? headMs : null}
+              track={pick}
+              onScrub={running ? onScrub : null}
+            />
+          </div>
+        </details>
+      )}
     </div>
   );
 }
 
-const iconBtn = `rounded-full p-2 text-zinc-300 transition hover:text-white active:scale-95 disabled:opacity-30 disabled:hover:text-zinc-300 ${focusRing}`;
+const iconBtn = `flex size-12 items-center justify-center rounded-full text-zinc-300 transition hover:text-white active:scale-95 disabled:opacity-30 disabled:hover:text-zinc-300 ${focusRing}`;
 
 /**
  * A strip you can scrub: pointer down and drag shows where you are (`drag`), letting go

@@ -3,8 +3,8 @@
  * or the unwritten ones are down to the low-water mark; else the first unvoiced slot, but only
  * one ahead of the cue in the deck — so before play only slot 1 is written, and once slot k is
  * on air slot k+1 is; the show never spends a model call on a slot nobody will reach. Each move
- * is keyed (`fill:<slot count>`, `slot:<seq>`) and made once per page life: a failure stays on
- * screen, a reload retries.
+ * is keyed (`fill:<slot count>`, `slot:<seq>`) and made once until explicitly retried: the page
+ * refreshes the snapshot and removes the failed key before asking for another move.
  */
 
 export type Move = { kind: "fill"; key: string } | { kind: "slot"; seq: number; key: string } | null;

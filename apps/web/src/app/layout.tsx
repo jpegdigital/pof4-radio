@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 /**
  * The root: fonts, ground colour, nothing else. Each route group brings its own shell —
- * `(app)` is the station, phone-sized; `(settings)` is the control room, desktop-wide.
+ * `(app)` is the responsive listening desk; `(settings)` is the control room.
  */
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

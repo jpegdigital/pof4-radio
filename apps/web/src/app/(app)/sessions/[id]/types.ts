@@ -75,8 +75,8 @@ export const isCue = (s: Slot): s is Cue => s.pick !== undefined && s.kind !== u
 
 export const cueKey = (c: Cue) => String(c.seq);
 
-/** The deck's phase: "held" is a pause the platform made (a call took the audio), not the listener. */
-export type DeckPhase = "idle" | "loading" | "playing" | "paused" | "held" | "error";
+/** "held" is a platform interruption; "waiting" is an ended track awaiting the next cue. */
+export type DeckPhase = "idle" | "loading" | "playing" | "waiting" | "paused" | "held" | "error";
 
 /** The track's own clock, as of the last frame. */
 export interface TrackClock {
