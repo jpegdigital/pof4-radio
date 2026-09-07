@@ -12,7 +12,7 @@ import { Written } from "./shapes";
  * line, why) and the two numbers the mix follows (the timing). The brief carries the ask, the
  * clock, the station, the DJ, this slot's proposal and its hits as a menu, the last slots' copy,
  * everything played, another DJ's chart of any hit when one exists, and — for a break only — the
- * legal ID when due, the weather and the headlines. The clock's word on the kind goes in the
+ * legal ID when due, the weather and a flag reserving space for separately checked news. The clock's word on the kind goes in the
  * brief and is enforced after (rules.ts). A refusal or a pick outside the hits gets one more try;
  * nothing usable twice is null, and the caller makes the slot a segue. Pure production: no
  * database in here; the caller owns the row.
@@ -76,8 +76,8 @@ export interface WriteInput {
   legalId: string | null;
   /** The weather as the brief carries it (`weatherText`), or null: then nothing is said of it. */
   weather: string | null;
-  /** The headlines as the brief carries them (`headlinesText`), or null: then none are said. */
-  headlines: string | null;
+  /** The editor's checked sentence is composed outside this writer, never paraphrased here. */
+  newsReserved: boolean;
 }
 
 const mmss = (ms: number) =>
@@ -92,14 +92,6 @@ export const weatherBlock = (city: string, weather: string) =>
     `The weather in ${city} right now, from the National Weather Service:`,
     weather,
     'Say it in the break, in one breath, the way it rolls off the tongue: what it is now, then today and tonight — "eighty-one and cloudy, storms around lunch, down to seventy-six tonight". Two sentences at most. Skip the humidity, the wind and the rain totals unless one of them is the story.',
-  ].join("\n");
-
-/** One headline in the break, a single spoken sentence. The DJ picks what sits with the music. */
-export const headlinesBlock = (headlines: string) =>
-  [
-    "The headlines right now, from Google News (the city's, then the nation's, then the world's), each with its source:",
-    headlines,
-    'Say one of them in the break, two at most, each a single spoken sentence: the gist, in your own words, and the source when it matters ("the Morning News says…"). Pick what sits with the music and the hour; leave the rest unsaid. Nothing grim straight into a love song.',
   ].join("\n");
 
 const recentLine = (r: RecentSlot) => {
@@ -154,7 +146,13 @@ export function writeBrief(input: WriteInput): string {
     "Chart the version you picked from what you know of it: the ramp before the first vocal (and whether you are sure of it), where the vocal lands, how it ends, the feel.",
     "",
     ...(clockSaysBreak && input.weather ? [weatherBlock(input.identity.city, input.weather), ""] : []),
-    ...(clockSaysBreak && input.headlines ? [headlinesBlock(input.headlines), ""] : []),
+    "Do not write news or current-event claims, even from the listener request or earlier copy. The news editor owns those words.",
+    ...(clockSaysBreak && input.newsReserved
+      ? [
+          "A checked news sentence is inserted before your words. Keep your music/weather portion to 25–35 words and use a neutral transition. Do not repeat or refer back to the news.",
+          "",
+        ]
+      : []),
     RULES_TEXT,
   ].join("\n");
 }

@@ -15,7 +15,7 @@ import { failureKind, guardUrl, isNavigation, returnUrl, verifyGuard } from "./l
  * room (/settings — the identity and the voices, plus its voice-preview endpoint) still asks for the passkey. Flip to false to gate everything.
  */
 const GUARD_OPEN = true;
-const ALWAYS_GUARDED = ["/settings", "/api/tts/preview"];
+const ALWAYS_GUARDED = ["/settings", "/api/tts/preview", "/api/news"];
 
 export const config = {
   // The complete exempt list: Railway's healthcheck and static assets. /media and the

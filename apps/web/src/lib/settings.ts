@@ -1,6 +1,7 @@
 import { CLOCK_KEY, Clock } from "./clock";
 import { pool } from "./db";
 import { IDENTITY_KEY, Identity } from "./identity";
+import { NEWS_DEFAULTS, NEWS_KEY, NewsConfig } from "./news";
 import { parseVoices, type Voice, VOICES_KEY } from "./voices";
 
 /**
@@ -39,4 +40,12 @@ export async function loadClock(): Promise<Clock> {
   if (!parsed.success)
     throw new Error(`settings row ${CLOCK_KEY} is malformed: ${parsed.error.issues[0]?.message}`);
   return parsed.data;
+}
+
+/** News is additive: first-install defaults keep existing settings rows valid. */
+export async function loadNews(): Promise<NewsConfig> {
+  const { rows } = await pool().query<{ value: string }>("select value from settings where key = $1", [
+    NEWS_KEY,
+  ]);
+  return NewsConfig.parse(rows[0] ? JSON.parse(rows[0].value) : NEWS_DEFAULTS);
 }

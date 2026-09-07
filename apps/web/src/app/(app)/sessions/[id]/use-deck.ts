@@ -13,7 +13,9 @@ import {
   RISE_MS,
 } from "./plan";
 import { onContext, realign, resumes, toggleMove } from "./transport";
-import type { Cue, DeckPhase, Slot, TrackClock } from "./types";
+import { clockMsNow, type Cue, type DeckPhase, type Slot, type TrackClock } from "./types";
+import { newsFreeCue, shouldCheckNews } from "./news-playback";
+import { NEWS_AIR_MARGIN_MS, newsExpired } from "@/lib/news";
 
 /**
  * The deck: one slot on air at a time, three lanes from one clock. Load a cue and its clip and
@@ -160,18 +162,20 @@ const clockOf = (rec: HTMLAudioElement, durationMs: number): TrackClock => ({
 export function useDeck({
   sessionId,
   onSlot,
+  replay = false,
 }: {
   sessionId: string;
   /** A slot changed (its track came to be held): the page folds it into the document. */
   onSlot: (slot: Slot) => void;
+  replay?: boolean;
 }): Deck {
   const [state, setState] = useState<State>(IDLE);
   // The latest state and handlers, for the callbacks (which run from taps and timers, not renders).
   const st = useRef(state);
-  const h = useRef({ onSlot });
+  const h = useRef({ onSlot, replay });
   useEffect(() => {
     st.current = state;
-    h.current = { onSlot };
+    h.current = { onSlot, replay };
   });
   const run = useRef<Run | null>(null);
   // A load overtaken by a later one must not start playing.
@@ -222,6 +226,57 @@ export function useDeck({
   /** The three lanes from one clock, from `fromMs` on the timeline. */
   const start = useCallback(
     async (cue: Cue, plan: Plan, clipUrl: string | null, trackUrl: string, fromMs: number) => {
+      const generation = loads.current;
+      if (shouldCheckNews(cue, h.current.replay, fromMs, plan.mic?.endMs ?? 0)) {
+        let checked = cue;
+        try {
+          const res = await fetch(`/api/sessions/${sessionId}/slots/${cue.seq}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ clockMs: clockMsNow(), live: true }),
+            signal: AbortSignal.timeout(6_000),
+          });
+          if (!res.ok) throw new Error(`news preflight HTTP ${res.status}`);
+          checked = (await res.json()) as Cue;
+          if (!checked.pick || !checked.voiced || newsExpired(checked.news, Date.now() + NEWS_AIR_MARGIN_MS))
+            throw new Error("news is not ready for air");
+          h.current.onSlot(checked);
+        } catch (err) {
+          console.warn("[deck] using news-free take:", err);
+          if (!cue.news) {
+            setState((s) => ({
+              ...s,
+              phase: "error",
+              message:
+                "This older break needs a fresh voice before live playback. Retry play, or enable recorded replay.",
+            }));
+            return;
+          }
+          checked = newsFreeCue(cue);
+        }
+        if (checked.clipKey !== cue.clipKey) {
+          const entry = checked.clipKey
+            ? await getClip(clipUrlOf(sessionId, checked.seq, checked.clipKey))
+            : null;
+          if (entry && "error" in entry) {
+            setState((s) => ({ ...s, phase: "error", message: entry.error }));
+            return;
+          }
+          clipUrl = entry?.url ?? null;
+          const oldMusicAt = plan.music.atMs;
+          plan = planSlot({
+            kind: checked.kind,
+            clipMs: entry?.durationMs ?? null,
+            recordUnderMs: checked.recordUnderMs,
+            voiceInMs: checked.voiceInMs,
+            rampMs: checked.chart?.rampMs,
+            legalIdChars: checked.legalId?.length ?? 0,
+          });
+          fromMs = fromMs >= oldMusicAt ? plan.music.atMs + fromMs - oldMusicAt : 0;
+        }
+        cue = checked;
+      }
+      if (generation !== loads.current) return;
       const g = ensureGraph();
       void g.ctx.resume();
       const from = Math.max(0, Math.min(plan.lengthMs, fromMs));
@@ -246,6 +301,28 @@ export function useDeck({
           const { micMs } = offsetsAt(plan, headMs);
           if (micMs === null) return; // so late the voice is over
           g.mic.currentTime = micMs / 1000;
+          // A complete break from its beginning is a conservative proof that its news was heard.
+          // Pauses/seeks may lose an acknowledgment; they must never invent one.
+          g.mic.onended =
+            !h.current.replay && cue.news?.words && micMs < 250
+              ? () => {
+                  if (h.current.replay) return;
+                  void fetch(`/api/sessions/${sessionId}/slots/${cue.seq}/news`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    keepalive: true,
+                    body: JSON.stringify({
+                      clipKey: cue.clipKey,
+                      storyId: cue.news?.storyId,
+                      revision: cue.news?.revision,
+                    }),
+                  })
+                    .then((res) => {
+                      if (!res.ok) console.warn(`[deck] news acknowledgment HTTP ${res.status}`);
+                    })
+                    .catch((err: unknown) => console.warn("[deck] news acknowledgment:", err));
+                }
+              : null;
           g.mic.play().catch((e: unknown) => console.warn("[deck] mic:", e));
         });
       }
@@ -321,7 +398,7 @@ export function useDeck({
         track: clockOf(g.rec, cue.pick.durationMs),
       });
     },
-    [tick, halt],
+    [tick, halt, sessionId],
   );
 
   const unlock = useCallback(() => {
@@ -357,6 +434,10 @@ export function useDeck({
 
   const load = useCallback(
     (cue: Cue) => {
+      if (h.current.replay && cue.news?.previous?.length) {
+        const original = cue.news.previous[0];
+        cue = { ...cue, words: original.words, clipKey: original.clipKey };
+      }
       halt();
       const seq = ++loads.current;
       setState({ ...IDLE, cue, phase: "loading" });

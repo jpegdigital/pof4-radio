@@ -116,7 +116,8 @@ export function SessionView({ id }: { id: string }) {
     };
   }, [load, pull]);
 
-  const deck = useDeck({ sessionId: id, onSlot });
+  const [replay, setReplay] = useState(false);
+  const deck = useDeck({ sessionId: id, onSlot, replay });
   const cueSeq = deck.cue?.seq ?? null;
   const waiting = deck.ended;
 
@@ -355,6 +356,23 @@ export function SessionView({ id }: { id: string }) {
 
           {/* the player: mounted from the first written slot on, never unmounts */}
           <section aria-label="Player" className="listening-player">
+            <label className="mb-4 flex items-center gap-2 text-xs text-zinc-400">
+              <input
+                type="checkbox"
+                checked={replay}
+                onChange={(e) => {
+                  if (deck.phase === "playing") deck.toggle();
+                  setReplay(e.target.checked);
+                }}
+              />
+              Use original news recordings when selecting a track
+            </label>
+            {replay && state.phase === "ready" && (
+              <p className="mb-4 text-xs text-amber-200">
+                Recorded show from {new Date(state.session.createdAt).toLocaleDateString()}. News reflects its
+                original recording time.
+              </p>
+            )}
             <div className="mb-6 flex items-center justify-between gap-3">
               <span className="font-display text-xs uppercase tracking-[0.2em] text-zinc-400">
                 {running ? "Now playing" : "Your station"}

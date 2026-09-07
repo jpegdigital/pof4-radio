@@ -26,7 +26,8 @@ philosophy).
   platform, or thirty lines of our own would do: Qobuz is plain `fetch` against its web player's own
   API (`api/sessions/qobuz.ts`, the app id + secret read out of the player's bundle), the bucket
   client is AWS SigV4 by hand (`apps/web/src/lib/sigv4.ts`, tested against the AWS vectors), the
-  weather and the headlines are two public feeds read by hand. No AWS SDK, no auth or
+  weather is plain fetch; headlines use `fast-xml-parser` for bounded RSS/Atom evidence (DTD/entity
+  declarations rejected), with ordinary fetch for HTTP caching. No AWS SDK, no auth or
   state-management library. Same rule for services: if the browser can do it (playback, audio
   mixing), the server doesn't.
 - **WET over DRY, lib at the level that uses it.** Code lives beside the route that reads it; a
@@ -40,7 +41,7 @@ philosophy).
   the schema's). `docs/domain.html` §"What goes away" is the map.
 - Private behind Guard (`guard.pof4.com`): one gate, `apps/web/src/proxy.ts` (**temporarily open** —
   `GUARD_OPEN = true` there, so friends can test without a login — only `/settings` and the voice
-  preview still ask for the passkey; flip it back). Exempt = `api/health` + static, nothing else. No
+  preview and news preview still ask for the passkey; flip it back). Exempt = `api/health` + static, nothing else. No
   user table. Dev runs at `https://dev.radio.pof4.com:3000` because the cookie is bound to `pof4.com` —
   no localhost bypass.
 
@@ -52,22 +53,24 @@ Three places, each owning what it alone needs:
   `env` (zod over `process.env`, read lazily), `db` (one `pg.Pool`, `pool()`), `claude` (one client, no
   SDK retries), `bucket` (`put`, `open`, `head`) + `sigv4`, `guard`, `voices` (the roster's shape:
   schema, models, `ttsBody` — pure, client-safe), `identity` (call letters, city, on-air name — pure),
-  `clock` (break every, fill, low water — pure), `settings` (the three loaders, `loadVoices` /
-  `loadIdentity` / `loadClock`, server only: a client component that imports a module touching the
+  `clock` (break every, fill, low water — pure), `news` (source roster, configuration and receipt),
+  `settings` (`loadVoices` / `loadIdentity` / `loadClock` / `loadNews`, server only: a client component that imports a module touching the
   pool drags `pg` into the browser bundle and the build fails).
 - **`apps/web/src/app/api/sessions/`** — the server, one folder: the routes and, beside them, the
   files they read: `params` (the two bodies), `shapes` (the zod each Claude call is held to:
   `Proposal`, `Written`), `fill` (the proposer call with its two catalog tools, the search, the
   dedupe), `write` (the writer's
   brief and call), `rules` (the clock's law: `isBreak`, `legalIdDue`, `checkSlot`), `qobuz` (search
-  and the pull, on the listener's token), `weather`, `headlines`, `doc` (the slot on the wire). Tests
+  and the pull, on the listener's token), `weather`, `headlines` (fetch/cache/evidence),
+  `headline-edit` (editor and evidence check), `doc` (the slot on the wire). Tests
   sit next to the pure parts.
 - **`apps/web/src/app/(app)/`** — the browser: the home (`page.tsx` + `home-desk.tsx`), the session
   page (`sessions/[id]/`: `session-view` (the loop), `loop` (pure: `nextMove`), `player`, `rundown`,
   `use-deck`, `plan`, `transport`, `types`), and `lib/` for what those share (`voice-cache` — clips
   and tracks fetched once as blobs, `voice-store`, `dj-picker`, `ui`).
 - **`apps/web/src/app/(settings)/`** — the control room, desktop-wide: the identity, the clock and the
-  voice roster, every row in the `settings` table. `/api/tts/preview` is its "hear it".
+  voice roster and news desk, every row in the `settings` table. `/api/tts/preview` is its "hear it";
+  `/settings?news=1` previews fresh or saved evidence through `/api/news/preview` without TTS.
 
 `docs/sessions.html` is the API dance and `docs/domain.html` the data model — the source of truth for
 how the pieces talk; keep them current. `docs/slot-first.md` is why the show is shaped this way.
@@ -88,7 +91,7 @@ not ours.
 **The session is the show, and the show is a list of slots.** `POST /api/sessions` is creation only
 and instant: one `session` row. `GET /api/sessions/:id` is the snapshot: the clock and every
 `session_slot` in order, status per slot *derived from presence* (proposed → written → voiced), each
-pick marked `held` when the bucket holds it, never audio, never the receipts. Then two **rungs**, each
+  pick marked `held` when the bucket holds it, news receipts included but never audio. Then two **rungs**, each
 idempotent and under the session's row lock (`for update nowait`; a second producer gets 409), and
 the track pull, lock-free:
 
@@ -101,12 +104,12 @@ the track pull, lock-free:
   message is the structured answer). Then Qobuz search finds each one's versions, and one row per
   proposal with a hit is appended: the proposal and its hits, nothing judged. Nothing found → 502
   with the reasons.
-- `POST …/slots/:seq` `{ clockMs, again? }` — **write, then voice**, one request. The clock says
+- `POST …/slots/:seq` `{ clockMs, again?, live? }` — **write, then voice**, one request. The clock says
   whether this slot is the break (`isBreak`: slot 1 and every `breakEvery` after) and whether the
   legal ID is due (`legalIdDue`: slot 1, or the hour turned since the last break). The brief carries
   the ask, the clock, the identity, the DJ, the proposal and its hits as a menu, the last three slots'
   copy, everything played, another DJ's chart of any hit from an earlier session, and for a break the
-  weather (NWS) and the headlines (Google News; a failed pull is logged and the show goes on). **One**
+  weather (NWS) and a flag reserving room for separately checked news. **One music-writing**
   Claude call returns the pick (which hit plays), the chart (the ramp and whether it is sure, the
   post, the outro, the feel), the copy (a kind, the words, the break's lead line, why) and the timing
   (`recordUnderSec`, `voiceInSec`). `checkSlot` holds it to the clock after — the clock's break is
@@ -117,7 +120,10 @@ the track pull, lock-free:
   `sessions/<session>/<seq>.mp3`, the row stamped — bucket first, row second; a segue is stamped
   voiced with no clip. A voicing that fails after the write **keeps the write** (502 with the slot as
   written; the next request voices only). `{ again: true }` is another take under a new key. `GET
-  …/clip` streams the bytes, immutable.
+  …/clip?take=…` streams that exact retained take, immutable; unknown keys return 404.
+  `{ live: true }` checks the news receipt before playing: expired news (with a 45-second airtime
+  margin), disabled news or a newer known story revision switches to the prepared news-free take.
+  Older breaks without receipts are revoiced with only their legal ID and music lead-in.
 - `POST …/slots/:seq/track` — the slot's pick, held: a `track` row → held; else the bucket's `HEAD`
   finds the bytes → the row rebuilt from the pick's tags; else Qobuz → `PUT` → row. **Not under the
   session lock**: the track is the library's, and the browser fires this the moment the pick is
@@ -127,7 +133,26 @@ the track pull, lock-free:
 `/settings`, read per request by the fill, the slot rung and the snapshot; no default in code — a
 missing row is a fault naming it. Defaults as seeded: 5, 6, 2.
 
-**The prompts are inline** at each call site (`fill.ts`, `write.ts`) — structured outputs via
+**Headlines have an editor and an expiry.** `station.news` defaults to the Dallas pilot until saved
+in the control room. On a proposed break, allowed RSS/Atom feeds are fetched before the session lock:
+KERA, KXT, Dallas City Hall and NPR supply bounded excerpts; Google feeds are discovery only.
+Per-source process caches use validators, HTTP cache directives, singleflight and backoff; defaults
+are 5 minutes for news and 15 for culture. Source failures are isolated; stale evidence does not air.
+Inside the existing slot request, `headline-edit.ts` selects one useful story against six hours of
+session history, drafts attributed copy with exact evidence quotes, and separately checks every
+clause. One optional repair shares a 45-second total editing budget. Failure means an explicit
+omission. Approved words are prepended outside the music writer. A second, news-free voice take
+preserves the music copy, legal ID and lead-in for offline or expired-news fallback.
+
+`headline_snapshot` keeps the source evidence and model audit; `headline_story` holds the latest
+selected revision; `session_slot.news` is the playback receipt, including retained old takes.
+`POST …/slots/:seq/news` idempotently records a matching clip/story/revision after the browser reports
+a complete live voice read; generated copy is never assumed heard. The rundown shows source links
+and decisions. Original-recording mode explicitly selects preserved takes and sends no heard receipt.
+No worker, queue, scraping service, embeddings or automatic correction crawl. The source/quality
+pilot and implementation notes live in `docs/handoffs/2026-09-06-headlines.html`.
+
+**The prompts are inline** at each call site (`fill.ts`, `write.ts`, `headline-edit.ts`) — structured outputs via
 `messages.parse` + `zodOutputFormat` for the writer, `beta.messages.toolRunner` +
 `betaZodOutputFormat` for the proposer (tools and a shape on one call; the last message's text is
 parsed by hand), one zod shape per call in `shapes.ts`; the fill's count is enforced with
@@ -147,7 +172,7 @@ track (its MP3 in its own `<audio>` through a gain node), the bed's and the trac
 the audio clock, the track started at its mark and ducked under the voice. The transport is
 start/stop; rows (voiced and held) and ⏮ ⏭ pick the slot; the track ending advances to the next
 voiced slot (`transport.ts`, pure), whose track was pulled while this one played. First sound after
-two model calls: the fill, then slot 1. **iOS in the background** (Safari hidden, the screen
+the fill and slot 1 (a news break also runs the editor and evidence check). **iOS in the background** (Safari hidden, the screen
 locked): the graph is made under a `"playback"` audio session (`navigator.audioSession`, iOS 17.5+ —
 WebKit interrupts an `AudioContext` on hide under any other type, and the ringer switch silences
 it), each lane is seeked to the real head when its start fires (a hidden page's timers run up to a
@@ -185,7 +210,8 @@ start; every rule for their coming apart is pure and tested in `transport.ts`.
   `qobuz-smoke.mts` prints it for pinning. A 30-second file where a track should be is the plan
   lapsing (`download` refuses samples).
 - `db/` at the root is the database: `schema/*.sql` (one file per table: `session`, `session_slot`,
-  `track`, `settings`, plus `common.sql`) and three scripts run with plain `node` — `schema.mts`
+  `track`, `settings`, `headline_snapshot`, `headline_story`, `session_news_exposure`, plus `common.sql`)
+  and three scripts run with plain `node` — `schema.mts`
   (`pnpm db:plan` / `db:apply`), `sql.mts` (`pnpm db:sql "select …"`, read-only), `clear.mts`
   (`pnpm db:clear` wipes sessions and their slots; `--tracks` wipes the track rows too — the bytes
   stay in the bucket and a row comes back by `HEAD` the next time a slot picks that track). No

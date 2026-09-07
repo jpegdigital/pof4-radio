@@ -255,6 +255,29 @@ function Detail({ cue }: { cue: Cue }) {
         <p className="text-zinc-500">no chart</p>
       )}
       {cue.treatment && <p className="text-zinc-500">{cue.treatment}</p>}
+      {cue.news && (
+        <div className="mt-2 border-t border-zinc-800 pt-3">
+          <p className="font-medium text-zinc-300">{cue.news.words ? "News sources" : "News omitted"}</p>
+          <p className="mt-1">{cue.news.reason}</p>
+          <p className="mt-1 text-zinc-500">Checked {new Date(cue.news.checkedAt).toLocaleString()}</p>
+          {cue.news.sources.map((source) => (
+            <p key={source.url} className="mt-2">
+              <a href={source.url} target="_blank" rel="noreferrer" className="text-lamp underline">
+                {source.source}: {source.title}
+              </a>
+              <span className="block text-zinc-500">Published {new Date(source.at).toLocaleString()}</span>
+            </p>
+          ))}
+          {(cue.news.previous ?? []).map((take) => (
+            <details key={take.clipKey} className="mt-2">
+              <summary className="cursor-pointer">
+                Earlier recording · {new Date(take.at).toLocaleString()}
+              </summary>
+              <p className="mt-1">{take.words}</p>
+            </details>
+          ))}
+        </div>
+      )}
       <p className="text-zinc-600">{cue.why}</p>
       {cue.fallback && (
         <p className="text-amber-300/90">

@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { CLOCK_KEY, Clock } from "@/lib/clock";
 import { pool } from "@/lib/db";
 import { IDENTITY_KEY, Identity } from "@/lib/identity";
+import { NEWS_DEFAULTS, NEWS_KEY, NewsConfig } from "@/lib/news";
+import { NewsEditor } from "./news-editor";
 import { parseVoices, type Voice, VOICES_KEY } from "@/lib/voices";
 import { ClockEditor } from "./clock-editor";
 import { IdentityEditor } from "./identity-editor";
@@ -28,13 +30,15 @@ const railItem = (active: boolean) =>
 const railList = "-mx-5 flex gap-1 overflow-x-auto px-5 md:mx-0 md:flex-col md:overflow-visible md:px-0";
 
 export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
-  const [{ voice: requestedVoice, clock: requestedClock }, { rows }] = await Promise.all([
-    searchParams,
-    pool().query<{ key: string; value: string; updated_at: Date }>(
-      "select key, value, updated_at from settings where key = any($1::text[])",
-      [[IDENTITY_KEY, CLOCK_KEY, VOICES_KEY]],
-    ),
-  ]);
+  const [{ voice: requestedVoice, clock: requestedClock, news: requestedNews }, { rows }] = await Promise.all(
+    [
+      searchParams,
+      pool().query<{ key: string; value: string; updated_at: Date }>(
+        "select key, value, updated_at from settings where key = any($1::text[])",
+        [[IDENTITY_KEY, CLOCK_KEY, VOICES_KEY, NEWS_KEY]],
+      ),
+    ],
+  );
   const byKey = new Map(rows.map((r) => [r.key, { value: r.value, updatedAt: r.updated_at }]));
   const rosterRow = byKey.get(VOICES_KEY);
   let voices: Voice[] = [];
@@ -51,7 +55,10 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const newVoice = requestedVoice === "new";
   const showVoice = Boolean(openVoice) || newVoice;
   const showClock = !showVoice && requestedClock !== undefined;
-  const showIdentity = !showVoice && !showClock;
+  const showNews = !showVoice && !showClock && requestedNews !== undefined;
+  const showIdentity = !showVoice && !showClock && !showNews;
+  const newsRow = byKey.get(NEWS_KEY);
+  const news = NewsConfig.parse(newsRow ? JSON.parse(newsRow.value) : NEWS_DEFAULTS);
   const identityRow = byKey.get(IDENTITY_KEY);
   let identity: Identity | null = null;
   try {
@@ -73,6 +80,16 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         <div>
           <p className="mb-3 font-display text-sm uppercase tracking-[0.2em] text-zinc-500">Station</p>
           <ul className={railList}>
+            <li className="shrink-0">
+              <Link
+                href="/settings?news=1"
+                aria-current={showNews ? "page" : undefined}
+                className={railItem(showNews)}
+              >
+                <Lamp on={news.enabled} />
+                <span className="flex-1">Headlines</span>
+              </Link>
+            </li>
             <li className="shrink-0">
               <Link
                 href="/settings"
@@ -155,6 +172,8 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           count={voices.length}
           updatedAt={rosterRow?.updatedAt.toISOString() ?? null}
         />
+      ) : showNews ? (
+        <NewsEditor key={newsRow?.updatedAt.toISOString() ?? "initial"} value={news} />
       ) : showClock ? (
         <ClockEditor
           key={clockRow?.updatedAt.toISOString() ?? "missing"}

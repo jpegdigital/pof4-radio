@@ -5,7 +5,8 @@
 --              (qobuz_id set, voiced_at null — a voicing that failed leaves it here)
 --   voiced     the clip exists (clip_key), or there was nothing to say (a segue): voiced_at set
 -- Nothing goes backwards. `{again: true}` on a voiced slot moves clip_key to a new take and bumps
--- voiced_at; the words never change. clip_key is written only after the bucket PUT succeeded, so a
+-- voiced_at; that revoice keeps the words. Live news preflight can replace expired news with a
+-- prepared safe take; the receipt preserves original words and keys. clip_key is written only after the bucket PUT succeeded, so a
 -- key always points at media. The mix is the player's: the writer's two numbers plus house
 -- constants, the clip's length read on load.
 create table session_slot (
@@ -39,6 +40,7 @@ create table session_slot (
   record_under_ms integer,                             -- timing, breaks: how far before the voice ends the song starts under it
   voice_in_ms     integer,                             -- timing, talk-ups: how far into the song the voice comes in
   thinking        text,                                -- receipt; never on the wire
+  news            jsonb,                               -- selected evidence, expiry, fixed news words and previous takes
 
   -- the clip
   clip_key        text,                                -- bucket key; written only after the PUT succeeded

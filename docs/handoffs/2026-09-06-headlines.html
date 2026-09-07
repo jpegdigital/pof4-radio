@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Radio — headlines worth the interruption</title>
+  <style>
+    :root { color-scheme: light; --paper:#f6f3ec; --ink:#202820; --muted:#536053; --line:#d3d7c9; --accent:#246744; --wash:#e9eee2; --amber:#815316; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; scroll-padding-top:24px; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:17px/1.65 Georgia,serif; }
+    .layout { display:grid; grid-template-columns:245px minmax(0,1fr); }
+    nav { position:sticky; top:0; height:100vh; overflow:auto; padding:32px 22px; border-right:1px solid var(--line); font:13px/1.5 system-ui,sans-serif; }
+    nav strong { display:block; margin-bottom:18px; text-transform:uppercase; letter-spacing:.12em; font-size:11px; }
+    nav a { display:block; padding:7px 0; color:var(--muted); text-decoration:none; }
+    nav a:hover, nav a:focus { color:var(--accent); text-decoration:underline; }
+    main { width:100%; max-width:1130px; padding:58px 62px 100px; min-width:0; }
+    .eyebrow, .meta, .tag, th, .metric, footer { font-family:system-ui,sans-serif; }
+    .eyebrow { font-size:12px; text-transform:uppercase; letter-spacing:.16em; color:var(--accent); font-weight:700; }
+    h1 { font-size:clamp(2.5rem,5vw,4.8rem); line-height:1.05; letter-spacing:-.045em; max-width:14ch; margin:20px 0 24px; }
+    .dek { font-size:1.3rem; line-height:1.55; max-width:65ch; }
+    .meta { color:var(--muted); font-size:12px; margin:22px 0 36px; }
+    h2 { border-top:1px solid var(--line); margin:58px 0 22px; padding-top:22px; font-size:1.9rem; line-height:1.25; }
+    h3 { margin:32px 0 12px; font-size:1.25rem; }
+    p, li { max-width:85ch; }
+    p { margin:12px 0 18px; }
+    li { margin:8px 0; }
+    a { color:var(--accent); text-underline-offset:3px; overflow-wrap:anywhere; }
+    code { font: .83em/1.5 ui-monospace,Consolas,monospace; background:var(--wash); padding:2px 5px; border-radius:3px; overflow-wrap:anywhere; }
+    pre { padding:20px; background:#202c23; color:#f3f5eb; border-radius:6px; overflow:auto; font:13px/1.65 ui-monospace,Consolas,monospace; }
+    pre code { background:none; padding:0; color:inherit; font:inherit; }
+    .note { padding:18px 22px; background:var(--wash); border-left:4px solid var(--accent); margin:24px 0; }
+    .note p:first-child { margin-top:0; } .note p:last-child { margin-bottom:0; }
+    .cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:28px 0; }
+    .card { border:1px solid var(--line); padding:20px; border-radius:6px; }
+    .metric { display:block; font-size:26px; font-weight:700; color:var(--accent); line-height:1.2; margin-bottom:10px; }
+    .card p { font-size:14px; margin:0; }
+    .tag { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; display:inline-block; padding:3px 7px; background:var(--wash); color:var(--accent); border-radius:3px; }
+    .proposal { color:var(--amber); background:#f3e9d3; }
+    .table-wrap { overflow:auto; margin:20px 0; }
+    table { border-collapse:collapse; width:100%; font-size:14px; line-height:1.55; }
+    th { text-align:left; font-size:11px; letter-spacing:.06em; text-transform:uppercase; background:var(--wash); }
+    th, td { padding:13px 14px; border-bottom:1px solid var(--line); vertical-align:top; }
+    td:first-child { min-width:135px; }
+    .flow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; padding:0; list-style:none; }
+    .flow li { border-top:3px solid var(--accent); padding:12px; background:var(--wash); font-size:14px; }
+    .flow strong { display:block; font:700 13px system-ui,sans-serif; margin-bottom:8px; }
+    details { border:1px solid var(--line); padding:16px 20px; margin:18px 0; border-radius:5px; }
+    summary { cursor:pointer; font-weight:700; }
+    footer { border-top:1px solid var(--line); margin-top:50px; padding-top:20px; font-size:12px; color:var(--muted); }
+    @media(max-width:1000px) { .layout { grid-template-columns:205px minmax(0,1fr); } main { padding:40px 30px 80px; } }
+    @media(max-width:720px) { .layout { display:block; } nav { position:static; height:auto; border-right:0; border-bottom:1px solid var(--line); padding:20px; } nav a { display:inline-block; margin-right:14px; padding:4px 0; } main { padding:30px 20px 65px; } .cards { grid-template-columns:1fr; } .flow { grid-template-columns:1fr 1fr; } table { min-width:650px; } }
+    @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+    @media print { .layout { display:block; } nav { display:none; } main { max-width:none; padding:0; } body { background:white; font-size:11pt; } h2 { break-after:avoid; } .card, tr, .note { break-inside:avoid; } .table-wrap { overflow:visible; } table { min-width:0; } a { color:inherit; } }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav aria-label="Handoff contents">
+    <strong>Radio / Engineering handoff</strong>
+    <a href="#landed">Implementation status</a>
+    <a href="#decision">The recommendation</a>
+    <a href="#current">1. What exists</a>
+    <a href="#evidence">2. Verified behavior</a>
+    <a href="#practice">3. Practice &amp; SOTA</a>
+    <a href="#sources">4. Where to get stories</a>
+    <a href="#editorial">5. What earns airtime</a>
+    <a href="#freshness">6. When &amp; how to cache</a>
+    <a href="#implementation">7. Build plan</a>
+    <a href="#quality">8. Prove the quality</a>
+    <a href="#later">9. Worker later</a>
+    <a href="#references">Sources &amp; limits</a>
+  </nav>
+  <main>
+    <header>
+      <div class="eyebrow">Research → diagnosis → implementation plan</div>
+      <h1>Headlines worth the interruption.</h1>
+      <p class="dek">Build a DJ who knows what happened, why it matters here, and what the listener has already heard. Give the music a reason to make room.</p>
+      <p class="meta">6 September 2026 · Original audit baseline <code>cef7c44</code> · Dallas / DFW first · Working implementation added below; original diagnosis and longer-term plan retained</p>
+    </header>
+
+    <section id="landed">
+      <h2>Implemented: a live editorial pilot</h2>
+      <p>The request-driven path is wired from feeds to the news desk, editor, evidence receipt, voice takes and playback. The additive database changes are applied to the shared database. Release prepared for GitHub and the automatic Railway deployment from main; check GitHub for the current release status. The remaining sections preserve the original audit and research; their descriptions of the old system are historical.</p>
+      <p><a href="https://dev.radio.pof4.com:3000/settings?news=1">Open the news desk</a> to save the source roster, place, refresh intervals, word limit, memory window and editing deadline. Preview a fresh pull or replay the same saved evidence through the editor without paying for TTS. The rundown shows source links, publication/check times, selection or omission reasons and retained recording text.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Area</th><th>Running behavior</th></tr></thead>
+        <tbody>
+          <tr><td>Acquisition</td><td>KERA <code>/news.rss</code>, KXT, Dallas City Hall and NPR provide bounded RSS/Atom excerpts. Three Google feeds remain discovery-only: their titles and link lists cannot substantiate a broadcast. Dallas-specific sources are excluded when the configured place changes. No arbitrary feed URL or article-fetch tool is exposed.</td></tr>
+          <tr><td>Caching</td><td>Per-source process cache and singleflight; ETag/Last-Modified validation, Cache-Control handling, bounded redirects/bodies, four concurrent pulls, four-second source and six-second discovery deadlines. Default refresh: five minutes for news, fifteen for culture. Backoff survives forced refresh. A failed source cannot discard healthy sources; stale evidence is visible but excluded from editing.</td></tr>
+          <tr><td>Selection</td><td>At most twelve evidence-bearing candidates, with room for local, culture, national and world lanes. Publication-age gates, canonical URLs, title deduplication and content revisions precede model judgment. The editor weighs local usefulness, public importance, novelty, human interest, relevance and topic saturation against six hours of session history. It selects one story or gives an omission reason.</td></tr>
+          <tr><td>Evidence</td><td>Structured copy names the publisher and carries exact excerpt quotes for its claims. Deterministic gates and a separate model check must pass. One optional repair shares the editing deadline. High-risk or unsupported items are omitted. The music writer receives only a reserved-news flag; the route inserts approved words after the music write.</td></tr>
+          <tr><td>Airtime</td><td>A receipt expires within ten minutes. Before live voice playback, check expiry with a 45-second airtime margin, the enabled setting and newer known selected story revisions. Each selected item has a prepared news-free voice take preserving music copy, ID and lead-in, usable even when preflight fails. Legacy breaks lacking evidence must first get an ID/lead-in-only take.</td></tr>
+          <tr><td>Memory &amp; replay</td><td>Snapshots and checks are durable. Session history distinguishes generated items from matching browser reports of complete live reads. Reports are idempotent. Retained take URLs return their original bytes. Original-recording mode is explicit and applies when selecting a track; returning to live mode rechecks a loaded historical take.</td></tr>
+          <tr><td>Architecture</td><td>Plain SQL and route-local code, with a shared client-safe news configuration/receipt shape. No worker, queue, embeddings, vector store or provider framework. One dependency, <code>fast-xml-parser@5.7.1</code>, replaces fragile XML regular expressions; DTD/entity declarations are rejected.</td></tr>
+        </tbody>
+      </table></div>
+      <h3>Verified in this implementation</h3>
+      <ul>
+        <li><code>corepack pnpm check</code>: 342 tests across 21 files; typecheck, format and lint pass. Existing image warnings and schema-linter builtin-function warnings remain.</li>
+        <li><code>corepack pnpm --filter web build</code>: production build passes with the new preview and exposure routes.</li>
+        <li>Live feed smoke: seven healthy sources, 78 articles in 1.36 seconds; 43 passed the smoke's age/title filter and 13 of those carried substantive evidence. Counts are a point-in-time sample, not a coverage guarantee.</li>
+        <li>Live editor: a sourced KXT item passed after one repair in 34.2 seconds. The original 20-second budget proved too short; the configurable default is now 45 seconds for selection, optional repair and checking together.</li>
+        <li><a href="https://dev.radio.pof4.com:3000/sessions/0acab2ac-f5ae-44db-a2d2-8a01531fdf94">Live slot smoke</a>: saved evidence, produced full and news-free audio, returned the same clip on retry, switched after expiring only the labeled test slot, retained the legal ID and served the original take with identical bytes. Unowned take keys returned 404. Synthetic heard reports rejected a wrong take and deduplicated retries; a separate legacy-shaped slot was revoiced without its unchecked headline.</li>
+        <li>Additive schema plan/apply: three new tables and the nullable slot receipt, nine actions. Existing sessions and audio were retained.</li>
+      </ul>
+      <h3>Operate and tune</h3>
+      <pre><code>node apps/web/scripts/headlines-smoke.mts --refresh
+node apps/web/scripts/headlines-smoke.mts --save snapshot.json --html report.html
+node apps/web/scripts/headlines-smoke.mts --replay snapshot.json
+op run --env-file=.env.op -- node apps/web/scripts/headlines-editor-smoke.mts
+op run --env-file=.env.op -- node apps/web/scripts/headlines-slot-smoke.mts</code></pre>
+      <p>The last two commands are manual, billed checks. The slot smoke requires the local dev server, creates a labeled test session and mutates only its own slots. CI uses fixtures and fake HTTP boundaries. Settings previews use the saved configuration; save edits before comparing fresh or frozen evidence.</p>
+      <div class="note"><p><strong>What still needs proof.</strong> This is a working pilot, not a demonstrated world-first newsroom. The week-long blind listening trial and quality thresholds in §8 have not been run. Browser visual review and physical iOS/background playback were not available in this session. Model checking is a fallible second review, not independent reporting.</p><p>Coverage is intentionally limited by usable excerpts: Google discovery does not yet resolve to permitted publisher evidence, and the roster has no direct world-only feed. Human review, licensed full-text providers, robust cross-publisher event identity and proactive correction monitoring remain further work. Global invalidation sees revisions selected by another request; it does not crawl for corrections. The ten-minute receipt expiry bounds this gap. Weather still uses the existing Dallas configuration independently of news settings.</p><p>Cold news breaks add editor latency and one extra TTS take. The session transaction still spans editing/writing/voicing; feed discovery happens before the lock. Measure latency, omissions, repetition and listening preference before changing that architecture. Frozen previews evaluate saved excerpts; they do not refresh the original reporting. Source retention and commercial syndication permissions still need a provider-by-provider decision before broadening distribution.</p></div>
+    </section>
+
+    <section id="decision">
+      <div class="note">
+        <p><strong>Recommendation:</strong> keep request-driven production. Pull a curated mix of local reporting, official updates, music and culture, plus broad news discovery when an upcoming break needs it. Rank distinct stories, retrieve evidence for the shortlist, write a brief sourced sentence, and remember the version actually heard.</p>
+        <p>Use Google News as a discovery input during iteration. It should not be the sole editorial desk or the evidence behind a generated explanation. Start with plain fetch, the existing Postgres, and code beside the session routes. Add a worker only after measured demand warrants it.</p>
+      </div>
+      <div class="cards">
+        <div class="card"><span class="metric">Now</span><p>Nine titles, provider ordering, one ten-minute process cache, no news memory.</p></div>
+        <div class="card"><span class="metric">First landing</span><p>One worthwhile, attributed story; evidence and timestamps kept; repeat suppression; safe omission.</p></div>
+        <div class="card"><span class="metric">Distinctive</span><p>“Here’s what changed since you heard…” with local usefulness, source receipts, and musical judgment.</p></div>
+      </div>
+      <p>There is no single canonical “2026 AI radio headline architecture.” The defensible foundation is editorial sourcing plus retrieval, revision tracking, freshness, and evaluation. The station-specific choices below are proposals, not industry standards. The product ambition is credible; a claim that nobody else has achieved it is not established by this research.</p>
+    </section>
+
+    <section id="current">
+      <h2>1. What exists today</h2>
+      <p><span class="tag">Code verified</span> This audit follows the current slot implementation, not the older segment architecture in parts of the README and historic handoffs.</p>
+      <ol class="flow" aria-label="Current headline path">
+        <li><strong>Browser frontier</strong>Prepare one slot ahead of the cue; slot 1 can be written before play.</li>
+        <li><strong>Slot route</strong>For a new break, pull weather and headlines while holding the session lock.</li>
+        <li><strong>Google RSS</strong>Dallas + Nation + World; first three items from each; cache ten minutes.</li>
+        <li><strong>Writer → voice</strong>Choose one or two titles, paraphrase into the break, voice and keep the clip.</li>
+      </ol>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Concern</th><th>Actual behavior</th><th>Consequence</th></tr></thead>
+        <tbody>
+          <tr><td>When we pull</td><td><code>POST …/slots/:seq</code>, only when <code>qobuz_id === null</code> and <code>isBreak</code> is true. Breaks are 1, 6, 11… with seeded <code>breakEvery=5</code>.</td><td>Driven by slot preparation, not a wall-clock news schedule. “Every ten minutes” describes reuse eligibility, not automatic polling.</td></tr>
+          <tr><td>From where</td><td>Google News RSS: <code>/headlines/section/geo/Dallas,TX</code>, <code>/topic/NATION</code>, <code>/topic/WORLD</code>, US English edition.</td><td>Local geography is hardcoded. Editing station identity does not change the feed; the route labels local news with <code>WEATHER_PLACE.city</code>.</td></tr>
+          <tr><td>What survives parsing</td><td><code>Headline = { title, source, at }</code>. XML links, GUIDs, description, source URL and other metadata are discarded. Invalid or missing publication date becomes an empty string.</td><td>No canonical identity, evidence URL, article context, correction lineage, or reliable unknown-date policy.</td></tr>
+          <tr><td>How we shortlist</td><td>First three valid titles in each feed's order. No age filter, topic filter, source quality gate, or deduplication.</td><td>Google's surface ordering determines the entire menu. A good fourth item is invisible.</td></tr>
+          <tr><td>How we select</td><td><code>headlinesBlock</code> asks the same model that picks/charts the track to say one, two at most, that fit the music and hour. Attribution is “when it matters.”</td><td>No explicit public value criterion, abstention rule for weak evidence, story selection receipt, or factual check.</td></tr>
+          <tr><td>Time in the prompt</td><td><code>headlinesText</code> omits <code>at</code>. The block calls the list “right now.” The clock is a browser-local time string, with no date or news timezone.</td><td>An old article can sound current. Fetch freshness, publication time, event time and airtime are conflated.</td></tr>
+          <tr><td>Cache</td><td>One module variable, shared across requests in that process. Successful three-feed result lasts ten minutes, timestamped at fetch start. No in-flight coalescing or explicit conditional GET.</td><td>Cold starts/replicas refresh independently. Concurrent misses duplicate work. There is no durable snapshot or per-feed recovery.</td></tr>
+          <tr><td>Failures</td><td>Three feeds use <code>Promise.all</code>; each has an eight-second fetch timeout. One rejection rejects the set. <code>forBrief</code> logs the error and passes null.</td><td>One bad world feed removes healthy local news too. Expired cache is not used on error; later requests can repeatedly retry.</td></tr>
+          <tr><td>Memory</td><td>Writer sees last three written slots' copy. All prior track names are supplied, but no headline history.</td><td>At slot 6, slot 1's news is outside the window. Increasing recent copy alone would still not identify the same event across publishers.</td></tr>
+          <tr><td>Playback and retries</td><td>Voiced slots return as kept. Written-but-unvoiced retries only voice. <code>again:true</code> changes the take, not the words. No news expiry check before playback.</td><td>A long pause, old session or delayed TTS retry can play an old “right now” bulletin. Refreshing the feed cannot fix that existing clip.</td></tr>
+          <tr><td>Persistence</td><td>Slot keeps copy, treatment, thinking and clip; no structured selected story, source snapshot, claim mapping, or heard receipt.</td><td>Cannot reconstruct why a headline was chosen, prove what supported it, or distinguish prepared from heard.</td></tr>
+        </tbody>
+      </table></div>
+      <details>
+        <summary>Code map for the implementer</summary>
+        <ul>
+          <li><a href="../../apps/web/src/app/api/sessions/headlines.ts">headlines.ts</a>: URLs, <code>parseHeadlines</code>, <code>headlinesText</code>, cache and <code>fetchHeadlines</code>.</li>
+          <li><a href="../../apps/web/src/app/api/sessions/[id]/slots/[seq]/route.ts">slot route</a>: <code>RECENT_SLOTS</code>, <code>forBrief</code>, session transaction, break-only pull, write and revoice paths.</li>
+          <li><a href="../../apps/web/src/app/api/sessions/write.ts">write.ts</a>, <a href="../../apps/web/src/app/api/sessions/shapes.ts">shapes.ts</a>, <a href="../../apps/web/src/app/api/sessions/rules.ts">rules.ts</a>: inline news instructions, structured writer output, mechanical audio rules. The rules do not validate news facts.</li>
+          <li><a href="../../apps/web/src/app/(app)/sessions/[id]/loop.ts">loop.ts</a>, <a href="../../apps/web/src/app/(app)/sessions/[id]/session-view.tsx">session-view.tsx</a>, <a href="../../apps/web/src/app/(app)/sessions/[id]/use-deck.ts">use-deck.ts</a>: preparation timing and playback integration.</li>
+          <li><a href="../../db/schema/session_slot.sql">session_slot.sql</a>: kept output and immutable-word retry contract. <a href="../../apps/web/src/lib/identity.ts">identity.ts</a> has only calls, city and onAir; no structured news geography.</li>
+          <li><a href="../../apps/web/src/app/api/sessions/headlines.test.ts">headline tests</a>, <a href="../../apps/web/src/app/api/sessions/write.test.ts">writer tests</a>, <a href="../../apps/web/scripts/headlines-smoke.mts">live smoke script</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section id="evidence">
+      <h2>2. What was actually verified</h2>
+      <p><strong>The transport worked in this sample.</strong> On 6 September, the repository smoke script returned all three feeds in <strong>393 ms</strong>; an immediate second call returned in <strong>0 ms</strong>. These are single-run measurements, not an SLA. The first attempt was blocked by sandbox network permissions; the approved network-enabled run passed.</p>
+      <p>The local menu contained a shooting, a political analysis/question headline, and a city-government roundup. The national and world lists included related Iran-conflict coverage. That demonstrates a narrow and uneven editorial menu, not that any particular reported event is true or false. No source articles were independently verified for that sample.</p>
+      <p><strong>25 existing tests passed</strong> across <code>headlines.test.ts</code> and <code>write.test.ts</code>. They cover parsing/formatting and writer briefs; there are no headline cache, concurrency, partial-failure, freshness, repeat-history or grounding tests in the current headline test file.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Additional pure probe</th><th>Observed result</th><th>Fix implication</th></tr></thead>
+        <tbody>
+          <tr><td>Title inside CDATA</td><td><code>&lt;![CDATA[A &amp;amp; B - Source]]&gt;</code> leaves the CDATA wrapper in the returned title and prevents suffix removal.</td><td>Handle XML correctly before title cleanup. This is a reproduced parser defect, not a claim that today's Google feed used CDATA.</td></tr>
+          <tr><td>Invalid numeric entity</td><td><code>&amp;#99999999;</code> throws <code>RangeError: Invalid code point</code>.</td><td>Malformed item data must not discard healthy items or other feeds.</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>Not inspected:</strong> production database contents, historical listener playback, model outputs from real news breaks, paid provider accounts, or production latency distribution. Findings about selection quality and stale playback are code-supported failure paths; their frequency remains to be measured. No application code, database or deployment was changed for this audit.</p>
+    </section>
+
+    <section id="practice">
+      <h2>3. What good practice and SOTA mean here</h2>
+      <h3>Canonical foundation: sourced reporting, explicit uncertainty, corrections</h3>
+      <p>AP's published guidance treats generative output as unvetted material and keeps editorial accountability with journalists. It does not endorse autonomous publication. Our adaptation is to constrain automation to inspectable evidence, allow omission, and provide an editorial review path for sensitive stories. A model saying it is confident is not verification. <a href="https://www.ap.org/the-definitive-source/behind-the-news/standards-around-generative-ai/">AP standards</a>.</p>
+      <p>The BBC/EBU's October 2025 evaluation found significant issues in 45% of more than 3,000 tested assistant answers, with sourcing and accuracy among the problems. That is evidence for testing claims and attribution; it is not an estimated failure rate for our model or a forecast for 2026 systems. <a href="https://www.ebu.ch/cms/live/live/en/sites/ebu/contents/news/2025/10/ai-s-systemic-distortion-of-news-is-consistent-across-languages-and-territories-international-study-by-public-service-broadcaste.html">EBU study summary</a>.</p>
+      <h3>Strong contemporary pattern: trusted retrieval before generation</h3>
+      <p>EBU Neo offers a useful deployed reference: trusted member content, explicit time constraints, keyword plus semantic retrieval, relevance grading/ranking, source links and user feedback. It is a news question-answering system, not proof of a successful music-radio editorial system. Adopt the evidence flow; do not import its whole infrastructure. <a href="https://tech.ebu.ch/fr/news/2025/09/ebu-neo-solid-news-liquid-content">EBU Neo technical account, September 2025</a>.</p>
+      <p>Modern aggregation separates duplicate copies from related reporting. NewsCatcher documents both deduplication and embedding-based clustering. One wire story copied to twenty sites is one reporting origin, not twenty independent confirmations. Cluster by event and revision as well as topic: two unrelated incidents in Dallas must remain distinct. <a href="https://www.newscatcherapi.com/docs/news-api/guides-and-concepts/articles-deduplication">Deduplication</a>; <a href="https://www.newscatcherapi.com/docs/news-api/guides-and-concepts/clustering-news-articles">clustering</a>.</p>
+      <p>Research also explores balancing personalization and diversity during retrieval itself. A 2025 VQ-VAE news recommendation study evaluated that trade-off on MIND. It supports keeping a broad menu available, but does not justify training a recommender for this station with no listener dataset. Begin with visible editorial dimensions and human evaluation. <a href="https://arxiv.org/abs/2508.13978">Democratizing News Recommenders</a>.</p>
+      <h3>The competitive bar is already above “AI reads local news”</h3>
+      <p>Futuri AudioAI advertises real-time localized news, weather, events and trend-driven content. Its Audio Briefs product advertises source, vibe and local-news preferences. Super Hi-Fi and Trinity Audio announced automated audio news briefings in 2022. These are provider claims and product descriptions, not independent quality comparisons. <a href="https://futurimedia.com/products/audio-ai">AudioAI</a>; <a href="https://audiobriefs.futuri.ai/">Audio Briefs</a>; <a href="https://newsroom.superhifi.com/content/Trinity-Audio-Super-Hi-Fi-Press-Release.pdf">Super Hi-Fi announcement</a>.</p>
+      <div class="note"><p><strong>Our differentiation hypothesis:</strong> local editorial taste + memory of what was actually heard + meaningful story developments + traceable facts + excellent transitions over the listener's own records. Prove that combination in listening trials. No exhaustive competitor audit or “first ever” claim is implied.</p></div>
+    </section>
+
+    <section id="sources">
+      <h2>4. Where the stories should come from</h2>
+      <p><span class="tag proposal">Proposed source mix</span> Keep Dallas/DFW as the initial market. Add a structured news place (<code>city, region, country, timeZone</code>) rather than interpreting the legal-ID city string. News geography should be explicit in settings and validated against the configured source roster.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Input</th><th>Job in this station</th><th>Decision / limitation</th></tr></thead>
+        <tbody>
+          <tr><td>Direct local reporting</td><td>KERA, Dallas Morning News, Dallas Observer, and a small set of accountable DFW outlets: civic life, neighborhood change, arts and local reporting.</td><td>First priority for coverage evaluation. Verify each actual feed/API, article access, update behavior and reuse terms before enabling. Names are a shortlist, not tested integrations. KERA has historically offered category RSS; its old announcement is not proof of current endpoints. <a href="https://www.keranews.org/texas-news/2011-12-21/welcome-to-keranews-org">KERA RSS history</a>.</td></tr>
+          <tr><td>Official local updates</td><td>City notices, DART changes, venue schedules and other first-party service information.</td><td>Use for what that body actually announced; independent reporting for scrutiny or disputed outcomes. Prefer machine-readable sources where verified. Official pages exist for <a href="https://www.dallascitynews.net/press-room">Dallas press updates</a> and <a href="https://www.dart.org/trip/trip-planner/service-alerts">DART service alerts</a>; usable automation endpoints still need proving.</td></tr>
+          <tr><td>Music and culture</td><td>Local artists, shows, releases, cultural discoveries; relevant national music reporting and first-party artist/venue notices.</td><td>Explicit retrieval lane so these stories can compete with crime/politics. Start with KXT and DFW cultural reporting, verify event dates at the venue. A promotional announcement is not an independent review. <a href="https://www.kera.org/wp-content/uploads/2025/01/2024-KERA-CPB-LCSR.pdf">KERA/KXT local service report</a>.</td></tr>
+          <tr><td>Google News RSS</td><td>Cheap broad discovery and coverage comparison while iterating.</td><td>Retain as a secondary input. Preserve Google link and source metadata; resolve a publisher URL only through a supported path. No guessed URLs or dependency on opaque redirect-token hacks. Transport success does not establish downstream text or audio rights.</td></tr>
+          <tr><td>NewsCatcher</td><td>Potential paid breadth, content enrichment, dedupe and semantic grouping.</td><td>First aggregator to trial if direct sources miss coverage. Verify DFW depth, full-text availability, corrections, lineage and contract in a sample. Documented features are not a measured quality guarantee. <a href="https://www.newscatcherapi.com/docs/news-api/api-reference/search/search-articles-get">API reference</a>.</td></tr>
+          <tr><td>AP / Reuters licensed feeds</td><td>Reliable national/world backbone with publisher metadata and professional delivery.</td><td>Quality-oriented option if cost and rights fit. AP Media API explicitly exposes licensed content and has update/revision workflows. Reuters offers API delivery. Obtain scope for generated spoken summaries and archived audio; no price or entitlement assumed. <a href="https://developer.ap.org/ap-media-api/">AP Media API</a>; <a href="https://reutersagency.com/">Reuters delivery overview</a>.</td></tr>
+          <tr><td>NewsAPI</td><td>Discovery alternative, not a full evidence source by itself.</td><td>The Everything content field is truncated to 200 characters. The free Developer plan lists a 24-hour article delay and disallows staging/production, including internal production. Current paid Business pricing is $449/month; validate before purchase. It would still require article evidence retrieval. <a href="https://newsapi.org/docs/endpoints/everything">Everything docs</a>; <a href="https://newsapi.org/pricing">pricing and usage limits</a>.</td></tr>
+          <tr><td>Open web / social search</td><td>Targeted gap filling, source discovery and emerging leads.</td><td>No direct path from an unverified viral post or search-generated answer to airtime. Recover attributable evidence. Avoid an open-ended search-agent loop in the slot request.</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>Practical starting roster:</strong> about 8–12 enabled endpoints: local reporting and official service first, at least two culture/music inputs, and a small national/world lane. Cap discovery at roughly 80 items per refresh and reserve shortlist room for local/culture stories. These are tuning defaults, not provider limits.</p>
+      <p>Record each source's endpoint, publisher, reporting origin when known, scope, timezone, content availability, attribution label, refresh hint, terms URL, permitted uses and retention policy. The source comment in today's code asserts personal/non-commercial Google use; this audit did not establish that this grants summarization, publication or permanent audio retention. Resolve permitted uses per enabled source; do not treat “RSS,” “API access,” or “behind a login” as a rights grant.</p>
+      <p>Run a three-day source comparison using identical daypart samples: useful unique DFW stories, time from publication to discovery, evidence availability, duplicate reporting origins, corrections and cost. Keep the smallest roster that covers the editorial need. No subscriptions or outreach are part of this handoff.</p>
+    </section>
+
+    <section id="editorial">
+      <h2>5. What earns airtime</h2>
+      <p><strong>Optimize for “glad I heard that.”</strong> Local usefulness, public importance, discovery and a concrete new development matter more than popularity or an easy pun into the next track. Musical fit decides delivery and placement after factual eligibility.</p>
+      <h3>First gate: can we responsibly say it?</h3>
+      <ol>
+        <li><strong>Usable source and time:</strong> attributable reporting or first-party evidence, a valid publication/update time, a relevant place, and a still-valid event. Unknown date, future publication beyond a small clock-skew allowance, missing source or evidence failure means skip until resolved.</li>
+        <li><strong>Enough evidence for the sentence:</strong> title plus a permitted article excerpt or structured official record that supports every factual clause. A title can be a lead; it must not invite invented causes, consequences, numbers or certainty. If access fails, choose another story.</li>
+        <li><strong>Correct type and qualification:</strong> distinguish report, analysis, opinion, promotion, allegation and confirmed outcome. Preserve “proposed,” “expected,” “officials say” and disagreements when material.</li>
+        <li><strong>Risk-sensitive corroboration:</strong> routine venue notices can rely on the venue; contentious allegations, casualties and rapidly changing high-impact reports need independent evidence and editorial review or are omitted in the initial unattended mode. Two syndicated copies do not satisfy independence. This is a product policy proposal, not a universal two-source rule.</li>
+        <li><strong>Worth revisiting:</strong> new event or a material supported change since the last selected/heard version. Retitled copies and timestamp-only updates are not new developments.</li>
+      </ol>
+      <h3>Then rank distinct stories, not individual URLs</h3>
+      <p>Normalize canonical URLs and provider IDs first. Group near-identical syndicated copies. Match remaining items by actors, action, location and event time; use a bounded model comparison for ambiguous pairs in the small shortlist. Keep a persistent story ID and explicit revision/claim hash. An embedding can propose a match; it must not merge unrelated events merely because both mention Dallas or Iran.</p>
+      <p>Score eligible stories on 0–5 rubrics, with one sentence explaining each judgment. This starting formula is deliberately easy to inspect:</p>
+      <pre><code>score = 5 × local usefulness
+      + 5 × public importance
+      + 4 × meaningful new development
+      + 3 × discovery / human interest
+      + 2 × fit to this hour and listener's stated interests
+      + 1 × ease of a clear spoken explanation
+      − 4 × recent topic saturation
+
+Eligibility, stale facts and repeated unchanged stories are gates.
+Popularity is a discovery hint, not a score multiplier.</code></pre>
+      <p>Cap explicit-interest influence so the station still surprises people and carries consequential civic news. Do not infer politics or other sensitive traits from music taste. Review subject and publisher diversity over the last hour; do not manufacture “balance” between supported facts and unsupported claims.</p>
+      <p><strong>Default output:</strong> one story in 15–25 spoken seconds; two only if the combined news portion stays under 35 seconds and each earns its place. Aim for a substantive local/service/culture contribution in each listening hour when qualifying supply exists. Track the opportunity count so an empty supply is distinguishable from a bad selector. A break may contain no news and still have weather, music context and the legal ID.</p>
+      <h3>Give the writer facts, not a pile of enticing titles</h3>
+      <p>Use one compact evidence packet per eligible story: IDs, dates, place, source links, reporting origin, 1–3 supported claims with excerpt references, uncertainty, the changed fact, why it matters, expiry and a suggested attribution. Delimit external text as untrusted data. News selection must be structured; do not mine model thinking for the choice afterward.</p>
+      <p>Initial quality-first path: deterministic shortlist → evidence retrieval for at most six stories → one editor call choosing a story and drafting its news sentence → a separate evidence-check call over that sentence and the original excerpts. Mechanical checks enforce valid IDs, evidence references, dates, numbers and length; the evidence checker assesses unsupported implications and missing qualifications. Neither checker establishes real-world truth. A failed or ambiguous check drops the news; at most one bounded repair is allowed in the deadline.</p>
+      <p>Pass the approved <code>newsWords</code> to the music writer as a fixed insertion. Keep music lead-in and news words separate in the structured shape, then compose the break deterministically. Do not allow the final stylistic pass to quietly change factual wording. Keep source attribution audible for each story and a tappable source receipt in the rundown.</p>
+      <div class="note">
+        <p><strong>Illustrative only:</strong> with a supported venue change, the first break might say, “The venue says Friday's show is moving indoors; existing tickets still work.” A later break should speak again only if there is a real change: “An update on that show: doors are now at seven, according to the venue.”</p>
+        <p>The distinctive behavior is the supported change and the remembered context. Never invent a local connection, joke through casualties, or force a tragic story into a lyrical segue. When serious news warrants airtime, use a neutral transition and breathing room.</p>
+      </div>
+    </section>
+
+    <section id="freshness">
+      <h2>6. When to pull, refresh, cache and air</h2>
+      <p><strong>Four independent clocks:</strong> transport validation time, publisher publication/update time, event validity, and actual playback time. Fetching an old article now does not make the event new. A 304 validates an unchanged response; it does not renew a story's editorial age.</p>
+      <p><span class="tag proposal">Initial tunable policy</span> The times below are station defaults to evaluate. Provider cache directives, rate limits and permitted storage take precedence where applicable. Conditional requests and response freshness have a real standard; radio editorial lifetimes do not. <a href="https://www.rfc-editor.org/rfc/rfc9111.html">RFC 9111</a>. AP also documents conditional requests and continuous update delivery as separate access patterns. <a href="https://api.ap.org/media/v/docs/Getting_Content_Updates.htm">AP update guide</a>.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Layer / story</th><th>Refresh or lifetime</th><th>Rules</th></tr></thead>
+        <tbody>
+          <tr><td>Live tuning</td><td>Explicit refresh bypasses local discovery reuse for that run.</td><td>Still use ETag / Last-Modified, source minimum intervals and in-flight coalescing. Never bypass 429 backoff. Log which data actually changed; refreshing is not revoicing.</td></tr>
+          <tr><td>Normal discovery</td><td>Local/general news: 5 min; culture/events: 15 min. Only refresh when an active break needs it.</td><td>Per source + place + language + query/config version. Up to four requests at once; item/body limits; validators where supplied. Cache both last successful fetch and last attempt separately.</td></tr>
+          <tr><td>Rapid service update</td><td>1–2 min if provider supports it and this feature is enabled.</td><td>Use explicit affected place and event start/end. Recheck selected information close to air. The station is not a guaranteed emergency alert service; no urgent push claims in this request-driven design.</td></tr>
+          <tr><td>Raw article evidence</td><td>By source ID/URL + content revision/hash; revalidate selected fast-moving items after 2 min, routine reports after 10 min.</td><td>Preserve publishedAt, updatedAt, firstSeenAt, fetchedAt and validUntil. A changed title or timestamp alone does not prove a new factual development. Retain content only as permitted.</td></tr>
+          <tr><td>Routine news</td><td>Initial discovery age ceiling 24 h; selected evidence must pass its recheck interval.</td><td>Older context may support a newer story but is not presented as a new headline. Derive expiry from what the sentence asserts, not only the publication age.</td></tr>
+          <tr><td>Culture / upcoming events</td><td>Look back up to 7 days if still relevant; expire at the event's effective end or cancellation.</td><td>Verify date, local timezone and availability. “Tonight” is rendered from the station date only when unambiguous; prefer explicit day/date when playback delay is possible.</td></tr>
+          <tr><td>Feed failure</td><td>Routine last-good snapshot up to 30 min since validation; culture up to 2 h.</td><td>Only if permitted and individual story checks still pass. Do not reuse expired transit status or volatile claims. Label degraded provenance internally. All unusable → no news, not a failed music slot.</td></tr>
+          <tr><td>Error/backoff</td><td>Start 30 s, then 2 min, then 10 min with jitter; honor Retry-After.</td><td>Track each source independently. Treat a valid empty feed as a successful empty result; preserve older records for audit, not automatic reappearance.</td></tr>
+          <tr><td>Selection</td><td>Once per new break against the current snapshot and session history.</td><td>No globally cached winner. Prepared selections reserve a story against duplicate preparation; heard receipts govern “you heard earlier.” Suppress unchanged stories for the session, initially capped to a 6 h memory horizon for long shows.</td></tr>
+          <tr><td>Spoken clip</td><td>Kept as an artifact; separate live validity.</td><td>A clip's bytes may be immutable while its news expires. A retry or pause must not reset evidence freshness. Cache keys include take/revision; preserve prior receipts.</td></tr>
+        </tbody>
+      </table></div>
+      <h3>Request path and bounded waiting</h3>
+      <ol>
+        <li>Browser reaches an upcoming break under the existing one-ahead loop. Read-only precheck confirms the slot needs a write; load news settings and pull/refresh a shared per-source snapshot before acquiring the long session transaction.</li>
+        <li>Acquire the existing session lock and re-read the slot and settings version. If another request finished it, return the kept slot. Reuse the completed snapshot; do not repeat the fetch under the lock. This may occasionally do an unnecessary read but avoids holding a database lock through source discovery.</li>
+        <li>Under the existing production ownership, load session news history, shortlist, build evidence, edit/check, write and voice. Keep initial coordination readable. Log transaction duration; do not introduce leases simply to make a diagram prettier.</li>
+        <li>Start with a 6 s total discovery deadline, 4 s per endpoint, 6 s evidence phase with at most six article requests, and 20 s total news-edit/check deadline. These add latency to a cold first break; benchmark them. Abort outstanding work at each deadline. A timeout omits news and lets ordinary slot production continue.</li>
+      </ol>
+      <p>A module-local <code>Map</code> plus one in-flight promise per source is enough for the first single-process trial. Use <code>Promise.allSettled</code> for independent sources and bounded concurrency, clear the in-flight entry in <code>finally</code>, and timestamp successful completion. Store a snapshot receipt for every produced news decision. Add durable per-source refresh state in Postgres when reloads/replicas or experiment comparison make it useful; Redis is not needed.</p>
+      <h3>The long-pause problem must be explicit</h3>
+      <p>The current break is one combined audio clip. A player cannot remove just a stale news sentence from it. Therefore introduce a deliberate live-vs-replay contract, not a silent change to <code>again</code>:</p>
+      <ul>
+        <li><strong>Live continuation:</strong> before a news-bearing cue first starts or resumes after its validity window, run a bounded server preflight. If still current, play. If expired or corrected, create a new news revision and clip for the unplayed break, or a news-free break preserving the legal ID and music lead-in. Keep the original artifact and receipt.</li>
+        <li><strong>While refresh is pending:</strong> keep playing the current track/bed where possible; never stall indefinitely. If no safe clip is ready within the playback budget, use the defined music fallback and carry any still-due legal ID to a fresh voice element. Implement and test that fallback rather than assuming an old monolithic clip can be edited in place.</li>
+        <li><strong>Archive replay:</strong> intentionally play the saved show, visibly dated as recorded; no promise of current news. Replay does not create a new live exposure or refresh facts. Corrections remain visible alongside the affected take.</li>
+        <li><strong>Already heard:</strong> do not rewrite history. Flag the old statement, prevent further live use, and issue a sourced correction at the next eligible break if the listener heard the affected claim.</li>
+      </ul>
+      <p>Before the preflight/revision path ships, restrict the pilot to active live sessions and omit volatile stories. Do not claim the stale-playback problem is solved by shortening the feed TTL.</p>
+    </section>
+
+    <section id="implementation">
+      <h2>7. A build plan that stays WET</h2>
+      <p>Keep source-specific fetch/parsing beside <code>headlines.ts</code>. A small adjacent <code>headline-edit.ts</code> can own the evidence prompt when that responsibility becomes substantial. Duplicate the first two genuinely different source adapters; extract a shared helper only when a third consumer reveals a stable contract. No generic content platform, agent framework, vector database or worker in the initial landing.</p>
+      <h3>Minimal data contracts</h3>
+      <pre><code>HeadlineArticle
+  id, sourceId, providerId?, discoveryUrl, canonicalUrl?
+  title, publisher, reportingOrigin?, kind, place, topics
+  publishedAt, updatedAt?, eventAt?, eventEndsAt?
+  firstSeenAt, fetchedAt, contentHash, evidenceRefs[], rightsPolicy
+
+HeadlineStory
+  id, articleIds[], revision, claimHash, supportedClaims[]
+  changedSincePrevious?, eligibleUntil, risk, scoreReasons
+
+SlotNewsReceipt
+  snapshotId, storyId?, revision?, sourceRefs[], claimRefs[]
+  selectedAt, checkedAt, expiresAt, newsWords?, omissionReason?
+  sourceConfigVersion, editorVersion, checkerVersion, modelIds
+  clipKey?, supersedes?, correctionOf?
+
+NewsExposure
+  sessionId, seq, take, storyId, revision
+  newsStartedAt?, newsCompletedAt?, reportedAt</code></pre>
+      <p>Start with two headline tables: <code>headline_snapshot</code> (bounded discovery/evidence receipts and per-source health) and <code>headline_story</code> (stable identity, revision and current claims). Add <code>news</code> JSONB to <code>session_slot</code> for the selected/omitted decision. Add a small append-only <code>session_news_exposure</code> table when playback acknowledgment lands, unique by session/slot/take/story/revision. Use plain SQL at the route, constraints and indexes for the real queries, and <code>db/schema/*.sql</code> rather than migration files.</p>
+      <p>Keep revision records append-only within the snapshot/receipt; do not overwrite the evidence used by an old clip. Keep source metadata, hashes and our decision receipts according to the station policy; raw publisher text and permanent spoken derivatives must follow the enabled source's retention/use policy. “Everything kept forever” needs this explicit source-content exception.</p>
+      <p>Exposure means the news audio interval actually started/completed, not that a slot was generated or its track loaded. To measure it, voice news as a separately addressable part or capture a reliable news interval during composition. Initial suppression can use selection reservations conservatively, but must not say “as you heard” until playback acknowledgment exists. A lost browser receipt means unknown, not definitely heard. Session-local history is the default; cross-session listener memory needs an explicit identity design, since this app has no user table.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Phase</th><th>Concrete edits</th><th>Exit condition</th></tr></thead>
+        <tbody>
+          <tr><td>0 · Make choices inspectable</td><td>Extend <code>headlines-smoke.mts</code> with refresh, snapshot save/replay and per-source status/latency. Add a local HTML report of all candidates, times, rejection reasons and chosen copy. Pin source/config/model versions.</td><td>Same saved input can compare two editorial policies without refetching or TTS. Capture baseline choices at matched dayparts. Test fixtures are clearly fictional or dated recordings.</td></tr>
+          <tr><td>1 · Fix retrieval and time</td><td>In <code>headlines.ts</code>, retain identity, URLs and dates; bounded per-feed fetches; partial success; conditional validation; coalescing; explicit expiry. Add settings for news place, roster and policy. Move discovery before the session lock and recheck state after acquiring it.</td><td>One source failure preserves others; parallel calls share work; invalid items do not kill a feed; changing place cannot reuse the old city's cache. Timestamps survive into the brief.</td></tr>
+          <tr><td>2 · Add editorial evidence</td><td>Add direct local/culture sources, deterministic dedupe and event matching; fetch shortlist evidence; editor/checker calls with source references. Extend <code>shapes.ts</code>, <code>write.ts</code> and <code>rules.ts</code> for approved <code>newsWords</code>, selection IDs and no-news outcomes.</td><td>Every factual clause has support and audible attribution. Unsupported/ambiguous output is omitted. Music copy cannot mutate the approved sentence. No total break failure on news failure.</td></tr>
+          <tr><td>3 · Remember and explain</td><td>Add snapshot/story schema and slot receipt; update <code>doc.ts</code>, browser types and rundown with source links, as-of time, update/correction status. Session history uses stable story/revision IDs; <code>again</code> stays a revoice of the same words.</td><td>Ten consecutive breaks do not repeat an unchanged story. A new confirmed development can return with the correct change. Receipt survives reload, failed TTS and revoice.</td></tr>
+          <tr><td>4 · Make airtime truthful</td><td>Add news exposure acknowledgments, bounded preflight, live refresh/revision route and recorded replay mode. Touch <code>session-view.tsx</code>, <code>use-deck.ts</code>, <code>plan.ts</code>, transport and media composition as needed. Keep source revisions linked to takes.</td><td>Pause across expiry, resume, skip, background iOS, TTS retry, duplicate tabs and archive replay all follow the stated contract. Only actual exposure enables personal callback wording.</td></tr>
+          <tr><td>5 · Tune the station</td><td>Run frozen-input comparisons and daily live listening. Tune roster, weights, timing, topic saturation and voice pacing from evidence. Update <code>docs/domain.html</code>, <code>docs/sessions.html</code> and stale headline architecture comments when behavior ships.</td><td>Meet the evaluation gates below. Broader access follows demonstrated quality; worker decision remains independent.</td></tr>
+        </tbody>
+      </table></div>
+      <h3>Implementation boundaries and failure policy</h3>
+      <p>Use a maintained XML parser if expanding to heterogeneous RSS/Atom; the reproduced CDATA/entity defects justify evaluating one focused dependency. First check the lockfile and required security/options. If remaining Google-only temporarily, implement the narrow fixes with fixtures. Do not grow a home-made general XML parser to avoid one justified dependency.</p>
+      <p>Evidence fetches use configured HTTPS origins, bounded redirects with validation at every hop, blocked private/link-local destinations, body limits and timeouts. Never fetch arbitrary URLs supplied by article prose or the model. Extract text only, strip active markup, and give the editor no tools or secrets. Render titles/excerpts as text in the receipt view. Treat prompt-injection strings in feeds as data to be ignored and test that behavior.</p>
+      <p>Keep authentication consistent with the control room for tuning/refresh endpoints; the ordinary session request may only use the configured roster. Since dev and production share the database, <code>db:plan</code> is a review step before any later <code>db:apply</code>; isolate experiment rows by explicit run IDs and never clear shared sessions as part of headline testing.</p>
+      <p><strong>Rollback:</strong> a settings value disables news while preserving music/weather/ID production. For old slots lacking receipts, treat freshness as unknown in live mode and use recorded replay semantics or rebuild a safe break. Do not revert to unsourced title expansion as the failure fallback. Any new fields must tolerate legacy rows during deployment.</p>
+      <p><strong>Complexity trade-off:</strong> the extra editor and checker calls are justified by factual quality and source receipts; their value must be measured. A module cache is deliberately process-local; cross-replica coordination is deferred. Named policy values live in settings or a colocated configuration object during the CLI pilot. No speculative abstraction exceptions are otherwise needed.</p>
+    </section>
+
+    <section id="quality">
+      <h2>8. Prove that it is better</h2>
+      <p><strong>Start with 120 saved break opportunities</strong> spanning at least seven days and multiple dayparts: quiet news, heavy news, DFW service changes, music releases, duplicate wires, resurfaced old stories, disputes, corrections and partial outages. Use identical snapshots, listener requests and upcoming tracks for the baseline and proposed selector. Hold out a subset from tuning; keep live trials separate so changing news cannot masquerade as a better prompt.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Dimension</th><th>Proposed release gate</th><th>How to measure</th></tr></thead>
+        <tbody>
+          <tr><td>Grounding</td><td>100% selected stories have evidence receipts and source attribution; zero critical unsupported claims or lost material qualifications in the reviewed holdout.</td><td>Human clause-by-clause audit against source material. An LLM grade is diagnostic, not the final truth label. Report numerator/denominator, including omissions.</td></tr>
+          <tr><td>Freshness</td><td>No expired event, old story framed as breaking, or stale live clip passes the targeted fixtures.</td><td>Inject wall-clock times; test published/updated/event/airtime separately, including midnight, DST, future dates, 304 and long pauses.</td></tr>
+          <tr><td>Memory</td><td>Zero unchanged-story repeats in ten-break scripted sessions; all genuine update fixtures eligible; no “you heard” claim without a matching exposure.</td><td>Story ID plus material revision assertions, syndicated-copy cases, skipped slots, multiple tabs and lost acknowledgments.</td></tr>
+          <tr><td>Editorial value</td><td>At least 65% preference for the new version in blind paired listening; report uncertainty and ties. No grounding regression permitted.</td><td>Three listeners/editors independently rate usefulness, interest, clarity and transition. Randomize order and count the break opportunity as the comparison unit. This is a pilot target, not a scientifically established universal threshold.</td></tr>
+          <tr><td>Locality and variety</td><td>When qualifying supply exists, each evaluated listening hour includes a useful local/service/culture story; no single topic dominates without an explicit importance reason.</td><td>Audit eligible supply versus selection, repeated sources, topic concentration and reason receipts. Avoid forced filler when supply is weak.</td></tr>
+          <tr><td>Listening craft</td><td>Normal one-story news portion 15–25 s, maximum 35 s for two; names/numbers understandable; no insensitive transitions.</td><td>Measure rendered TTS duration, not just word count. Listen over the actual bed and lead-in. Test pronunciations and compression of qualifications.</td></tr>
+          <tr><td>Reliability</td><td>Source outages and checker failures never make the music slot fail; no duplicate selection on retry; no leaked in-flight promise.</td><td>Recorded boundary fixtures plus live smoke. Capture omitted-news reasons and denominator so “always omit” cannot appear to succeed.</td></tr>
+          <tr><td>Latency and cost</td><td>Initial target: warm discovery p95 &lt;100 ms; cold discovery bounded at 6 s; added news path p95 &lt;20 s after tuning. Missing deadline means omission.</td><td>Measure discovery/evidence/editor/checker/TTS separately, pool/lock time, tokens, requests and cost per produced and heard break. These are targets, not current results.</td></tr>
+        </tbody>
+      </table></div>
+      <p>At approximately three breaks per hour, two additional model calls per news break imply roughly six news-editor/checker calls per listening hour, before repairs. Compute actual cost from measured input/output tokens and configured model prices, and include paid source subscriptions. No unmeasured per-hour dollar estimate should decide the design.</p>
+      <h3>Tests that earn their keep</h3>
+      <p>Follow the repository's test-first convention for pure nontrivial logic. Table-test malformed entities/CDATA, missing dates, timezone boundaries, canonicalization, same-event matching, syndicated origins, eligibility, changed claims, topic saturation and decision composition. Test cache boundaries with injected clocks/fetch: exact TTL, 304, timeout, mixed success, empty success, Retry-After, concurrent misses, rejection cleanup and changed source configuration.</p>
+      <p>Verify route/database and actual provider behavior in an isolated live run, without external APIs in CI. Add end-to-end checks for prepare → TTS failure → retry → play, pause past expiry, skip the news interval, correction after playback and archive replay. Run <code>pnpm check</code> and <code>pnpm --filter web build</code> when implementation changes ship; this documentation-only audit ran the two relevant existing test files and the live smoke instead.</p>
+      <p>Use a simple operator report before building dashboards: source health, candidate/story counts, article-access failures, rejected reasons, selected score reasons, stale fallbacks, omitted-news rate, repeat rate and live freshness at air. Keep evidence for editorial decisions rather than treating a successful HTTP response or model confidence as a quality metric.</p>
+    </section>
+
+    <section id="later">
+      <h2>9. When a worker becomes worthwhile</h2>
+      <p>Stay live and request-driven while learning the editorial shape. No listeners means no fetching. A durable snapshot can improve restarts and multiple requests without a worker; a worker is a scheduling decision, not a prerequisite for high-quality headlines.</p>
+      <p>Reconsider after a week of measurements if cold preparation repeatedly misses the news deadline, multiple active processes duplicate substantial paid retrieval, per-market refresh needs outlive individual slot requests, or correction timeliness becomes a product requirement. A proposed trigger is deadline misses above 5% of eligible breaks or duplicate provider calls above 20%; tune these to actual cost and listening impact.</p>
+      <p>Move only discovery, normalization, evidence refresh and revision detection into a job first. It writes the same snapshots/story revisions. Selection remains per session at break preparation because it depends on what the listener heard and what record comes next. Use active-market demand and a short inactivity grace period if the “nothing runs when nobody listens” rule remains. Continuous alerts would be a separate, explicitly accepted product change.</p>
+      <p>Only then declare infrastructure in <code>../pof4-infra</code> and follow that repository's plan/apply process. No infrastructure changes are needed for phases 0–3. The next concrete task is phase 0 plus the parser/cache/time repairs in phase 1—not a queue migration.</p>
+    </section>
+
+    <section id="references">
+      <h2>Sources and scope of confidence</h2>
+      <p>External sources were consulted on 6 September 2026. Publication dates are shown where relevant in the text; older foundational standards remain useful. Product pages support capability claims only. No vendor benchmark, contractual entitlement, exhaustive competitive survey or universally optimal ranking formula was established.</p>
+      <ul>
+        <li><strong>Editorial practice:</strong> <a href="https://www.ap.org/the-definitive-source/behind-the-news/standards-around-generative-ai/">AP generative AI guidance (2023)</a>; <a href="https://www.ebu.ch/news/2025/04/ebu-news-report-focuses-on-leading-newsrooms-in-the-age-of-generative-ai">EBU newsroom report announcement (2025)</a>; <a href="https://www.ebu.ch/cms/live/live/en/sites/ebu/contents/news/2025/10/ai-s-systemic-distortion-of-news-is-consistent-across-languages-and-territories-international-study-by-public-service-broadcaste.html">BBC/EBU assistant evaluation (October 2025)</a>.</li>
+        <li><strong>Retrieval and ranking:</strong> <a href="https://tech.ebu.ch/fr/news/2025/09/ebu-neo-solid-news-liquid-content">EBU Neo implementation (September 2025)</a>; <a href="https://www.newscatcherapi.com/docs/news-api/guides-and-concepts/articles-deduplication">NewsCatcher dedupe</a>; <a href="https://www.newscatcherapi.com/docs/news-api/guides-and-concepts/clustering-news-articles">NewsCatcher clustering</a>; <a href="https://arxiv.org/abs/2508.13978">diversity-aware news retrieval research (August 2025)</a>.</li>
+        <li><strong>Delivery:</strong> <a href="https://developer.ap.org/ap-media-api/">AP Media API</a>; <a href="https://api.ap.org/media/v/docs/Getting_Content_Updates.htm">AP conditional and continuous updates</a>; <a href="https://reutersagency.com/">Reuters</a>; <a href="https://newsapi.org/docs/endpoints/everything">NewsAPI content schema</a>; <a href="https://newsapi.org/pricing">NewsAPI plans</a>; <a href="https://www.rfc-editor.org/rfc/rfc9111.html">RFC 9111 (2022)</a>.</li>
+        <li><strong>Competitive context:</strong> <a href="https://futurimedia.com/products/audio-ai">Futuri AudioAI</a>; <a href="https://audiobriefs.futuri.ai/">Audio Briefs</a>; <a href="https://newsroom.superhifi.com/content/Trinity-Audio-Super-Hi-Fi-Press-Release.pdf">Super Hi-Fi / Trinity Audio announcement (September 2022)</a>.</li>
+      </ul>
+      <p>Source endpoint validation, contractual fit, provider latency distributions, independent factual review of live samples and blind listening results remain implementation work. Their absence does not prevent the first request-driven prototype; it limits what that prototype may claim to have achieved.</p>
+    </section>
+    <footer>Radio · docs/handoffs/2026-09-06-headlines.html · Research and plan; runtime unchanged.<br>Document checks: balanced HTML tags, unique section IDs, internal anchors and all repository links passed; LF line endings. Visual browser review was unavailable because the browser runtime reported no connected browsers. The repository's Biome configuration does not process this HTML file.</footer>
+  </main>
+</div>
+</body>
+</html>

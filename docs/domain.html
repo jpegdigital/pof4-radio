@@ -172,7 +172,7 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
 <p>The writer chooses the kind, except where the clock does: slot 1 is a break, and so is every slot the clock names. The house rules check the writer's timing against the writer's own chart and the house limits, stepping a kind down and recording why in <code>fallback</code>.</p>
 <table>
 <tr><th>Kind</th><th>What you hear</th><th>Copy needs</th><th>Timing</th></tr>
-<tr><td><code>break</code></td><td>Voice over a bed, the last line talks the record in under it. Legal ID first, dry, when it is due. The weather and the headlines are in the brief only here.</td><td><code>words</code>, <code>lead_line</code></td><td><code>record_under_ms</code></td></tr>
+<tr><td><code>break</code></td><td>Voice over a bed, the last line talks the record in under it. Legal ID first, dry, when it is due. The weather is in the music brief only here; separately checked and attributed news is inserted before the music copy.</td><td><code>words</code>, <code>lead_line</code></td><td><code>record_under_ms</code></td></tr>
 <tr><td><code>talkup</code></td><td>The record starts full; the voice comes in over the ramp and ends a beat before the post.</td><td><code>words</code></td><td><code>voice_in_ms</code></td></tr>
 <tr><td><code>sweeper</code></td><td>A short dry ID, then a hard intro.</td><td><code>words</code></td><td>—</td></tr>
 <tr><td><code>segue</code></td><td>Straight out of the last record.</td><td>nothing</td><td>—</td></tr>
@@ -193,7 +193,7 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
 <p>The line between the two tables is not <em>song versus show</em>; it is <em>given versus judged</em>. What Qobuz hands us is given and lives on <code>track</code>, stable because nobody guessed it. What the writer decides — its read of the track as much as what it says over it — is judged and lives on the slot that judged it. Twelve words over a 14-second ramp and forty words over the same ramp are different charts of the same track, and both are right for their slot. Nothing from Claude ever lands on <code>track</code>. Earlier charts of the same track are offered to the writer in its brief as other DJs' notes, read-only; a session's charts never drift because a later session read the record differently. If a ramp is ever <em>measured</em>, that number is given, goes on <code>track</code>, and the brief says so.</p>
 
 <h2 id="clock">5. The clock</h2>
-<p>Three settings rows shape every show; none is a client knob.</p>
+<p>Four settings rows shape every show; none is a listener knob. News uses a pilot default until its setting is saved.</p>
 <table>
 <tr><th>Setting</th><th>What it does</th><th>Default</th></tr>
 <tr><td><code>breakEvery</code></td><td>A break falls at slot 1 and every <code>breakEvery</code> slots after (1, 1 + <em>k</em>, 1 + 2<em>k</em> …). Between breaks the writer chooses.</td><td>5</td></tr>
@@ -201,6 +201,16 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
 <tr><td><code>lowWater</code></td><td>When the count of proposed-but-unwritten slots drops to this, the client fires the next fill.</td><td>2</td></tr>
 </table>
 
+<h3 id="news">News: evidence, selection and airtime</h3>
+<p><code>station.news</code> controls the city, region, time zone, enabled sources, refresh intervals, memory window, word limit and editing deadline. The source URLs are a code-owned allowlist. Default: Dallas, 5-minute news refresh, 15-minute culture refresh, 6-hour session memory, 55 words and 45 seconds for editing. KERA, KXT, Dallas City Hall and NPR supply excerpts; Google is discovery only. Dallas-specific sources drop out for other configured places.</p>
+<table><thead><tr><th>Storage</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>headline_snapshot</code></td><td>Bounded feed evidence, publication and fetch dates, source health, configuration, editorial draft and evidence-check audit.</td></tr>
+<tr><td><code>headline_story</code></td><td>Latest selected revision of a story, ordered by when its evidence was fetched. A changed title alone does not revise unchanged evidence.</td></tr>
+<tr><td><code>session_slot.news</code></td><td>The selection or omission receipt, expiry, source links, approved news words, separate music words, prepared news-free take and prior immutable takes.</td></tr>
+<tr><td><code>session_news_exposure</code></td><td>Idempotent browser reports of a complete live voice read, tied to the matching slot, take, story and revision. Production alone is not evidence of listening.</td></tr>
+</tbody></table>
+<p>Feed discovery happens on demand before the session lock, with independent caches, conditional requests, backoff and isolated failures. A bounded editor chooses one useful story and a separate check reviews every factual clause against its excerpt. Unusable evidence or editing failure leaves news out. The music writer cannot rewrite the approved sentence.</p>
+<p>Before live playback the server checks expiry with a 45-second airtime margin, the enabled setting and newer known story revisions. Invalid news switches to the prepared music-only take, retaining the legal ID and lead-in; a network failure can use the same prepared take in the browser. Legacy breaks without receipts require a fresh ID/lead-in take. Original-recording mode explicitly restores retained audio, including historical news. All of this runs in the web service; no worker or queue.</p>
 <h2 id="outside">6. What lives outside the database</h2>
 <table>
 <tr><th>Thing</th><th>Where</th><th>Keyed by</th></tr>

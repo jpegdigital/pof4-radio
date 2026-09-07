@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { CLOCK_KEY, Clock } from "@/lib/clock";
 import { pool } from "@/lib/db";
 import { IDENTITY_KEY, Identity } from "@/lib/identity";
+import { NEWS_KEY, NewsConfig } from "@/lib/news";
 import { loadVoices } from "@/lib/settings";
 import { type Voice, VOICES_KEY, VoiceSchema, VoicesSchema } from "@/lib/voices";
 
@@ -14,6 +15,21 @@ import { type Voice, VOICES_KEY, VoiceSchema, VoicesSchema } from "@/lib/voices"
  */
 
 export type SaveState = { error?: string; savedAt?: string };
+
+export async function saveNews(_prev: SaveState, formData: FormData): Promise<SaveState> {
+  let raw: unknown;
+  const field = formData.get("news");
+  try {
+    raw = typeof field === "string" ? JSON.parse(field) : null;
+  } catch {
+    return { error: "Invalid news settings" };
+  }
+  const parsed = NewsConfig.safeParse(raw);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check news settings" };
+  await saveSetting(NEWS_KEY, JSON.stringify(parsed.data));
+  revalidatePath("/settings");
+  return { savedAt: new Date().toISOString() };
+}
 
 /** One settings row, written or replaced. */
 async function saveSetting(key: string, value: string): Promise<void> {

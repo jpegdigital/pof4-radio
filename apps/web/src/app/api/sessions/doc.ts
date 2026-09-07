@@ -1,4 +1,5 @@
 import type { SlotFallback, SlotKind } from "./rules";
+import type { NewsReceipt } from "@/lib/news";
 
 /**
  * The slot on the wire, shared by the snapshot and the rungs: status derived from presence
@@ -27,6 +28,7 @@ export type SlotStatus = "proposed" | "written" | "voiced";
 
 /** One session_slot row as the routes read it (`SLOT_COLUMNS`). */
 export interface SlotRow {
+  news?: NewsReceipt | null;
   seq: number;
   title: string;
   artist: string;
@@ -56,7 +58,7 @@ export interface SlotRow {
 
 /** The columns `SlotRow` reads, in one place so every route selects the same. */
 export const SLOT_COLUMNS =
-  "seq, title, artist, why, hits, qobuz_id, clock_ms, ramp_ms, sure, post, outro, outro_ms, energy, tempo, mood, kind, words, lead_line, legal_id, treatment, fallback, record_under_ms, voice_in_ms, clip_key, voiced_at";
+  "seq, title, artist, why, hits, qobuz_id, clock_ms, ramp_ms, sure, post, outro, outro_ms, energy, tempo, mood, kind, words, lead_line, legal_id, treatment, fallback, record_under_ms, voice_in_ms, clip_key, voiced_at, news";
 
 export interface Chart {
   rampMs: number;
@@ -70,6 +72,7 @@ export interface Chart {
 }
 
 export interface SlotDoc {
+  news?: NewsReceipt;
   seq: number;
   status: SlotStatus;
   // the proposal — always present
@@ -112,6 +115,7 @@ export function slotDoc(r: SlotRow, held: ReadonlySet<string>): SlotDoc {
     voiced: r.voiced_at !== null,
   };
   if (r.qobuz_id === null) return d;
+  if (r.news) d.news = r.news;
   const pick = r.hits.find((h) => h.id === r.qobuz_id);
   if (!pick) throw new Error(`slot ${r.seq} picked ${r.qobuz_id}, which is not one of its hits`);
   d.pick = pick;

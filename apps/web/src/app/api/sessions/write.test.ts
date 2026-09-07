@@ -40,7 +40,7 @@ const input = (over: Partial<WriteInput> = {}): WriteInput => ({
   priorCharts: [],
   legalId: null,
   weather: null,
-  headlines: null,
+  newsReserved: false,
   ...over,
 });
 
@@ -138,16 +138,15 @@ describe("writeBrief — the legal ID, the weather, the headlines", () => {
     expect(brief).not.toMatch(/headline/i);
   });
 
-  it("carries the headlines, and asks for one, a sentence", () => {
+  it("reserves news for the editor and forbids the music writer from repeating it", () => {
     const brief = writeBrief(
       input({
         clockSaysBreak: true,
-        headlines: "Dallas: Grass fires burn along highways (FOX 4)\nNation: A headline (Reuters)",
+        newsReserved: true,
       }),
     );
-    expect(brief).toContain("The headlines right now");
-    expect(brief).toContain("Nation: A headline (Reuters)");
-    expect(brief).toMatch(/single spoken sentence/);
+    expect(brief).toContain("A checked news sentence is inserted before your words");
+    expect(brief).toContain("Do not write news");
   });
 });
 

@@ -1,4 +1,5 @@
 /** The session document as the page reads it (the snapshot, GET /api/sessions/:id). */
+import type { NewsReceipt } from "@/lib/news";
 
 /** What Qobuz says of a version; given, never judged. */
 export interface Tags {
@@ -32,6 +33,7 @@ export interface Chart {
 }
 
 export interface Slot {
+  news?: NewsReceipt;
   seq: number;
   status: SlotStatus;
   // the proposal — always present

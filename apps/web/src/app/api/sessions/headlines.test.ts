@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { type Headlines, headlinesText, parseHeadlines } from "./headlines";
+import { parseFeed } from "./headlines";
+
+const parseGoogle = (xml: string, take: number) =>
+  parseFeed(xml, { id: "google", name: "", url: "", scope: "local", discoveryOnly: true }, Date.now())
+    .slice(0, take)
+    .map(({ title, source, at }) => ({ title, source, at }));
 
 /** A Google News RSS feed as it ships: `Headline - Source` titles, a <source> element, entities. */
 const item = (title: string, source: string, at = "Thu, 03 Sep 2026 11:14:44 GMT") =>
@@ -7,7 +12,7 @@ const item = (title: string, source: string, at = "Thu, 03 Sep 2026 11:14:44 GMT
 const feed = (items: string[]) =>
   `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><rss version="2.0"><channel><title>Dallas - Latest - Google News</title>${items.join("")}</channel></rss>`;
 
-describe("parseHeadlines", () => {
+describe("Google discovery feed", () => {
   it("reads the top items in feed order, the source stripped from the title and kept beside it", () => {
     const xml = feed([
       item(
@@ -22,7 +27,7 @@ describe("parseHeadlines", () => {
       item("Third - Reuters", "Reuters"),
       item("Fourth - Reuters", "Reuters"),
     ]);
-    expect(parseHeadlines(xml, 3)).toEqual([
+    expect(parseGoogle(xml, 3)).toEqual([
       {
         title: "Grass fires burn along highways in Dallas and Denton counties",
         source: "FOX 4 News Dallas-Fort Worth",
@@ -61,45 +66,14 @@ describe("parseHeadlines", () => {
       { title: "A headline", source: "The Verge" },
     ],
   ])("%s", (_, it_, want) => {
-    expect(parseHeadlines(feed([it_]), 3)[0]).toMatchObject(want);
+    expect(parseGoogle(feed([it_]), 3)[0]).toMatchObject(want);
   });
   it("an empty channel is no headlines", () => {
-    expect(parseHeadlines(feed([]), 3)).toEqual([]);
+    expect(parseGoogle(feed([]), 3)).toEqual([]);
   });
   it("a body that is not an RSS feed is refused, loudly", () => {
-    expect(() => parseHeadlines("<html><body>Before you continue to Google</body></html>", 3)).toThrow(
+    expect(() => parseGoogle("<html><body>Before you continue to Google</body></html>", 3)).toThrow(
       /not an RSS feed/,
     );
-  });
-});
-
-describe("headlinesText", () => {
-  const h: Headlines = {
-    local: [{ title: "Grass fires burn along highways", source: "FOX 4", at: "2026-09-03T11:14:44.000Z" }],
-    nation: [
-      {
-        title: "Feminist activist Gloria Steinem dies at age 92",
-        source: "Reuters",
-        at: "2026-09-03T11:14:44.000Z",
-      },
-      {
-        title: "3 dead in Minneapolis apartment shooting",
-        source: "NBC News",
-        at: "2026-09-03T09:19:00.000Z",
-      },
-    ],
-    world: [],
-  };
-  it("one line per headline, grouped by where it is from, the source in brackets", () => {
-    expect(headlinesText(h, "Dallas")).toBe(
-      [
-        "Dallas: Grass fires burn along highways (FOX 4)",
-        "Nation: Feminist activist Gloria Steinem dies at age 92 (Reuters)",
-        "Nation: 3 dead in Minneapolis apartment shooting (NBC News)",
-      ].join("\n"),
-    );
-  });
-  it("nothing at all is an empty string", () => {
-    expect(headlinesText({ local: [], nation: [], world: [] }, "Dallas")).toBe("");
   });
 });
