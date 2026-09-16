@@ -1,5 +1,6 @@
 import { Disc3, Mic, Pause, Play, SkipBack, SkipForward } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent, useState } from "react";
+import { type KeyboardEvent, type PointerEvent, type ReactNode, useState } from "react";
+import type { Preparation } from "./preparation";
 import { focusRing } from "../../lib/ui";
 import type { Plan } from "./plan";
 import { onMic } from "./transport";
@@ -30,6 +31,9 @@ export function Player({
   onToggle,
   onScrub,
   onSeekTrack,
+  preparation,
+  startup,
+  studio,
 }: {
   cue: Cue;
   phase: DeckPhase;
@@ -45,9 +49,12 @@ export function Player({
   onScrub: (ms: number) => void;
   /** Move within the track. */
   onSeekTrack: (ms: number) => void;
+  preparation: Preparation;
+  startup?: ReactNode;
+  studio?: ReactNode;
 }) {
   const { pick } = cue;
-  const making = phase === "loading" || !cue.voiced;
+  const making = phase === "loading" || !preparation.ready;
   const running = phase === "playing" || phase === "paused" || phase === "held";
   const talking = plan !== null && running && onMic(plan, headMs);
   const paused = phase !== "playing" && phase !== "waiting";
@@ -55,8 +62,9 @@ export function Player({
 
   return (
     <div className="flex flex-col gap-6">
+      {startup}
       <div className="flex flex-col items-center gap-6 text-center">
-        <div className="relative w-full max-w-80">
+        <div className={`relative w-full ${startup ? "max-w-64" : "max-w-80"}`}>
           {pick.image ? (
             // biome-ignore lint/performance/noImgElement: album art is a remote Qobuz CDN url
             <img
@@ -82,11 +90,16 @@ export function Player({
         </div>
       </div>
 
-      {making ? (
-        <Loading label={cue.voiced ? "Loading your track…" : "Preparing your DJ’s introduction…"} />
-      ) : (
-        <Progress clock={rec} onSeek={track && running ? onSeekTrack : null} />
-      )}
+      {!startup &&
+        (making ? (
+          phase === "loading" || preparation.busy ? (
+            <Loading label={phase === "loading" ? "Loading audio…" : preparation.label} />
+          ) : (
+            <p className="text-center text-sm text-amber-200">{preparation.label}</p>
+          )
+        ) : (
+          <Progress clock={rec} onSeek={track && running ? onSeekTrack : null} />
+        ))}
 
       <div className="player-transport">
         <button type="button" onClick={onPrev} disabled={!canPrev} aria-label="Previous" className={iconBtn}>
@@ -96,20 +109,21 @@ export function Player({
           type="button"
           onClick={onToggle}
           disabled={making}
-          aria-label={paused ? "Play" : "Pause"}
-          className={`flex size-16 items-center justify-center rounded-full bg-lamp text-zinc-950 shadow-[0_0_28px_#f2b54420] transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 ${focusRing}`}
+          aria-label={phase === "idle" ? "Play show" : paused ? "Play" : "Pause"}
+          className={`flex h-16 min-w-16 items-center justify-center gap-2 rounded-full bg-lamp px-5 text-zinc-950 shadow-[0_0_28px_#f2b54420] transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 ${focusRing}`}
         >
           {paused ? (
             <Play className="ml-0.5 size-6" fill="currentColor" strokeWidth={0} />
           ) : (
             <Pause className="size-6" fill="currentColor" strokeWidth={0} />
           )}
+          {phase === "idle" && <span className="text-sm font-semibold">Play show</span>}
         </button>
         <button type="button" onClick={onNext} disabled={!canNext} aria-label="Next" className={iconBtn}>
           <SkipForward className="size-6" fill="currentColor" strokeWidth={0} />
         </button>
       </div>
-      {plan && (
+      {(plan || studio) && (
         <details className="group border-t border-zinc-800 pt-2">
           <summary
             className={`cursor-pointer py-3 text-sm text-zinc-400 transition hover:text-zinc-100 ${focusRing}`}
@@ -117,12 +131,15 @@ export function Player({
             Studio <span className="ml-2 text-xs text-zinc-500">The mix behind the music</span>
           </summary>
           <div className="pt-3 pb-2">
-            <Lanes
-              plan={plan}
-              headMs={running ? headMs : null}
-              track={pick}
-              onScrub={running ? onScrub : null}
-            />
+            {studio}
+            {plan && (
+              <Lanes
+                plan={plan}
+                headMs={running ? headMs : null}
+                track={pick}
+                onScrub={running ? onScrub : null}
+              />
+            )}
           </div>
         </details>
       )}

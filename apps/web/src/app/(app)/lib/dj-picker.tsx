@@ -15,10 +15,12 @@ export function DjPicker({
   djs,
   value,
   onChange,
+  disabled = false,
 }: {
   djs: readonly Dj[];
   value: Dj;
   onChange: (d: Dj) => void;
+  disabled?: boolean;
 }) {
   const first = djs[0];
   return (
@@ -27,7 +29,7 @@ export function DjPicker({
       <PodcastMic className="pointer-events-none absolute left-3.5 size-5 text-zinc-500" />
       <select
         value={value.id}
-        disabled={!first}
+        disabled={disabled || !first}
         onChange={(e) => onChange(findDj(djs, e.target.value))}
         className={`w-full appearance-none truncate rounded-xl border border-zinc-800 bg-zinc-950 py-2.5 pr-9 pl-11 text-base text-zinc-100 transition hover:border-zinc-700 ${focusRing}`}
       >

@@ -3,7 +3,7 @@
 import { ArrowRight, Radio, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { DjPicker } from "./lib/dj-picker";
 import { Card, focusRing, Label } from "./lib/ui";
 import { type Dj, findDj, loadDj, saveDj } from "./lib/voice-store";
@@ -26,7 +26,11 @@ export interface SessionSummary {
   createdAt: string;
 }
 
-type State = { phase: "idle" } | { phase: "working" } | { phase: "error"; message: string };
+type State =
+  | { phase: "idle" }
+  | { phase: "working" }
+  | { phase: "opening"; sessionId: string }
+  | { phase: "error"; message: string };
 
 const noSubscribe = () => () => {};
 
@@ -42,28 +46,48 @@ export function HomeDesk({ djs, sessions }: { djs: Dj[]; sessions: SessionSummar
   const [picked, setPicked] = useState<Dj | null>(null);
   const dj = picked ?? remembered;
   const [state, setState] = useState<State>({ phase: "idle" });
+  const submitting = useRef(false);
 
   async function submit(e: { preventDefault(): void }) {
     e.preventDefault();
+    if (submitting.current || !prompt.trim() || !dj.id) return;
+    submitting.current = true;
     setState({ phase: "working" });
     try {
       const res = await fetch("/api/sessions", {
         method: "POST",
+        signal: AbortSignal.timeout(15_000),
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt, voiceId: dj.id }),
       });
       const data = (await res.json().catch(() => null)) as { sessionId?: string; error?: string } | null;
       if (!res.ok || !data?.sessionId) {
         setState({ phase: "error", message: data?.error ?? `HTTP ${res.status}` });
+        submitting.current = false;
         return;
       }
-      router.push(`/sessions/${data.sessionId}`);
+      setState({ phase: "opening", sessionId: data.sessionId });
+      // Keep the saved id and the direct link even if client navigation fails.
+      try {
+        router.push(`/sessions/${data.sessionId}`);
+      } catch {
+        /* Open show remains available. */
+      }
     } catch (err) {
-      setState({ phase: "error", message: err instanceof Error ? err.message : String(err) });
+      submitting.current = false;
+      setState({
+        phase: "error",
+        message:
+          err instanceof Error && err.name === "TimeoutError"
+            ? "We couldn’t confirm whether your show was saved. Refresh Your shows before creating another."
+            : err instanceof Error
+              ? err.message
+              : String(err),
+      });
     }
   }
 
-  const working = state.phase === "working";
+  const working = state.phase === "working" || state.phase === "opening";
   const canStart = prompt.trim().length > 0 && dj.id !== "" && !working;
 
   return (
@@ -133,6 +157,7 @@ export function HomeDesk({ djs, sessions }: { djs: Dj[]; sessions: SessionSummar
               </div>
               <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <DjPicker
+                  disabled={working}
                   djs={djs}
                   value={dj}
                   onChange={(d) => {
@@ -145,11 +170,28 @@ export function HomeDesk({ djs, sessions }: { djs: Dj[]; sessions: SessionSummar
                   disabled={!canStart}
                   className={`flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-lamp px-4 py-2.5 text-sm font-semibold text-zinc-950 transition hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 ${focusRing}`}
                 >
-                  {working ? "Creating…" : "Create a show"}
+                  {state.phase === "opening" ? "Opening show…" : working ? "Creating show…" : "Create a show"}
                   {!working && <ArrowRight className="size-4" strokeWidth={2} aria-hidden="true" />}
                 </button>
               </div>
             </form>
+            {working && (
+              <p role="status" className="text-sm text-zinc-400">
+                {state.phase === "opening" ? (
+                  <>
+                    Your show is saved.{" "}
+                    <a
+                      href={`/sessions/${state.sessionId}`}
+                      className={`inline-flex min-h-11 items-center text-lamp underline ${focusRing}`}
+                    >
+                      Open show
+                    </a>
+                  </>
+                ) : (
+                  "Saving your request and DJ…"
+                )}
+              </p>
+            )}
             {djs.length === 0 && (
               <p className="text-xs text-amber-300/90">
                 Your station needs a DJ.{" "}

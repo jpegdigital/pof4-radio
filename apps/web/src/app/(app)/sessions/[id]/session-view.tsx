@@ -8,6 +8,8 @@ import { nextMove } from "./loop";
 import { canContinue } from "./continuation";
 import { useMediaSession } from "./media-session";
 import { Player } from "./player";
+import { moveCompleted, preparation } from "./preparation";
+import { PreparationProgress } from "./preparation-progress";
 import { Rundown } from "./rundown";
 import { onMic, prevTarget, RESTART_AFTER_MS } from "./transport";
 import { type Cue, clockMsNow, cueKey, isCue, type SessionDoc, type Slot } from "./types";
@@ -18,7 +20,7 @@ import { trackUrlOf, useDeck } from "./use-deck";
  * browser is the whole state machine. Production: GET the snapshot, ask the frontier (loop.ts)
  * for the one call it wants — a fill when the rundown runs low, else the first unvoiced slot,
  * one ahead of the cue in the deck — POST it, fold the response in, repeat; the response is the
- * product, no polling. A slot that comes back with a pick the bucket does not hold has its track
+ * product; only lock conflicts trigger bounded snapshot checks. A slot with a pick the bucket does not hold has its track
  * pulled at once, not awaited, so it is in the bucket by the time it is up. Each move is made
  * once until explicitly retried. Retry refreshes the snapshot first; a 409 means another
  * producer holds the session. Download errors are attached to their own rundown rows.
@@ -31,7 +33,7 @@ import { trackUrlOf, useDeck } from "./use-deck";
  * plays at once. The lock screen (media-session.ts) shows the cue and drives the same transport.
  */
 
-type Producing = { key: string; seq: number | null; label: string };
+type Producing = { key: string; seq: number | null; label: string; observing?: boolean };
 
 type State =
   | { phase: "loading" }
@@ -53,9 +55,19 @@ export function SessionView({ id }: { id: string }) {
   const attempted = useRef(new Set<string>());
   const [pullErrors, setPullErrors] = useState<Record<number, string>>({});
   const [retrying, setRetrying] = useState(false);
+  const pulls = useRef(new Set<number>());
+  const lifetime = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => controller.abort();
+  }, []);
 
   const load = useCallback(async (): Promise<SessionDoc> => {
-    const res = await fetch(`/api/sessions/${id}`);
+    const res = await fetch(`/api/sessions/${id}`, {
+      signal: AbortSignal.timeout(15_000),
+      cache: "no-store",
+    });
     const data = (await res.json().catch(() => null)) as SessionDoc | { error?: string } | null;
     if (!res.ok || !data || !("sessionId" in data)) {
       const message =
@@ -77,12 +89,14 @@ export function SessionView({ id }: { id: string }) {
   /** The slot's track, pulled into the bucket now rather than when it is up; not awaited. */
   const pull = useCallback(
     (seq: number) => {
+      if (pulls.current.has(seq)) return;
+      pulls.current.add(seq);
       setPullErrors((errors) => {
         const next = { ...errors };
         delete next[seq];
         return next;
       });
-      fetch(trackUrlOf(id, seq), { method: "POST" })
+      fetch(trackUrlOf(id, seq), { method: "POST", signal: AbortSignal.timeout(90_000) })
         .then(async (res) => {
           const data = (await res.json().catch(() => null)) as { held?: boolean; error?: string } | null;
           if (!res.ok || !data?.held) throw new Error(data?.error ?? `HTTP ${res.status}`);
@@ -94,7 +108,8 @@ export function SessionView({ id }: { id: string }) {
         })
         .catch((err: unknown) => {
           setPullErrors((errors) => ({ ...errors, [seq]: err instanceof Error ? err.message : String(err) }));
-        });
+        })
+        .finally(() => pulls.current.delete(seq));
     },
     [id],
   );
@@ -127,15 +142,64 @@ export function SessionView({ id }: { id: string }) {
     const move = nextMove(state.session.slots, state.session.clock, cueSeq, attempted.current);
     if (!move) return;
     attempted.current.add(move.key);
+    const signal = lifetime.current!.signal;
     const producing: Producing =
       move.kind === "fill"
         ? { key: move.key, seq: null, label: "Choosing your next tracks…" }
-        : { key: move.key, seq: move.seq, label: "Preparing the DJ’s introduction…" };
+        : {
+            key: move.key,
+            seq: move.seq,
+            label: move.seq === 1 ? "Preparing your opening…" : "Preparing the DJ’s introduction…",
+          };
     setState({ ...state, producing, produceError: null });
+    // A lock conflict means another browser is doing the work. Observe only, with bounded checks.
+    const observe = async () => {
+      setState((s) =>
+        s.phase === "ready"
+          ? {
+              ...s,
+              producing: {
+                ...producing,
+                observing: true,
+                label: "Your show is being prepared in another tab…",
+              },
+            }
+          : s,
+      );
+      for (let attempt = 0; attempt < 12; attempt++) {
+        await new Promise<void>((resolve) => {
+          const done = () => {
+            window.clearTimeout(timer);
+            signal.removeEventListener("abort", done);
+            resolve();
+          };
+          const timer = window.setTimeout(done, 5_000);
+          signal.addEventListener("abort", done, { once: true });
+          if (signal.aborted) done();
+        });
+        if (signal.aborted) return;
+        const session = await load();
+        if (signal.aborted) return;
+        const complete = moveCompleted(move.key, session.slots);
+        setState((s) =>
+          s.phase === "ready" ? { ...s, session, producing: complete ? null : s.producing } : s,
+        );
+        for (const slot of session.slots) if (slot.pick && !slot.held) pull(slot.seq);
+        if (complete) return;
+      }
+      throw new Error(
+        "Another tab may still be preparing your show. Retry to check its progress before continuing.",
+      );
+    };
     (async () => {
       let error: string | null = null;
       if (move.kind === "fill") {
-        const res = await fetch(`/api/sessions/${id}/fill`, { method: "POST" });
+        const res = await fetch(`/api/sessions/${id}/fill`, {
+          method: "POST",
+          signal: AbortSignal.timeout(120_000),
+        });
+        if (signal.aborted) return;
+        if (res.status === 409) return observe();
         const data = (await res.json().catch(() => null)) as { added?: Slot[]; error?: string } | null;
         if (!res.ok || !data?.added) error = data?.error ?? `HTTP ${res.status}`;
         else {
@@ -151,7 +215,10 @@ export function SessionView({ id }: { id: string }) {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ clockMs: clockMsNow() }),
+          signal: AbortSignal.timeout(120_000),
         });
+        if (signal.aborted) return;
+        if (res.status === 409) return observe();
         const data = (await res.json().catch(() => null)) as SlotAnswer;
         const slot = data && "seq" in data ? data : (data?.slot ?? null);
         if (!res.ok || !slot)
@@ -169,17 +236,26 @@ export function SessionView({ id }: { id: string }) {
           : s,
       );
     })().catch((err) => {
+      if (signal.aborted) return;
       setState((s) =>
         s.phase === "ready"
           ? {
               ...s,
               producing: null,
-              produceError: { key: move.key, message: err instanceof Error ? err.message : String(err) },
+              produceError: {
+                key: move.key,
+                message:
+                  err instanceof Error && err.name === "TimeoutError"
+                    ? "We couldn’t confirm that preparation finished. Retry to check your saved progress first."
+                    : err instanceof Error
+                      ? err.message
+                      : String(err),
+              },
             }
           : s,
       );
     });
-  }, [state, cueSeq, id, onSlot, pull]);
+  }, [state, cueSeq, id, onSlot, pull, load]);
 
   // Refresh before retrying: another tab may have finished the request that failed here.
   const retryProduction = async () => {
@@ -234,7 +310,7 @@ export function SessionView({ id }: { id: string }) {
   // Every slot with a pick, in show order; the deck's cue or the first of them is what the player shows.
   const slots = state.phase === "ready" ? state.session.slots : NO_SLOTS;
   const cues = useMemo<Cue[]>(() => slots.filter(isCue), [slots]);
-  const cue = deck.cue ?? cues[0] ?? null;
+  const cue = (deck.cue ? (cues.find((c) => c.seq === deck.cue?.seq) ?? deck.cue) : cues[0]) ?? null;
   const index = cue ? cues.findIndex((c) => c.seq === cue.seq) : -1;
   // What ⏭ and the end of a track go to: the next slot, once it is voiced and can play.
   const after = cues[index + 1];
@@ -277,15 +353,23 @@ export function SessionView({ id }: { id: string }) {
 
   const running = phase === "playing";
   const talking = running && deck.plan !== null && onMic(deck.plan, deck.headMs);
+  const first = slots[0];
+  const prep = preparation(cue ?? first, {
+    opening: state.phase === "loading",
+    failed: state.phase === "error" || (state.phase === "ready" && !!state.produceError),
+    downloadFailed: !!(cue && !cue.held && pullErrors[cue.seq]),
+    observing: state.phase === "ready" && !!state.producing?.observing,
+  });
   const status = (() => {
-    if (deck.phase === "loading") return "Loading…";
+    if (deck.phase === "loading") return "Loading audio…";
     if (deck.phase === "paused") return "Paused";
     if (deck.phase === "held") return "Interrupted";
     if (deck.phase === "error") return "Stopped";
     if (state.phase === "error") return "Unable to open show";
-    if (state.phase === "ready" && state.produceError && !cue?.voiced) return "Preparation paused";
+    if (state.phase === "ready" && state.produceError && (waiting || !prep.ready))
+      return "Preparation needs another try";
     if (waiting) return "Preparing the next track…";
-    if (!running || !deck.cue) return cue?.voiced ? "Ready to play" : "Preparing your show";
+    if (!running || !deck.cue) return prep.label;
     return talking ? "Your DJ is on the mic" : "On air";
   })();
 
@@ -355,18 +439,7 @@ export function SessionView({ id }: { id: string }) {
           )}
 
           {/* the player: mounted from the first written slot on, never unmounts */}
-          <section aria-label="Player" className="listening-player">
-            <label className="mb-4 flex items-center gap-2 text-xs text-zinc-400">
-              <input
-                type="checkbox"
-                checked={replay}
-                onChange={(e) => {
-                  if (deck.phase === "playing") deck.toggle();
-                  setReplay(e.target.checked);
-                }}
-              />
-              Use original news recordings when selecting a track
-            </label>
+          <section aria-label="Player" className="listening-player min-h-[680px]">
             {replay && state.phase === "ready" && (
               <p className="mb-4 text-xs text-amber-200">
                 Recorded show from {new Date(state.session.createdAt).toLocaleDateString()}. News reflects its
@@ -377,7 +450,11 @@ export function SessionView({ id }: { id: string }) {
               <span className="font-display text-xs uppercase tracking-[0.2em] text-zinc-400">
                 {running ? "Now playing" : "Your station"}
               </span>
-              <span role="status" className="flex items-center gap-2 text-xs text-zinc-300">
+              <span
+                role="status"
+                aria-atomic="true"
+                className="flex max-w-[65%] items-center gap-2 text-right text-xs text-zinc-300"
+              >
                 <span
                   aria-hidden="true"
                   className={`lamp size-2 rounded-full ${running ? "on" : ""} ${talking ? "talking" : ""}`}
@@ -388,6 +465,25 @@ export function SessionView({ id }: { id: string }) {
             {cue ? (
               <Player
                 cue={cue}
+                preparation={prep}
+                startup={
+                  !deck.cue ? (
+                    <PreparationProgress status={prep} loaded={state.phase === "ready"} slot={first} />
+                  ) : undefined
+                }
+                studio={
+                  <label className="mb-4 flex min-h-11 items-center gap-2 text-xs text-zinc-400">
+                    <input
+                      type="checkbox"
+                      checked={replay}
+                      onChange={(e) => {
+                        if (deck.phase === "playing") deck.toggle();
+                        setReplay(e.target.checked);
+                      }}
+                    />
+                    Use original news recordings when selecting a track
+                  </label>
+                }
                 phase={phase}
                 plan={deck.plan}
                 headMs={deck.headMs}
@@ -402,30 +498,38 @@ export function SessionView({ id }: { id: string }) {
               />
             ) : (
               <div className="flex flex-col items-center text-center">
-                <div className="record-placeholder mb-7 flex aspect-square w-full max-w-72 items-center justify-center rounded-2xl">
+                <div className="mb-6 w-full">
+                  <PreparationProgress status={prep} loaded={state.phase === "ready"} slot={first} />
+                </div>
+                <div className="record-placeholder mb-6 flex aspect-square w-full max-w-64 items-center justify-center rounded-xl">
                   <Radio className="size-12 text-lamp/70" strokeWidth={1} aria-hidden="true" />
                 </div>
                 <h1 className="text-2xl font-medium">
-                  {state.phase === "error" ? "Your show is waiting." : "Good radio takes a moment."}
+                  {prep.busy ? "Preparing your show" : "Your show is waiting"}
                 </h1>
-                <p role="status" className="mt-3 text-sm text-zinc-400">
-                  {state.phase === "loading"
-                    ? "Opening your show…"
-                    : state.phase === "error" || state.produceError
-                      ? "Try again to pick up where you left off."
-                      : (state.producing?.label ?? "Getting your station ready…")}
+                <p className="mt-2 min-h-12 text-sm text-zinc-400">
+                  {prep.busy
+                    ? "Your DJ is putting together the first track and its introduction."
+                    : "Your request is saved. Retry to continue preparation."}
                 </p>
-                {state.phase !== "error" && !(state.phase === "ready" && state.produceError) && (
-                  <div className="shimmer mt-8 h-1 w-32 rounded-full" />
-                )}
-                <p className="mt-8 text-xs text-zinc-500">Press play once your first track is ready.</p>
               </div>
             )}
+            {cue && !cue.held && pullErrors[cue.seq] && (
+              <button
+                type="button"
+                onClick={() => pull(cue.seq)}
+                className={`mt-2 min-h-11 w-full text-sm text-lamp underline ${focusRing}`}
+              >
+                Retry track download
+              </button>
+            )}
             {waiting && (
-              <p role="status" className="mt-4 text-center text-sm text-zinc-400">
+              <p className="mt-4 text-center text-sm text-zinc-400">
                 {phase === "paused"
                   ? "Paused. Press play to continue when the next track is ready."
-                  : "Your DJ is preparing what comes next. Playback will continue automatically."}
+                  : state.phase === "ready" && state.produceError
+                    ? "Preparation needs another try. Retry above to continue your show."
+                    : "Your DJ is preparing what comes next. Playback will continue automatically."}
               </p>
             )}
           </section>
@@ -449,6 +553,7 @@ export function SessionView({ id }: { id: string }) {
               onRetake={revoice}
               playing={running}
               pullErrors={pullErrors}
+              preparationError={state.produceError?.key ?? null}
               onRetryPull={pull}
             />
           )}

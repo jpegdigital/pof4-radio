@@ -1,6 +1,7 @@
 import { ChevronDown, Disc3, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { focusRing, Label } from "../../lib/ui";
+import { preparation } from "./preparation";
 import { type Cue, clock, cueKey, isCue, KIND_LABEL, secs, type Slot } from "./types";
 
 /**
@@ -23,6 +24,7 @@ export function Rundown({
   playing,
   pullErrors,
   onRetryPull,
+  preparationError,
 }: {
   slots: Slot[];
   /** What the page is producing right now: the slot (null for a fill) and the label. */
@@ -36,6 +38,7 @@ export function Rundown({
   playing: boolean;
   pullErrors: Record<number, string>;
   onRetryPull: (seq: number) => void;
+  preparationError: string | null;
 }) {
   const at = cursor === null ? -1 : slots.findIndex((s) => String(s.seq) === cursor);
   return (
@@ -44,11 +47,7 @@ export function Rundown({
         <Label>The rundown</Label>
         <span className="font-mono text-xs text-zinc-500">{slots.length} tracks</span>
       </div>
-      {producing?.seq === null && (
-        <p role="status" className="text-sm text-zinc-400">
-          {producing.label}
-        </p>
-      )}
+      {producing?.seq === null && <p className="text-sm text-zinc-400">{producing.label}</p>}
       {slots.length === 0 && (
         <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-sm leading-relaxed text-zinc-400">
           The first selections will appear here. Your DJ will keep the show going as you listen.
@@ -58,7 +57,15 @@ export function Rundown({
         {slots.map((slot, i) => {
           const tone: Tone = at < 0 ? "ahead" : i === at ? "on" : i < at ? "played" : "ahead";
           const busy = producing?.seq === slot.seq ? producing.label : null;
-          if (!isCue(slot)) return <ToCome key={slot.seq} slot={slot} label={busy ?? "coming up"} />;
+          const failed = preparationError === `slot:${slot.seq}`;
+          if (!isCue(slot))
+            return (
+              <ToCome
+                key={slot.seq}
+                slot={slot}
+                label={failed ? "Preparation needs another try" : (busy ?? "Coming up")}
+              />
+            );
           const key = cueKey(slot);
           return (
             <Row
@@ -66,6 +73,7 @@ export function Rundown({
               cue={slot}
               tone={tone}
               busy={busy}
+              failed={failed}
               retaking={retaking === key}
               onTap={slot.voiced && slot.held ? () => onPick(slot) : null}
               onRetake={slot.voiced && slot.words ? () => onRetake(slot) : null}
@@ -88,6 +96,7 @@ function Row({
   cue,
   tone,
   busy,
+  failed,
   retaking,
   onTap,
   onRetake,
@@ -99,6 +108,7 @@ function Row({
   tone: Tone;
   /** What is happening to this row right now, if anything. */
   busy: string | null;
+  failed: boolean;
   retaking: boolean;
   /** Put it in the deck, or null while it cannot play yet. */
   onTap: (() => void) | null;
@@ -110,21 +120,18 @@ function Row({
 }) {
   const [open, setOpen] = useState(false);
   const { pick } = cue;
-  const marker = error
-    ? "Download needs another try"
-    : busy
-      ? "Preparing…"
-      : !cue.voiced
-        ? "Preparing the DJ…"
-        : !cue.held
-          ? "Downloading…"
-          : tone === "on"
-            ? playing
-              ? "Playing"
-              : "Selected"
-            : tone === "played"
-              ? "Earlier"
-              : "Ready to play";
+  const prep = preparation(cue, { failed, downloadFailed: !!error });
+  const marker = !prep.ready
+    ? prep.busy && busy
+      ? busy
+      : prep.label
+    : tone === "on"
+      ? playing
+        ? "Playing"
+        : "Selected"
+      : tone === "played"
+        ? "Earlier"
+        : "Ready to play";
   return (
     <li className={`rail-row ${tone === "ahead" ? "" : "lit"}`}>
       <div className={`flex w-full items-center gap-1 py-1 pl-4 ${TONE[tone]}`}>
@@ -301,7 +308,7 @@ function ToCome({ slot, label }: { slot: Slot; label: string }) {
       <span className="min-w-0 flex-1 text-sm">
         <span className="block line-clamp-2 text-zinc-300">{slot.title}</span>
         <span className="mt-0.5 block truncate text-xs text-zinc-400">{slot.artist}</span>
-        <span className="mt-1 block text-[11px]">{label === "coming up" ? "Coming up" : "Preparing…"}</span>
+        <span className="mt-1 block text-[11px]">{label}</span>
       </span>
     </li>
   );
