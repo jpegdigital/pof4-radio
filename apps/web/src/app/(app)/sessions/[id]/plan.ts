@@ -16,7 +16,7 @@ export interface PlanInput {
   recordUnderMs?: number;
   /** Talk-ups: how far into the track the voice comes in. */
   voiceInMs?: number;
-  /** The chart's ramp, when known: a talk-up must be done a beat before it ends. */
+  /** Estimated first vocal, shown on the timeline; not a deadline for the DJ. */
   rampMs?: number;
   /** The legal ID's length in characters: said dry, the bed waits for it. */
   legalIdChars: number;
@@ -41,8 +41,6 @@ export const BED_GAIN = 0.12;
 export const BED_IN_MS = 800;
 /** The bed's ramp down, ending as the track starts. */
 export const BED_FADE_MS = 1500;
-/** A talk-up ends this long before the vocal. */
-export const BEAT_MS = 400;
 /** The dry legal ID's length, estimated from its characters. */
 export const LEGAL_ID_MS_PER_CHAR = 70;
 /** How much of the track the timeline shows after it starts, at least. */
@@ -109,8 +107,9 @@ export function planSlot(input: PlanInput): Plan {
     return { ...past(0, input.rampMs), mic: null, bed: null, music: { atMs: 0 }, duck: null };
 
   if (kind === "break") {
-    const musicAt = Math.max(0, clipMs - (input.recordUnderMs ?? 0));
     const bedAt = input.legalIdChars * LEGAL_ID_MS_PER_CHAR;
+    // A short take may not have all the requested overlap available after its dry legal ID.
+    const musicAt = Math.max(Math.min(clipMs, bedAt), clipMs - (input.recordUnderMs ?? 0));
     const fullMs = bedAt + BED_IN_MS;
     const bed =
       musicAt > fullMs
@@ -128,10 +127,8 @@ export function planSlot(input: PlanInput): Plan {
 
   if (kind === "talkup") {
     const at = input.voiceInMs ?? 0;
-    if (input.rampMs !== undefined && at + clipMs > input.rampMs - BEAT_MS)
-      throw new Error(
-        "The voice exceeds Jev's intro window. Regenerate a shorter voice take before playing.",
-      );
+    // Jev can deliberately cross an opening word. Play the natural take at its chosen start;
+    // the catalog's estimated vocal cue must not veto or move that decision.
     const p = past(0, input.rampMs);
     const mic = { atMs: at, endMs: at + clipMs };
     const plan: Plan = {

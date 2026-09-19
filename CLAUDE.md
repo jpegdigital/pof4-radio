@@ -168,7 +168,7 @@ in, pulls the track the moment a pick is known (not awaited), and repeats; each 
 life, a reload retries. Resume is free: a reload lands in the same place. One **deck**
 (`use-deck.ts`) holds one cue: loading it fetches its clip and its track side by side, reads the
 clip's length, lays the **plan** (`plan.ts`, pure — Jev's timing numbers, the chart's ramp, plus
-house constants: bed gain and fades, the beat before the vocal, the duck), and runs three lanes from
+house constants: bed gain and fades, the duck), and runs three lanes from
 one clock in one Web Audio graph — the mic (the voice `<audio>`), the bed (a looping buffer) and the
 track (its MP3 in its own `<audio>` through a gain node), the bed's and the track's gain scheduled on
 the audio clock, the track started at its mark and ducked under the voice. The transport is

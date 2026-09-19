@@ -103,6 +103,17 @@ describe("writeBrief — what came before", () => {
     expect(brief).toContain("Do not revise it");
     expect(brief).not.toContain("Chart the supplied recording");
   });
+
+  it("briefs a two-second sting as a complete introduction", () => {
+    const base = input();
+    const brief = writeBrief({
+      ...base,
+      plan: { ...base.plan, kind: "talkup", talkOverMs: 2000, wordsMax: 3 },
+    });
+    expect(brief).toContain("approximately 2 seconds");
+    expect(brief).toContain("at most 3 words");
+    expect(brief).toContain("A one-word tag or tiny phrase is a complete introduction");
+  });
 });
 
 describe("writeBrief — the legal ID, the weather, the headlines", () => {

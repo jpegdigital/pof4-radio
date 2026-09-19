@@ -44,25 +44,32 @@ describe("Jev chart and mixer decisions", () => {
     expect(req.questions.intro.criteria).toHaveProperty("unknown");
     expect(chart().chart).toMatchObject({ rampMs: 10000, sure: false, outro: "fade", outroMs: 190000 });
   });
-  it.each(["unknown", "0", "1", "5"])("%s intro offers no talk-up", (intro) => {
+  it.each(["unknown", "0", "1", "5"])("%s intro permits a two-second talk-up or zero overlap", (intro) => {
     const req = mixRequest(input, chart(intro), "jev-1.13.0");
-    expect(Object.keys(req.questions.action.criteria).some((k) => k.startsWith("talkup"))).toBe(false);
+    const out = readMix(req, response(req, { action: "talkup_after_0_for_2" }), 100);
+    expect(out.plan).toMatchObject({ kind: "talkup", voiceInMs: 0, talkOverMs: 2000, wordsMax: 3 });
+    expect(readMix(req, response(req, { action: "segue" }), 100).plan.wordsMax).toBe(0);
   });
-  it("offers break overlap only within the estimated instrumental window", () => {
-    const req = mixRequest({ ...input, clockSaysBreak: true }, chart("5"), "jev-1.13.0");
-    expect(Object.keys(req.questions.action.criteria)).toEqual([
-      "break_dry",
-      "break_under_1",
-      "break_under_3",
-      "stop",
-    ]);
-    const out = readMix(req, response(req, { action: "break_under_3" }), 100);
-    expect(out.plan).toMatchObject({ kind: "break", recordUnderMs: 3000, voiceInMs: null, wordsMax: 35 });
+  it("lets Jev choose break overlap even across an immediate vocal", () => {
+    const req = mixRequest({ ...input, clockSaysBreak: true }, chart("0"), "jev-1.13.0");
+    const out = readMix(req, response(req, { action: "break_under_2" }), 100);
+    expect(out.plan).toMatchObject({ kind: "break", recordUnderMs: 2000, voiceInMs: null, wordsMax: 35 });
+    expect(readMix(req, response(req, { action: "break_dry" }), 100).plan.recordUnderMs).toBe(0);
   });
-  it("derives a spoken word budget from Jev's chosen talk-up timing", () => {
+  it("budgets the chosen duration without filling the whole available intro", () => {
     const req = mixRequest(input, chart(), "jev-1.13.0");
-    const out = readMix(req, response(req, { action: "talkup_after_1" }), 100);
-    expect(out.plan).toMatchObject({ kind: "talkup", voiceInMs: 1000, recordUnderMs: null, wordsMax: 12 });
+    const out = readMix(req, response(req, { action: "talkup_after_1_for_2" }), 100);
+    expect(out.plan).toMatchObject({ kind: "talkup", voiceInMs: 1000, talkOverMs: 2000, wordsMax: 3 });
+  });
+  it("offers a one-word sting and a delayed entry after an opening hit", () => {
+    const req = mixRequest(input, chart("0"), "jev-1.13.0");
+    expect(readMix(req, response(req, { action: "talkup_after_0_for_1" }), 1).plan.wordsMax).toBe(1);
+    expect(readMix(req, response(req, { action: "talkup_after_3_for_2" }), 1).plan.voiceInMs).toBe(3000);
+  });
+  it("keeps talk-up targets inside the actual track length", () => {
+    const req = mixRequest({ ...input, hit: { ...input.hit, durationMs: 4000 } }, chart(), "jev-1.13.0");
+    expect(req.questions.action.criteria).toHaveProperty("talkup_after_1_for_2");
+    expect(req.questions.action.criteria).not.toHaveProperty("talkup_after_3_for_2");
   });
   it("fails instead of replacing a rejected or invalid action", () => {
     const req = mixRequest(input, chart(), "jev-1.13.0");

@@ -44,6 +44,12 @@ describe("planSlot", () => {
     expect(p.bed).toBeNull();
   });
 
+  it("a long requested overlap leaves the opening legal ID dry", () => {
+    const p = planSlot({ kind: "break", clipMs: 12_000, recordUnderMs: 20_000, legalIdChars: 40 });
+    expect(p.music.atMs).toBe(40 * LEGAL_ID_MS_PER_CHAR);
+    expect(p.duck?.atMs).toBe(p.music.atMs);
+  });
+
   it("a talk-up: the track from 0, the voice in where the writer said", () => {
     const p = planSlot({ kind: "talkup", clipMs: 4000, voiceInMs: 1500, rampMs: 12_000, legalIdChars: 0 });
     expect(p.music.atMs).toBe(0);
@@ -52,12 +58,15 @@ describe("planSlot", () => {
   });
 
   it.each([
+    { id: "two-second sting across an opening word", clipMs: 2000, voiceInMs: 0, rampMs: 0 },
+    { id: "unknown vocal timing", clipMs: 2200, voiceInMs: 0, rampMs: 0 },
     { id: "would require moving Jev's voice start", clipMs: 8000, voiceInMs: 3000, rampMs: 9000 },
     { id: "longer than the entire intro", clipMs: 12000, voiceInMs: 2000, rampMs: 9000 },
-  ])("rejects a voice that $id", ({ clipMs, voiceInMs, rampMs }) => {
-    expect(() => planSlot({ kind: "talkup", clipMs, voiceInMs, rampMs, legalIdChars: 0 })).toThrow(
-      /intro window/,
-    );
+  ])("plays Jev's chosen overlap: $id", ({ clipMs, voiceInMs, rampMs }) => {
+    const plan = planSlot({ kind: "talkup", clipMs, voiceInMs, rampMs, legalIdChars: 0 });
+    expect(plan.mic).toEqual({ atMs: voiceInMs, endMs: voiceInMs + clipMs });
+    expect(plan.duck).toEqual({ atMs: voiceInMs, endMs: voiceInMs + clipMs });
+    expect(plan.music.atMs).toBe(0);
   });
 
   it("a sweeper: dry, then a hard start", () => {

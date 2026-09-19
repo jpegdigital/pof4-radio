@@ -115,6 +115,13 @@ export function writeBrief(input: WriteInput): string {
       " words in words and at most " +
       plan.leadWordsMax +
       " words in leadLine. Aim below these caps. Empty leadLine except on a break.",
+    ...(plan.kind === "talkup" && plan.talkOverMs !== undefined
+      ? [
+          "The DJ has approximately " +
+            plan.talkOverMs / 1000 +
+            " seconds over the music. Write for that duration at a natural speaking pace; never pad to fill the intro. A one-word tag or tiny phrase is a complete introduction. If the full artist/title will not fit, use a short hook or station tag instead. No ellipses or dramatic pauses in a tiny sting. The vocal estimate is guidance; the supplied plan may intentionally cross an opening word.",
+        ]
+      : []),
     "",
     ...(clockSaysBreak && input.weather ? [weatherBlock(input.identity.city, input.weather), ""] : []),
     "Do not write news or current-event claims, even from the listener request or earlier copy. The news editor owns those words.",

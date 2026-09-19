@@ -8,13 +8,19 @@ After the pick, planning.ts asks five independent Choice questions in one TypeSa
 intro lower bound, ending/tail, energy, tempo, mood. Each question identifies the exact recording.
 Intro bins are 0, 1, 5, 10, 20, 30, 45, 60, 90, 120 seconds, plus instrumental and unknown.
 These are knowledge-based estimates from catalog identity, not audio analysis. Confidence is saved,
-not treated as proof of a vocal timestamp. Unknown intro timing has no overlap actions available.
+not treated as proof of a vocal timestamp. Vocal timing is musical guidance, not overlap eligibility.
 
 The second request supplies that chart and its probability distributions, the prompt, the clock's break decision, and recent slots.
-Jev chooses one executable action: break with dry entry or 1/3/5-second overlap; segue; dry sweeper;
-or talk-up starting at 0/1/3 seconds. Code builds only actions that fit the estimated intro with
-2 seconds of margin. Spoken copy budgets use 1.8 words/second, capped at 35 words; break lead lines
-have a separate 8-word cap. The model chooses; code calculates milliseconds and word budgets.
+Jev chooses one executable action: break with zero or 1–20 seconds of overlap; segue; dry sweeper;
+or talk-up starting at 0/1/2/3 seconds with a target duration of 1–20 seconds. This duration range
+covers the existing 35-word short-copy budget at 1.8 words/second. There is no minimum intro length,
+five-word minimum, or first-vocal cutoff. Even an unknown or immediate vocal permits overlap.
+The prompt strongly favors well-placed voice over music and tiny stings, allows an opening word
+to overlap intentionally, and asks Jev to preserve striking hits and sustained vocal phrases.
+Zero overlap remains a deliberate choice for musical impact, breathing room or listener preference.
+Talk-up word budgets follow the chosen duration, not the full intro. Break lead lines retain their
+separate 8-word cap. `talkOverMs` records the target in the planning receipt and writer brief;
+the treatment also states the target duration. The model chooses; code calculates milliseconds and budgets.
 The house still owns break cadence, legal IDs, gains, fades and Web Audio scheduling.
 
 Claude's schema contains only words and leadLine. Its call has thinking disabled and a 2048-token
@@ -22,9 +28,11 @@ output limit. News editing and music copy run concurrently; copy always leaves r
 news is enabled. A segue requires no prose or voice call. The existing evidence-checked news editor
 is unchanged, including its omission/expiry rules; those are separate from mixer planning.
 
-checkSlot rejects empty or over-budget copy and clock violations. The browser checks actual TTS
-length against the planned talk-up window and fails instead of moving the voice or knowingly
-playing past that window. This cannot protect against an incorrect estimated vocal timestamp.
+checkSlot rejects empty or over-budget copy and clock violations. The browser plays the complete
+TTS take at Jev's chosen entry, ducking music for its actual length. It does not reject, truncate or
+move a take because it crosses an estimated vocal cue. Target seconds guide writing; TTS timing
+can vary. The estimated vocal cue remains visible on the timeline.
+A break's overlap is limited to the voice remaining after its estimated dry legal ID.
 A new voice take can be requested through the existing rundown control.
 
 The existing selection JSON column also stores selection.planning, including both exact requests,
@@ -54,6 +62,14 @@ mass within the per-entry rounding bound; consume the explicit choice without re
 argmax. Keep the raw distributions for evaluation. They do not override Jev's action.
 
 ## Local verification, 2026-09-19
+
+For `mix-2`, `pnpm check` passed (367 tests) and the production build passed. Regression cases
+cover two-second talk-ups with short, immediate and unknown vocals, zero overlap, one-word stings,
+delayed voice entry, duration-based copy budgets, actual-TTS playback across vocal cues, and a long
+break overlap preserving the dry legal ID. No live Jev/TTS listening evaluation was run for this
+revision; production listening remains the check on musical taste and real voice duration.
+
+Earlier `mix-1` integration checks:
 
 - Final concurrent catalog check: 4/4 completed; planning 280–471 ms, entire batch 1.154 s.
   Completion verifies the API contract, not correctness of musical timing.
