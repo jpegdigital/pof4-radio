@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  BEAT_MS,
   BED_FADE_MS,
   BED_GAIN,
   BED_IN_MS,
@@ -20,7 +19,7 @@ import {
 
 /**
  * The plan is the mix on paper: when the mic, the bed and the track start and stop, from the
- * kind, the clip's length, the writer's two numbers and the chart's ramp. Nothing measured,
+ * kind, the clip's length, Jev's two numbers and the chart's ramp. Nothing measured,
  * nothing searched for — the numbers are opportunistic and the player follows them.
  */
 
@@ -50,18 +49,15 @@ describe("planSlot", () => {
     expect(p.music.atMs).toBe(0);
     expect(p.mic).toEqual({ atMs: 1500, endMs: 5500 });
     expect(p.bed).toBeNull();
-    expect(p.note).toBeUndefined();
   });
 
-  it("a talk-up that would run into the vocal starts earlier, to end a beat before it", () => {
-    const p = planSlot({ kind: "talkup", clipMs: 8000, voiceInMs: 3000, rampMs: 9000, legalIdChars: 0 });
-    expect(p.mic).toEqual({ atMs: 9000 - BEAT_MS - 8000, endMs: 9000 - BEAT_MS });
-  });
-
-  it("a talk-up longer than the whole intro starts at 0 and says so", () => {
-    const p = planSlot({ kind: "talkup", clipMs: 12_000, voiceInMs: 2000, rampMs: 9000, legalIdChars: 0 });
-    expect(p.mic?.atMs).toBe(0);
-    expect(p.note).toContain("past the vocal");
+  it.each([
+    { id: "would require moving Jev's voice start", clipMs: 8000, voiceInMs: 3000, rampMs: 9000 },
+    { id: "longer than the entire intro", clipMs: 12000, voiceInMs: 2000, rampMs: 9000 },
+  ])("rejects a voice that $id", ({ clipMs, voiceInMs, rampMs }) => {
+    expect(() => planSlot({ kind: "talkup", clipMs, voiceInMs, rampMs, legalIdChars: 0 })).toThrow(
+      /intro window/,
+    );
   });
 
   it("a sweeper: dry, then a hard start", () => {

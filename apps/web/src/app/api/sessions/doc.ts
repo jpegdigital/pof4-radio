@@ -64,10 +64,10 @@ export interface Chart {
   rampMs: number;
   sure: boolean;
   post: string;
-  outro: "cold" | "fade";
+  outro: "cold" | "fade" | "unknown";
   outroMs: number;
   energy: number;
-  tempo: "down" | "mid" | "up";
+  tempo: "down" | "mid" | "up" | "unknown";
   mood: string;
 }
 
@@ -83,7 +83,7 @@ export interface SlotDoc {
   pick?: Tags;
   /** The bucket holds the pick's bytes (a `track` row exists). */
   held?: boolean;
-  /** Absent on a no-chart segue (the writer gave nothing usable). */
+  /** Absent on legacy slots written without a chart. */
   chart?: Chart;
   kind?: SlotKind;
   words?: string;

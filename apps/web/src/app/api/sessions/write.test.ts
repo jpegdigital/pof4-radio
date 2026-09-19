@@ -11,17 +11,14 @@ const input = (over: Partial<WriteInput> = {}): WriteInput => ({
   seq: 3,
   clockSaysBreak: false,
   proposal: { title: "Song C", artist: "Artist C", why: "follows the mood" },
-  hits: [
-    { id: "c1", title: "Song C", artists: ["Artist C"], album: "Album C", image: null, durationMs: 200_000 },
-    {
-      id: "c2",
-      title: "Song C (Live)",
-      artists: ["Artist C"],
-      album: "Live",
-      image: null,
-      durationMs: 250_000,
-    },
-  ],
+  hit: {
+    id: "c1",
+    title: "Song C",
+    artists: ["Artist C"],
+    album: "Album C",
+    image: null,
+    durationMs: 200_000,
+  },
   recent: [
     {
       seq: 1,
@@ -37,7 +34,24 @@ const input = (over: Partial<WriteInput> = {}): WriteInput => ({
     { title: "Song A", artist: "Artist A" },
     { title: "Song B", artist: "Artist B" },
   ],
-  priorCharts: [],
+  plan: {
+    chart: {
+      rampMs: 10000,
+      sure: false,
+      post: "estimated",
+      outro: "cold",
+      outroMs: 200000,
+      energy: 3,
+      tempo: "mid",
+      mood: "warm",
+    },
+    kind: "talkup",
+    recordUnderMs: null,
+    voiceInMs: 1000,
+    wordsMax: 12,
+    leadWordsMax: 0,
+    treatment: "Jev plan",
+  },
   legalId: null,
   weather: null,
   newsReserved: false,
@@ -45,14 +59,15 @@ const input = (over: Partial<WriteInput> = {}): WriteInput => ({
 });
 
 describe("writeBrief — the slot", () => {
-  it("carries the ask, the clock, the proposal and every hit as a numbered menu with its length", () => {
+  it("carries only the fixed recording and explicitly forbids changing it", () => {
     const brief = writeBrief(input());
     expect(brief).toContain("The listener's request: rainy morning soul");
     expect(brief).toContain("The clock: 7:25 am");
     expect(brief).toContain("Artist C — Song C");
     expect(brief).toContain("follows the mood");
     expect(brief).toContain("c1 | Song C — Artist C | Album C | 3:20");
-    expect(brief).toContain("c2 | Song C (Live) — Artist C | Live | 4:10");
+    expect(brief).not.toContain("c2");
+    expect(brief).toContain("The recording is fixed");
   });
 
   it("says this slot is the break when the clock says so, and asks for the lead line", () => {
@@ -81,30 +96,12 @@ describe("writeBrief — what came before", () => {
     expect(brief).toMatch(/first slot of the show|nothing has played yet/i);
   });
 
-  it("offers another DJ's chart of a hit as notes, read-only", () => {
-    const brief = writeBrief(
-      input({
-        priorCharts: [
-          {
-            id: "c1",
-            title: "Song C",
-            artists: ["Artist C"],
-            rampMs: 12_000,
-            sure: true,
-            post: "the title line",
-            outro: "fade",
-            outroMs: 180_000,
-            energy: 3,
-            tempo: "mid",
-            mood: "easy",
-            words: "Here is one for the rain.",
-          },
-        ],
-      }),
-    );
-    expect(brief).toMatch(/Another DJ's read of c1/);
-    expect(brief).toContain("ramp 12 s (sure)");
-    expect(brief).toContain("Here is one for the rain.");
+  it("gives the writer fixed actions and budgets, with no charting assignment", () => {
+    const brief = writeBrief(input());
+    expect(brief).toContain('"voiceInMs":1000');
+    expect(brief).toContain("at most 12 words");
+    expect(brief).toContain("Do not revise it");
+    expect(brief).not.toContain("Chart the supplied recording");
   });
 });
 

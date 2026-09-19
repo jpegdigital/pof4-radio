@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moveCompleted, preparation } from "./preparation";
+import { moveCompleted, preparation, preparationSteps } from "./preparation";
 import type { Slot } from "./types";
 
 const slot = (voiced: boolean, held: boolean): Slot => ({
@@ -13,6 +13,33 @@ const slot = (voiced: boolean, held: boolean): Slot => ({
 });
 
 describe("preparation", () => {
+  it("names the current action and marks only completed work as done", () => {
+    expect(preparationSteps(true, undefined, true).map(({ label }) => label)).toEqual([
+      "Show created",
+      "Selecting tracks…",
+      "Prepare opening",
+      "Download track",
+    ]);
+    expect(preparationSteps(true, slot(false, false), true).map(({ label }) => label)).toEqual([
+      "Show created",
+      "Tracks selected",
+      "Preparing opening…",
+      "Download track",
+    ]);
+    expect(preparationSteps(true, slot(true, false), true).map(({ label }) => label)).toEqual([
+      "Show created",
+      "Tracks selected",
+      "Opening prepared",
+      "Downloading track…",
+    ]);
+    expect(preparationSteps(true, slot(true, true), false).every((step) => step.done)).toBe(true);
+  });
+  it("stops the active step on failure, even when the download already finished", () => {
+    const steps = preparationSteps(true, slot(false, true), false);
+    expect(steps.some((step) => step.active)).toBe(false);
+    expect(steps[2]).toMatchObject({ label: "Prepare opening", done: false });
+    expect(steps[3]).toMatchObject({ label: "Track ready", done: true });
+  });
   it("waits for the download even after the voice is ready", () => {
     expect(preparation(slot(true, false))).toEqual({
       label: "Getting your track ready…",

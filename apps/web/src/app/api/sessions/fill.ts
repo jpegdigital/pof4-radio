@@ -15,12 +15,12 @@ import { numbered, Proposal } from "./shapes";
  * is a lookup, not a guess (`catalogTools`). A proposal already in the show is dropped
  * (`dedupe`); Qobuz search finds up to HITS_PER_PROPOSAL streamable versions of each
  * (`searchQuery`); a proposal with at least one hit becomes a slot, in the proposer's order,
- * until `count` are made. The pick among the hits is the writer's, later, one slot at a time.
+ * until `count` are made. Jev picks among the hits later, one slot at a time, before Claude writes.
  * Pure production: no database in here; the caller owns the rows. Nothing made throws
  * FillError with the receipts.
  */
 
-/** How many versions of a song the writer gets to choose from. */
+/** How many recordings of a song Jev gets to choose from. */
 export const HITS_PER_PROPOSAL = 3;
 /** The proposer names this many more than the fill wants: a dropped proposal costs nothing now. */
 export const PROPOSE_OVER = 2;

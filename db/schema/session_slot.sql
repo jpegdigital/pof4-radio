@@ -7,7 +7,7 @@
 -- Nothing goes backwards. `{again: true}` on a voiced slot moves clip_key to a new take and bumps
 -- voiced_at; that revoice keeps the words. Live news preflight can replace expired news with a
 -- prepared safe take; the receipt preserves original words and keys. clip_key is written only after the bucket PUT succeeded, so a
--- key always points at media. The mix is the player's: the writer's two numbers plus house
+-- key always points at media. The mix is the player's: Jev's timing numbers plus house
 -- constants, the clip's length read on load.
 create table session_slot (
   id              uuid primary key default gen_random_uuid(),
@@ -20,16 +20,17 @@ create table session_slot (
   why             text not null,                       -- the proposer's line
   hits            jsonb not null,                      -- Hit[] — the streamable versions Qobuz found, up to 3
 
-  -- the pick, the chart, the copy and the timing: one Claude call, one update
+  -- Jev picks/charts/plans; Claude writes prose. One update lands all receipts.
+  selection       jsonb,                               -- pick and planning receipts, exact requests/responses; server only
   qobuz_id        text,                                -- the pick: one of hits[].id
   clock_ms        integer,                             -- the browser's clock at the write, ms since local midnight
   ramp_ms         integer,                             -- chart: the instrumental ramp before the first vocal
-  sure            boolean,                             -- chart: the writer's confidence in ramp_ms
+  sure            boolean,                             -- chart: legacy certainty; Jev estimates use false
   post            text,                                -- chart: where the vocal lands, in words
-  outro           text,                                -- chart: cold | fade
+  outro           text,                                -- chart: cold | fade | unknown
   outro_ms        integer,                             -- chart: where the ending begins
-  energy          integer,                             -- chart, feel: 1..5
-  tempo           text,                                -- chart, feel: down | mid | up
+  energy          integer,                             -- chart, feel: 1..5, 0 unknown
+  tempo           text,                                -- chart, feel: down | mid | up | unknown
   mood            text,                                -- chart, feel
   kind            text,                                -- copy: break | talkup | sweeper | segue
   words           text,                                -- copy; null for a segue

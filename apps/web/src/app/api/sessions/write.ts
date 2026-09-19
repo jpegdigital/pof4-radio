@@ -3,19 +3,13 @@ import { claude } from "@/lib/claude";
 import { env } from "@/lib/env";
 import type { Identity } from "@/lib/identity";
 import type { Hit } from "./doc";
-import { RULES_TEXT } from "./rules";
+import type { MixPlan } from "./planning";
 import { Written } from "./shapes";
 
 /**
- * One call writes one slot: which of the slot's hits plays (the pick), what the writer knows of
- * that version (the chart), what is said over it (the copy: a kind, the words, the break's lead
- * line, why) and the two numbers the mix follows (the timing). The brief carries the ask, the
- * clock, the station, the DJ, this slot's proposal and its hits as a menu, the last slots' copy,
- * everything played, another DJ's chart of any hit when one exists, and — for a break only — the
- * legal ID when due, the weather and a flag reserving space for separately checked news. The clock's word on the kind goes in the
- * brief and is enforced after (rules.ts). A refusal or a pick outside the hits gets one more try;
- * nothing usable twice is null, and the caller makes the slot a segue. Pure production: no
- * database in here; the caller owns the row.
+ * Claude writes prose for Jev’s fixed recording and mixer plan. It has no planning choices
+ * in its input or output. A failed/refused write fails the request; no substitute is made.
+ * The caller owns the row and applies the clock's rules after writing.
  */
 
 // Inline for now, like the fill's; moves to the settings table when the prompts start being tuned.
@@ -41,22 +35,6 @@ export interface RecentSlot {
   artist: string;
 }
 
-/** Another session's chart of one of this slot's hits, with what was said over it. */
-export interface PriorChart {
-  id: string;
-  title: string;
-  artists: string[];
-  rampMs: number;
-  sure: boolean;
-  post: string;
-  outro: string;
-  outroMs: number;
-  energy: number;
-  tempo: string;
-  mood: string;
-  words: string | null;
-}
-
 export interface WriteInput {
   prompt: string;
   dj: string | null;
@@ -66,12 +44,14 @@ export interface WriteInput {
   seq: number;
   clockSaysBreak: boolean;
   proposal: { title: string; artist: string; why: string };
-  hits: Hit[];
+  /** The recording Jev selected. The writer cannot replace it. */
+  hit: Hit;
   /** The last few written slots before this one, in show order. */
   recent: RecentSlot[];
   /** Everything written before this one, in show order. */
   played: { title: string; artist: string }[];
-  priorCharts: PriorChart[];
+  /** Fixed Jev chart, mixer action, and spoken word budgets. */
+  plan: MixPlan;
   /** The legal ID to open with, or null when it is not due (or this is not a break). */
   legalId: string | null;
   /** The weather as the brief carries it (`weatherText`), or null: then nothing is said of it. */
@@ -99,27 +79,15 @@ const recentLine = (r: RecentSlot) => {
   return `${r.seq}. ${r.artist} — ${r.title}: ${r.kind}${said ? ` — "${said}"` : " (nothing said)"}`;
 };
 
-const chartLine = (c: PriorChart) =>
-  `Another DJ's read of ${c.id} (${c.artists.join(", ")} — ${c.title}): ramp ${Math.round(c.rampMs / 1000)} s (${c.sure ? "sure" : "unsure"}); the vocal comes in on ${c.post || "nothing"}; ends ${c.outro} at ${mmss(c.outroMs)}; energy ${c.energy}/5, ${c.tempo}-tempo; ${c.mood}.${c.words ? ` They said: "${c.words}"` : ""}`;
-
 /** The brief the writer gets for this one slot. */
 export function writeBrief(input: WriteInput): string {
-  const { proposal, hits, recent, played, priorCharts, clockSaysBreak, legalId } = input;
-  const menu = hits
-    .map((h) => `   ${h.id} | ${h.title} — ${h.artists.join(", ")} | ${h.album} | ${mmss(h.durationMs)}`)
-    .join("\n");
+  const { proposal, hit, recent, played, plan, clockSaysBreak, legalId } = input;
+  const recording = `${hit.id} | ${hit.title} — ${hit.artists.join(", ")} | ${hit.album} | ${mmss(hit.durationMs)}`;
   const before = recent.length
     ? [`The last slots, what was said there:`, ...recent.map(recentLine), ""]
     : [`This is the first slot of the show: nothing has played yet.`, ""];
   const soFar = played.length
     ? [`Played so far, in order:`, ...played.map((p) => `- ${p.artist} — ${p.title}`), ""]
-    : [];
-  const charts = priorCharts.length
-    ? [
-        `Notes from earlier shows (read-only, another DJ's ear; trust your own):`,
-        ...priorCharts.map(chartLine),
-        "",
-      ]
     : [];
   const slot = clockSaysBreak
     ? [
@@ -128,9 +96,7 @@ export function writeBrief(input: WriteInput): string {
           ? `The legal ID "${legalId}" is said first, dry, before the bed comes in. It is added for you — do not write it into your words.`
           : "No legal ID on this break: it was said this hour already.",
       ]
-    : [
-        `Slot ${input.seq}: this slot is not a break. Choose how the song is brought on air — a talk-up over its ramp, a sweeper, or a segue — and write every word said there.`,
-      ];
+    : [`Slot ${input.seq}: this slot is not a break. Write only the copy for the supplied Jev plan.`];
   return [
     `The listener's request: ${input.prompt}`,
     `The clock: ${input.clock}`,
@@ -138,22 +104,27 @@ export function writeBrief(input: WriteInput): string {
     ...before,
     ...soFar,
     `This slot's song: ${proposal.artist} — ${proposal.title}. Why it is here: ${proposal.why}`,
-    "The catalogue has these versions of it. Pick the one to play: the single or the original album cut unless the request wants a live take or a remix — never a remix, a cover, a karaoke, a sped-up or a tribute version by mistake; read the artist and the album, not just the title.",
-    menu,
+    "The recording is fixed. Write only for this recording; do not choose or substitute another version.",
+    recording,
     "",
-    ...charts,
+    "Jev has fixed the chart and mixer plan. Do not revise it or infer different timings.",
+    JSON.stringify(plan),
     ...slot,
-    "Chart the version you picked from what you know of it: the ramp before the first vocal (and whether you are sure of it), where the vocal lands, how it ends, the feel.",
+    "Write at most " +
+      plan.wordsMax +
+      " words in words and at most " +
+      plan.leadWordsMax +
+      " words in leadLine. Aim below these caps. Empty leadLine except on a break.",
     "",
     ...(clockSaysBreak && input.weather ? [weatherBlock(input.identity.city, input.weather), ""] : []),
     "Do not write news or current-event claims, even from the listener request or earlier copy. The news editor owns those words.",
     ...(clockSaysBreak && input.newsReserved
       ? [
-          "A checked news sentence is inserted before your words. Keep your music/weather portion to 25–35 words and use a neutral transition. Do not repeat or refer back to the news.",
+          "A checked news sentence is inserted before your words. Keep your music/weather portion within the supplied word budget and use a neutral transition. Do not repeat or refer back to the news.",
           "",
         ]
       : []),
-    RULES_TEXT,
+    "Never quote lyrics. Do not include the legal ID; it is added for you. Return only the spoken copy, with no stage directions, timing numbers, or analysis.",
   ].join("\n");
 }
 
@@ -164,36 +135,16 @@ const thinkingOf = (content: { type: string; thinking?: string }[]) =>
     .map((b) => b.thinking)
     .join("\n\n");
 
-export async function produceWrite(
-  input: WriteInput,
-): Promise<{ written: Written; thinking: string } | null> {
-  const brief = writeBrief(input);
-  const ids = new Set(input.hits.map((h) => h.id));
-  const once = () =>
-    claude().messages.parse({
-      model: env().CLAUDE_MODEL,
-      max_tokens: 16000,
-      thinking: { type: "adaptive" },
-      output_config: { effort: "medium", format: zodOutputFormat(Written) },
-      system: system(input.dj, input.identity),
-      messages: [{ role: "user", content: brief }],
-    });
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    const res = await once();
-    const w = res.parsed_output;
-    if (!w) {
-      console.warn(
-        `[sessions] slot ${input.seq}: the writer gave nothing (${res.stop_reason}), attempt ${attempt}`,
-      );
-      continue;
-    }
-    if (!ids.has(w.pick)) {
-      console.warn(
-        `[sessions] slot ${input.seq}: the writer picked ${w.pick}, not one of the hits, attempt ${attempt}`,
-      );
-      continue;
-    }
-    return { written: w, thinking: thinkingOf(res.content) };
-  }
-  return null;
+export async function produceWrite(input: WriteInput): Promise<{ written: Written; thinking: string }> {
+  const res = await claude().messages.parse({
+    model: env().CLAUDE_MODEL,
+    max_tokens: 2048,
+    thinking: { type: "disabled" },
+    output_config: { format: zodOutputFormat(Written) },
+    system: system(input.dj, input.identity),
+    messages: [{ role: "user", content: writeBrief(input) }],
+  });
+  if (!res.parsed_output)
+    throw new Error(`slot ${input.seq}: Claude returned no usable copy (${res.stop_reason})`);
+  return { written: Written.parse(res.parsed_output), thinking: thinkingOf(res.content) };
 }

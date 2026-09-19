@@ -248,14 +248,20 @@ function Detail({ cue }: { cue: Cue }) {
       {chart ? (
         <p className="flex flex-wrap gap-x-4 gap-y-1 font-mono tabular-nums text-zinc-500">
           <span>
-            ramp {secs(chart.rampMs)} ({chart.sure ? "sure" : "unsure"})
+            ramp {secs(chart.rampMs)} ({chart.sure ? "sure" : "estimated"})
           </span>
           {chart.post && <span>post: {chart.post}</span>}
           <span>
-            ends: {chart.outro} at {clock(chart.outroMs)}
+            {chart.outro === "unknown" ? (
+              "ending unknown"
+            ) : (
+              <>
+                ends: {chart.outro} at {clock(chart.outroMs)}
+              </>
+            )}
           </span>
           <span>
-            energy {chart.energy}/5 · {chart.tempo} · {chart.mood}
+            {chart.energy ? `energy ${chart.energy}/5` : "energy unknown"} · {chart.tempo} · {chart.mood}
           </span>
         </p>
       ) : (

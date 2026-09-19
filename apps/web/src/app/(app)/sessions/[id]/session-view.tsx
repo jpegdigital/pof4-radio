@@ -145,7 +145,7 @@ export function SessionView({ id }: { id: string }) {
     const signal = lifetime.current!.signal;
     const producing: Producing =
       move.kind === "fill"
-        ? { key: move.key, seq: null, label: "Choosing your next tracks…" }
+        ? { key: move.key, seq: null, label: "Selecting your next tracks…" }
         : {
             key: move.key,
             seq: move.seq,

@@ -306,7 +306,6 @@ function Lanes({
           )}
         </div>
       </div>
-      {plan.note && <p className="mt-1 text-xs text-amber-300/90">{plan.note}</p>}
     </div>
   );
 }

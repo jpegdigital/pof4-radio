@@ -68,7 +68,7 @@
 <p>Decided 2026-09-04 in the slot-first design session; in the schema since 2026-09-04 (<code>db/schema/*.sql</code> is the source of truth, this page the reading of it). Replaced <code>api.html</code>, which described the segment world this one retires. The refactor that got us here is narrated in <a href="slot-first.md">slot-first.md</a>; how the pieces talk is <a href="sessions.html">sessions.html</a>.</p>
 
 <h2 id="breath">In one breath</h2>
-<p>A <strong>session</strong> is one listening: the ask and the voice. It owns <strong>slots</strong>, numbered from 1, each one clip over one track — the unit of the show and the only unit there is. A slot is born as a <em>proposal</em> (the proposer names a song and says why), grows its <em>hits</em> (what Qobuz found for that name), and is then written whole in one call: the <em>pick</em> (which hit), the <em>chart</em> (the writer's read of the track: ramp, post, outro, feel), the <em>copy</em> (the words) and the <em>timing</em> (two numbers). Then it is voiced: the <em>clip</em>. The <strong>track</strong> is the library's, not the session's: one row per record ever pulled into the bucket, carrying what Qobuz says about it and nothing anyone guessed. There is no playlist as a thing of its own — the playlist is the slots that have not been written yet. There are no segments: a break is a kind of slot, and the clock says which slots are breaks. Status is never stored; it is derived from what is present. Everything produced is kept forever.</p>
+<p>A <strong>session</strong> is one listening: the ask and the voice. It owns <strong>slots</strong>, numbered from 1, each one clip over one track — the unit of the show and the only unit there is. A slot is born as a <em>proposal</em> (the proposer names a song and says why), grows its <em>hits</em> (what Qobuz found for that name), then Jev selects its <em>pick</em> (which hit), and Jev estimates the <em>chart</em> and chooses the mixer <em>timing</em>. Claude writes only the <em>copy</em> against that fixed plan. Then it is voiced: the <em>clip</em>. The <strong>track</strong> is the library's, not the session's: one row per record ever pulled into the bucket, carrying what Qobuz says about it and nothing anyone guessed. There is no playlist as a thing of its own — the playlist is the slots that have not been written yet. There are no segments: a break is a kind of slot, and the clock says which slots are breaks. Status is never stored; it is derived from what is present. Everything produced is kept forever.</p>
 
 <pre data-lang="shape"><code>session ─┬─ session_slot (seq 1)   ← always a break
          ├─ session_slot (seq 2)
@@ -85,9 +85,9 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
 <tr><td><strong>tags</strong></td><td>What Qobuz says about a track: title, artists, album, art, duration. Given, never judged.</td><td><code>track</code>; inside each hit before the pick</td></tr>
 <tr><td><strong>slot</strong></td><td>One clip over one track at position <code>seq</code>. The unit of the show.</td><td><code>session_slot</code></td></tr>
 <tr><td><strong>proposal</strong></td><td>The proposer's ask for a slot: title, artist, why. Exists before any hit.</td><td><code>session_slot</code></td></tr>
-<tr><td><strong>hits</strong></td><td>The Qobuz search results for a proposal, tags included — the versions the writer may pick from.</td><td><code>session_slot.hits</code></td></tr>
-<tr><td><strong>pick</strong></td><td>The hit the writer chose: its Qobuz id.</td><td><code>session_slot.qobuz_id</code></td></tr>
-<tr><td><strong>chart</strong></td><td>The writer's read of the track for this slot: <strong>ramp</strong> (the instrumental run before the vocal), <strong>post</strong> (where the vocal lands, and whether the writer is sure), <strong>outro</strong> (cold or fade, and how long), and the <strong>feel</strong> (energy, tempo, mood). Judged.</td><td><code>session_slot</code></td></tr>
+<tr><td><strong>hits</strong></td><td>The Qobuz search results for a proposal, tags included — the recordings Jev may pick from.</td><td><code>session_slot.hits</code></td></tr>
+<tr><td><strong>pick</strong></td><td>The hit Jev chose: its Qobuz id.</td><td><code>session_slot.qobuz_id</code></td></tr>
+<tr><td><strong>chart</strong></td><td>Jev's estimate of the recording for this slot: <strong>ramp</strong> (the instrumental run before the vocal), <strong>post</strong> (where the vocal is estimated to land; not measured), <strong>outro</strong> (cold or fade, and how long), and the <strong>feel</strong> (energy, tempo, mood). Judged.</td><td><code>session_slot</code></td></tr>
 <tr><td><strong>copy</strong></td><td>The words: the kind, the lead line, everything said, the legal ID when it is due, and why this treatment here.</td><td><code>session_slot</code></td></tr>
 <tr><td><strong>timing</strong></td><td>The two numbers: how far before the voice ends the record starts under it (a break), how far into the record the voice comes in (a talkup).</td><td><code>session_slot</code></td></tr>
 <tr><td><strong>clip</strong></td><td>The voiced copy, in the bucket.</td><td><code>session_slot.clip_key</code>, <code>voiced_at</code></td></tr>
@@ -113,7 +113,7 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
 <table>
 <tr><th>Phase</th><th>Written by</th><th>Lands</th><th>When</th></tr>
 <tr><td><strong>proposed</strong></td><td>the fill rung: one Claude call (the proposer), then a Qobuz search per proposal in parallel</td><td>the proposal and its hits</td><td>at open, and whenever the unwritten slots run low</td></tr>
-<tr><td><strong>written</strong></td><td>the slot rung: one Claude call (the writer)</td><td>the pick, the chart, the copy, the timing</td><td>one slot at a time, in order, just ahead of play</td></tr>
+<tr><td><strong>written</strong></td><td>the slot rung: Jev chooses a recording and mixer plan, then Claude writes prose</td><td>the pick, the chart, the copy, the timing</td><td>one slot at a time, in order, just ahead of play</td></tr>
 <tr><td><strong>voiced</strong></td><td>the slot rung, right after the write: ElevenLabs</td><td>the clip</td><td>same request; <code>{ again: true }</code> re-voices only</td></tr>
 </table>
 <p>A proposal with no streamable hit never becomes a row: the fill closes the gap, and asks the proposer for a couple more than it needs so a miss costs nothing. The pick is the first moment the track is known, so the track's pull is fired the moment the slot response lands and runs while the clip is voiced. While slot <em>k</em> plays, slot <em>k+1</em> is written, pulled and voiced.</p>
@@ -130,10 +130,11 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
   why           text not null,             -- the proposer's line: why this song, here
   hits          jsonb not null,            -- [{id, title, artists, album, image, durationMs}] — the versions Qobuz found
 
-  -- the pick, the chart, the copy and the timing: one Claude call, one update, immutable after
+  -- Jev picks, charts and plans; Claude writes prose; one update lands all
+  selection     jsonb,                     -- Jev request/response receipt, server only
   qobuz_id      text,                      -- the pick: one of hits[].id
   ramp_ms       integer,                   -- chart: the instrumental run before the vocal; 0 if it opens on the vocal
-  sure          boolean,                   -- chart: the writer is confident of ramp_ms to within a second or two
+  sure          boolean,                   -- chart: legacy certainty; Jev estimates are not measured
   post          text,                      -- chart: where the vocal lands, in words — never the lyric
   outro         text,                      -- chart: cold | fade
   outro_ms      integer,                   -- chart: how long the ending runs
@@ -144,7 +145,7 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
   words         text,                      -- copy: everything said; null for a segue
   lead_line     text,                      -- copy, breaks: the one sentence that talks the record in, said last
   legal_id      text,                      -- copy: said dry before the bed; the server's, when it is due
-  treatment     text,                      -- copy: the writer's line: why this kind, here
+  treatment     text,                      -- copy: the chosen mixer action
   fallback      jsonb,                     -- {from, to, reason} when a house rule stepped the kind down
   record_under_ms integer,                 -- timing, breaks: how far before the voice ends the record starts under it
   voice_in_ms   integer,                   -- timing, talkups: how far into the record the voice comes in
@@ -169,7 +170,7 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
 <p>The pick's tags come from the hit it names, so the snapshot never joins <code>track</code> for words or art — only for whether the bytes are held (<code>pulled</code>, one <code>where id = any(…)</code> across the session). Readiness of the clip is as before: <code>clip_key</code> present always means the media exists; <code>voiced_at</code> without a key is a segue, done with nothing to say.</p>
 
 <h3 id="slot-kinds">The kinds</h3>
-<p>The writer chooses the kind, except where the clock does: slot 1 is a break, and so is every slot the clock names. The house rules check the writer's timing against the writer's own chart and the house limits, stepping a kind down and recording why in <code>fallback</code>.</p>
+<p>Jev chooses the kind and timing from executable actions within the clock's constraints. Coarse intro estimates and their uncertainty inform whether voice can overlap music. Claude writes only prose within fixed budgets. Invalid copy stops preparation; the code does not substitute a different kind. See <a href="jev-planning.md">Jev planning</a>.</p>
 <table>
 <tr><th>Kind</th><th>What you hear</th><th>Copy needs</th><th>Timing</th></tr>
 <tr><td><code>break</code></td><td>Voice over a bed, the last line talks the record in under it. Legal ID first, dry, when it is due. The weather is in the music brief only here; separately checked and attributed news is inserted before the music copy.</td><td><code>words</code>, <code>lead_line</code></td><td><code>record_under_ms</code></td></tr>
@@ -190,13 +191,13 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
 </table>
 
 <h3 id="given-judged">Given and judged</h3>
-<p>The line between the two tables is not <em>song versus show</em>; it is <em>given versus judged</em>. What Qobuz hands us is given and lives on <code>track</code>, stable because nobody guessed it. What the writer decides — its read of the track as much as what it says over it — is judged and lives on the slot that judged it. Twelve words over a 14-second ramp and forty words over the same ramp are different charts of the same track, and both are right for their slot. Nothing from Claude ever lands on <code>track</code>. Earlier charts of the same track are offered to the writer in its brief as other DJs' notes, read-only; a session's charts never drift because a later session read the record differently. If a ramp is ever <em>measured</em>, that number is given, goes on <code>track</code>, and the brief says so.</p>
+<p>Catalog metadata lives on <code>track</code>; Jev's estimates, decisions and Claude's copy live on the slot. Intro bins are estimates from recording identity, not measured audio. Previous model guesses are not supplied as evidence. Raw Jev requests, answers and probabilities are saved for review. The browser schedules the fixed plan using the measured TTS duration.</p>
 
 <h2 id="clock">5. The clock</h2>
 <p>Four settings rows shape every show; none is a listener knob. News uses a pilot default until its setting is saved.</p>
 <table>
 <tr><th>Setting</th><th>What it does</th><th>Default</th></tr>
-<tr><td><code>breakEvery</code></td><td>A break falls at slot 1 and every <code>breakEvery</code> slots after (1, 1 + <em>k</em>, 1 + 2<em>k</em> …). Between breaks the writer chooses.</td><td>5</td></tr>
+<tr><td><code>breakEvery</code></td><td>A break falls at slot 1 and every <code>breakEvery</code> slots after (1, 1 + <em>k</em>, 1 + 2<em>k</em> …). Between breaks Jev chooses.</td><td>5</td></tr>
 <tr><td><code>fill</code></td><td>How many slots a fill appends. The proposer is asked for a couple more to absorb misses.</td><td>6</td></tr>
 <tr><td><code>lowWater</code></td><td>When the count of proposed-but-unwritten slots drops to this, the client fires the next fill.</td><td>2</td></tr>
 </table>
@@ -227,7 +228,7 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
 <tr><th>Thing</th><th>Why</th></tr>
 <tr><td><code>session_segment</code></td><td>A segment was a break and its songs. The break is now a kind of slot and the clock places it; the playlist is the unwritten slots. Nothing is left for the segment to hold.</td></tr>
 <tr><td><code>card</code></td><td>The card was the chart made in a separate call and cached per track. The chart is now made in the same call as the copy, because the chart only ever serves the copy; a cross-check between two calls was the only thing the separate call bought. Prior slots are the cache.</td></tr>
-<tr><td>The compose call</td><td>The proposer locks the order; there is nothing left to compose. The writer picks the version.</td></tr>
+<tr><td>The compose call</td><td>The proposer locks the order; there is nothing left to compose. Jev picks the recording.</td></tr>
 <tr><td>The program rung and the audio rung</td><td>Folded into one slot rung: pick, chart, copy, timing, clip, one request.</td></tr>
 <tr><td><code>station</code>, <code>segment</code></td><td>The first build's, unused since 2026-09-03.</td></tr>
 </table>

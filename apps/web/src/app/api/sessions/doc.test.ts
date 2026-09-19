@@ -144,7 +144,7 @@ describe("slotDoc — written and after", () => {
     expect(d).not.toHaveProperty("clockMs");
   });
 
-  it("a no-chart segue (the writer gave nothing) has no chart key", () => {
+  it("a legacy no-chart segue has no chart key", () => {
     const d = slotDoc(
       {
         ...voiced,

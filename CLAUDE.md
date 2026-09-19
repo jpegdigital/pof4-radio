@@ -2,8 +2,8 @@
 
 An AI radio station over the listener's own records. A listener types an ask; the show is one list
 of **slots**: Claude proposes a few songs at a time (the fill), Qobuz search finds the versions of
-each, then one slot at a time Claude picks the version, charts it, writes what is said over it and
-sets the timing, and ElevenLabs voices it in the same request; each track is pulled once from Qobuz
+each, then one slot at a time Jev picks the recording, estimates its chart and decides the mixer plan.
+Claude writes the spoken copy and ElevenLabs voices it in the same request; each track is pulled once from Qobuz
 as an MP3 into the bucket, and the browser plays it — the clips and the tracks on three lanes of one
 Web Audio graph, one slot ahead of the listener. Everything produced is **kept forever**. The
 browser is the state machine; the server is stateless functions. Sibling of `../dreamweaver` and
@@ -107,15 +107,17 @@ the track pull, lock-free:
 - `POST …/slots/:seq` `{ clockMs, again?, live? }` — **write, then voice**, one request. The clock says
   whether this slot is the break (`isBreak`: slot 1 and every `breakEvery` after) and whether the
   legal ID is due (`legalIdDue`: slot 1, or the hour turned since the last break). The brief carries
-  the ask, the clock, the identity, the DJ, the proposal and its hits as a menu, the last three slots'
-  copy, everything played, another DJ's chart of any hit from an earlier session, and for a break the
-  weather (NWS) and a flag reserving room for separately checked news. **One music-writing**
-  Claude call returns the pick (which hit plays), the chart (the ramp and whether it is sure, the
-  post, the outro, the feel), the copy (a kind, the words, the break's lead line, why) and the timing
-  (`recordUnderSec`, `voiceInSec`). `checkSlot` holds it to the clock after — the clock's break is
-  the break, a break elsewhere is a sweeper, a talk-up needs a ramp ≥ 7 s the writer is sure of,
-  no words is a segue — every step-down kept as the slot's `fallback`; a writer that gives nothing
-  usable twice makes the slot a no-chart segue on the first hit. One `update` lands the write. Then
+  the ask, the clock, the identity, the DJ, the proposal and the fixed recording selected by Jev, the last three slots'
+  copy, everything played, Jev's fixed mixer plan and word budgets, and for a break the
+  weather (NWS) and a flag reserving room for separately checked news. **One Jev Choice call** selects a recording from the hits (or fails if none fits). Its request,
+  response, model, usage and elapsed time are retained in `session_slot.selection`. No alternative
+  picker or automatic retry. Jev then answers five chart questions in parallel (coarse intro,
+  ending, energy, tempo, mood), followed by one action choice over code-built executable mixer
+  plans. All judgments and probabilities are retained under selection.planning. Unknown timing
+  offers dry/no-voice actions; estimates are not audio measurements. **One music-writing** Claude
+  call returns only words and leadLine, with thinking disabled and fixed word budgets. News editing
+  and prose run concurrently. checkSlot fails on invalid copy or a clock mismatch; it never changes
+  Jev's action. A Jev segue skips prose and TTS. One update lands the plan, copy and receipts. Then
   the clip: legal ID + words + lead line through ElevenLabs in the session's voice, `PUT` to
   `sessions/<session>/<seq>.mp3`, the row stamped — bucket first, row second; a segue is stamped
   voiced with no clip. A voicing that fails after the write **keeps the write** (502 with the slot as
@@ -165,7 +167,7 @@ before play only slot 1 is written, and once slot *k* is on air slot *k*+1 is. I
 in, pulls the track the moment a pick is known (not awaited), and repeats; each move once per page
 life, a reload retries. Resume is free: a reload lands in the same place. One **deck**
 (`use-deck.ts`) holds one cue: loading it fetches its clip and its track side by side, reads the
-clip's length, lays the **plan** (`plan.ts`, pure — the writer's two numbers, the chart's ramp, plus
+clip's length, lays the **plan** (`plan.ts`, pure — Jev's timing numbers, the chart's ramp, plus
 house constants: bed gain and fades, the beat before the vocal, the duck), and runs three lanes from
 one clock in one Web Audio graph — the mic (the voice `<audio>`), the bed (a looping buffer) and the
 track (its MP3 in its own `<audio>` through a gain node), the bed's and the track's gain scheduled on
@@ -183,6 +185,14 @@ context is resumed by hand (WebKit bug 263627), and the lock screen is the Media
 (`media-session.ts`): the pick's tags, play/pause/⏮/⏭ into the same transport, what it shows the
 transport's rule (`lockScreen`). Three clocks — wall, audio, the record's element — tied once at
 start; every rule for their coming apart is pure and tested in `transport.ts`.
+
+## Jev recording selection
+
+`pick.ts` uses plain fetch to TypeSafe. `TYPESAFE_API_KEY` comes from
+`op://Developer/pof4-radio-typesafe-proart/credential`; `TYPESAFE_MODEL` pins `jev-1.13.0`.
+Claude proposes songs and their order; Jev chooses the supplied Qobuz recording and its mixer plan.
+`Written` contains only words and leadLine. See `docs/jev-planning.md` for planning and timing limits. See `docs/jev-selection.md` for the labeled evaluation and
+real Qobuz search scripts. Selection failures stop the slot with 502.
 
 ## Working here
 

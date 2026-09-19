@@ -19,6 +19,9 @@ const Env = z.object({
   /** The DJ. */
   CLAUDE_KEY: z.string().min(1),
   CLAUDE_MODEL: z.string().min(1).default("claude-opus-5"),
+  /** Jev recording selection. Required; there is no alternate picker. */
+  TYPESAFE_API_KEY: z.string().min(1),
+  TYPESAFE_MODEL: z.string().min(1).default("jev-1.13.0"),
   /** The voice. Optional so the station runs (talk skipped) before the key is set up. */
   ELEVENLABS_KEY: z.string().min(1).optional(),
   /**

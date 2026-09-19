@@ -1,5 +1,5 @@
 /**
- * The mix on paper, pure: from the kind, the clip's length (read when it loaded), the writer's
+ * The mix on paper, pure: from the kind, the clip's length (read when it loaded), Jev's
  * two numbers and the chart's ramp, when the mic, the bed and the track start and stop —
  * every time in ms from the moment play is pressed. Opportunistic by design: nothing is
  * measured in the audio, the numbers are the writer's and the house's, and the player
@@ -33,8 +33,6 @@ export interface Plan {
   duck: { atMs: number; endMs: number } | null;
   /** Where the vocal comes in, when the chart knows the ramp. */
   vocalMs?: number;
-  /** Where the plan could not do what was asked, in words. */
-  note?: string;
 }
 
 /** The bed's level under the voice: about -18 dB below it (a talk bed is felt, not heard). */
@@ -129,14 +127,11 @@ export function planSlot(input: PlanInput): Plan {
   }
 
   if (kind === "talkup") {
-    let at = input.voiceInMs ?? 0;
-    let note: string | undefined;
-    if (input.rampMs !== undefined) {
-      const latest = input.rampMs - BEAT_MS - clipMs;
-      if (at > latest) at = Math.max(0, latest);
-      const over = at + clipMs - (input.rampMs - BEAT_MS);
-      if (over > 0) note = `the talk-up runs ${(over / 1000).toFixed(1)} s past the vocal`;
-    }
+    const at = input.voiceInMs ?? 0;
+    if (input.rampMs !== undefined && at + clipMs > input.rampMs - BEAT_MS)
+      throw new Error(
+        "The voice exceeds Jev's intro window. Regenerate a shorter voice take before playing.",
+      );
     const p = past(0, input.rampMs);
     const mic = { atMs: at, endMs: at + clipMs };
     const plan: Plan = {
@@ -147,7 +142,6 @@ export function planSlot(input: PlanInput): Plan {
       music: { atMs: 0 },
       duck: duckOf(mic, 0),
     };
-    if (note) plan.note = note;
     return plan;
   }
 

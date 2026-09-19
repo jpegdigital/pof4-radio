@@ -9,10 +9,12 @@ import { ttsBody } from "@/lib/voices";
 import { SLOT_COLUMNS, type SlotRow, slotDoc } from "../../../doc";
 import { readHeadlines, type HeadlineSnapshot } from "../../../headlines";
 import { editHeadlines, type NewsHistory } from "../../../headline-edit";
+import { producePick } from "../../../pick";
+import { producePlan } from "../../../planning";
 import { SlotBody } from "../../../params";
-import { checkSlot, isBreak, legalIdDue, type WrittenSlot } from "../../../rules";
+import { checkSlot, isBreak, legalIdDue } from "../../../rules";
 import { fetchWeather, WEATHER_PLACE, weatherText } from "../../../weather";
-import { clockOf, legalIdOf, type PriorChart, produceWrite, type RecentSlot } from "../../../write";
+import { clockOf, legalIdOf, produceWrite, type RecentSlot } from "../../../write";
 
 /**
  * POST /api/sessions/:id/slots/:seq — the slot rung: write, then voice, in one request under the
@@ -23,23 +25,18 @@ import { clockOf, legalIdOf, type PriorChart, produceWrite, type RecentSlot } fr
  * and words → another take under a new key, the words untouched; written but not voiced (a
  * voicing that failed) → voice only; proposed → write, then voice. The write: the clock says
  * whether this slot is the break and whether the legal ID is due; the brief gathers the last
- * slots' copy, everything played, another DJ's chart of any hit, and for a break the weather.
+ * slots' copy, everything played, and for a break the weather.
  * Feed discovery precedes the lock; a separate editor checks news against evidence and history.
- * Approved news is inserted outside the music writer; one music-writing call picks the version,
- * charts it, writes the copy and sets the timing; the house rules (rules.ts) hold it to the clock;
- * one update lands every written column. The writer giving nothing usable twice makes the slot a
- * segue on the first hit, no chart, the reason as its treatment. The voice: the slot's text (legal
- * ID, words, lead line) through ElevenLabs in the session's voice, PUT to the bucket at
- * `sessions/<id>/<seq>[-take].mp3`, then the row stamped — bucket first, row second. A slot with
- * nothing to say is stamped voiced with no clip. If the voicing fails after a write, the write
+ * Approved news is inserted outside the music writer. Jev selects the recording, estimates its
+ * chart, and chooses an executable mixer plan. Claude writes only its copy, concurrently with
+ * news editing. Failed decisions or invalid copy stop the request; one update keeps every receipt. The voice is PUT before
+ * the row is stamped. A voicing failure keeps the completed write, which
  * is committed and the answer is 502 with the slot as written; the next request voices only.
  */
 
 const LOCK_NOT_AVAILABLE = "55P03";
 /** How many earlier slots' copy the writer sees. */
 const RECENT_SLOTS = 3;
-/** How many other sessions' charts of a hit the writer sees. */
-const PRIOR_CHARTS = 3;
 
 /** The first take is `<seq>.mp3`; every take after carries when it was made, so no two keys collide. */
 const clipKeyOf = (sessionId: string, seq: number, take: string | null) =>
@@ -65,20 +62,6 @@ interface RecentRow {
   artist: string;
 }
 
-interface PriorRow {
-  qobuz_id: string;
-  hits: SlotRow["hits"];
-  ramp_ms: number;
-  sure: boolean;
-  post: string;
-  outro: string;
-  outro_ms: number;
-  energy: number;
-  tempo: string;
-  mood: string;
-  words: string | null;
-}
-
 type Route = RouteContext<"/api/sessions/[id]/slots/[seq]">;
 
 export async function POST(req: Request, ctx: Route) {
@@ -97,6 +80,16 @@ export async function POST(req: Request, ctx: Route) {
   if (!key) return Response.json({ error: "ELEVENLABS_KEY is not set on the server" }, { status: 503 });
   const tag = `[session ${id.slice(0, 8)}] slot ${seq}`;
 
+  const startedAt = Date.now();
+  let stage = "news discovery";
+  let stageAt = startedAt;
+  const enterStage = (next: string) => {
+    console.log(`${tag} timing: ${stage} ${Date.now() - stageAt}ms; starting ${next}`);
+    stage = next;
+    stageAt = Date.now();
+  };
+  console.log(`${tag} starting ${stage}`);
+
   // Read-only discovery happens before owning the session transaction. Recheck the slot below.
   let snapshot: HeadlineSnapshot | null = null;
   const { rows: preflight } = await pool().query<{ qobuz_id: string | null }>(
@@ -112,6 +105,7 @@ export async function POST(req: Request, ctx: Route) {
     }
   }
 
+  enterStage("loading session context");
   const client = await pool().connect();
   const heldOf = async (trackId: string): Promise<ReadonlySet<string>> => {
     const { rows } = await client.query<{ id: string }>("select id from track where id = $1", [trackId]);
@@ -244,26 +238,52 @@ export async function POST(req: Request, ctx: Route) {
         "select title, artist from session_slot where session_id = $1 and seq < $2 and qobuz_id is not null order by seq",
         [id, seq],
       );
-      const { rows: priors } = await client.query<PriorRow>(
-        "select qobuz_id, hits, ramp_ms, sure, post, outro, outro_ms, energy, tempo, mood, words from session_slot where qobuz_id = any($1::text[]) and session_id <> $2 and ramp_ms is not null order by created_at desc limit $3",
-        [slot.hits.map((h) => h.id), id, PRIOR_CHARTS],
+      enterStage("Jev selection");
+      const selection = await producePick(
+        {
+          prompt: session.prompt,
+          proposal: { title: slot.title, artist: slot.artist, why: slot.why },
+          hits: slot.hits,
+        },
+        { apiKey: env().TYPESAFE_API_KEY, model: env().TYPESAFE_MODEL },
       );
+      console.log(`${tag} Jev selection: ${JSON.stringify(selection)}`);
+      if (selection.pick === null) throw new Error("Jev found no suitable recording for this slot");
+      const hit = slot.hits.find((h) => h.id === selection.pick);
+      if (!hit) throw new Error("Jev selected a recording outside this slot's hits");
+      enterStage("Jev planning and weather");
       const legalId =
         clockSaysBreak && legalIdDue(seq, clockMs, lastBreak[0]?.clock_ms ?? null)
           ? legalIdOf(identity)
           : null;
-      const weather = clockSaysBreak
-        ? await forBrief(tag, "weather", async () =>
-            weatherText(await fetchWeather(), WEATHER_PLACE.timeZone),
-          )
-        : null;
-      let news: NewsReceipt | null = null;
-      if (clockSaysBreak && snapshot) {
-        const currentConfig = await loadNews();
-        if (JSON.stringify(currentConfig) !== JSON.stringify(snapshot.config))
-          snapshot = { ...snapshot, config: { ...currentConfig, enabled: false } };
-        const { rows: history } = await client.query<NewsHistory>(
-          `select s.news->>'storyId' as "storyId", coalesce(h.audit->>'articleId', '') as "articleId",
+      const [planning, weather] = await Promise.all([
+        producePlan(
+          {
+            prompt: session.prompt,
+            seq,
+            clockSaysBreak,
+            proposal: { title: slot.title, artist: slot.artist, why: slot.why },
+            hit,
+            recent: [...recent].reverse().map(({ title, artist, kind }) => ({ title, artist, kind })),
+          },
+          { apiKey: env().TYPESAFE_API_KEY, model: env().TYPESAFE_MODEL },
+        ),
+        clockSaysBreak
+          ? forBrief(tag, "weather", async () => weatherText(await fetchWeather(), WEATHER_PLACE.timeZone))
+          : Promise.resolve(null),
+      ]);
+      console.log(tag + " Jev planning: " + JSON.stringify(planning));
+      enterStage("news editing and Claude prose");
+      const editNews = async () => {
+        const started = Date.now();
+        try {
+          let news: NewsReceipt | null = null;
+          if (clockSaysBreak && snapshot) {
+            const currentConfig = await loadNews();
+            if (JSON.stringify(currentConfig) !== JSON.stringify(snapshot.config))
+              snapshot = { ...snapshot, config: { ...currentConfig, enabled: false } };
+            const { rows: history } = await client.query<NewsHistory>(
+              `select s.news->>'storyId' as "storyId", coalesce(h.audit->>'articleId', '') as "articleId",
              coalesce(h.audit->>'articleRevision', '') as revision, s.news->>'topic' as topic,
              coalesce(s.news->>'words', h.audit->'draft'->>'words', '') as words, s.news->>'selectedAt' as at,
              exists (select 1 from session_news_exposure e where e.session_id = s.session_id and e.seq = s.seq and e.story_id = s.news->>'storyId' and e.revision = s.news->>'revision') as heard
@@ -271,149 +291,116 @@ export async function POST(req: Request, ctx: Route) {
            where s.session_id = $1 and s.seq < $2 and s.news->>'storyId' is not null
              and (s.news->>'selectedAt')::timestamptz > now() - ($3 * interval '1 hour')
            order by s.seq desc limit 60`,
-          [id, seq, currentConfig.memoryHours],
-        );
-        const edited = await editHeadlines(
-          snapshot,
-          history,
-          session.prompt,
-          `${slot.artist} — ${slot.title}`,
-          { client: claude(), model: env().CLAUDE_MODEL },
-        );
-        news = edited.receipt;
-        await client.query("insert into headline_snapshot (id, snapshot, audit) values ($1, $2, $3)", [
-          snapshot.id,
-          JSON.stringify(snapshot),
-          JSON.stringify(edited.audit),
-        ]);
-        if (news.storyId && news.revision) {
-          const audit = edited.audit as {
-            articleId: string;
-            articleRevision: string;
-            articleFetchedAt: string;
-          };
-          await client.query(
-            `insert into headline_story (id, revision, article_id, article_revision, snapshot_id, updated_at)
+              [id, seq, currentConfig.memoryHours],
+            );
+            const edited = await editHeadlines(
+              snapshot,
+              history,
+              session.prompt,
+              `${slot.artist} — ${slot.title}`,
+              { client: claude(), model: env().CLAUDE_MODEL },
+            );
+            news = edited.receipt;
+            await client.query("insert into headline_snapshot (id, snapshot, audit) values ($1, $2, $3)", [
+              snapshot.id,
+              JSON.stringify(snapshot),
+              JSON.stringify(edited.audit),
+            ]);
+            if (news.storyId && news.revision) {
+              const audit = edited.audit as {
+                articleId: string;
+                articleRevision: string;
+                articleFetchedAt: string;
+              };
+              await client.query(
+                `insert into headline_story (id, revision, article_id, article_revision, snapshot_id, updated_at)
             values ($1, $2, $3, $4, $5, $6) on conflict (id) do update set revision = excluded.revision,
             article_id = excluded.article_id, article_revision = excluded.article_revision, snapshot_id = excluded.snapshot_id, updated_at = excluded.updated_at
             where headline_story.updated_at <= excluded.updated_at`,
-            [
-              news.storyId,
-              news.revision,
-              audit.articleId,
-              audit.articleRevision,
-              snapshot.id,
-              audit.articleFetchedAt,
-            ],
-          );
+                [
+                  news.storyId,
+                  news.revision,
+                  audit.articleId,
+                  audit.articleRevision,
+                  snapshot.id,
+                  audit.articleFetchedAt,
+                ],
+              );
+            }
+          }
+          return news;
+        } finally {
+          console.log(tag + " news editing: " + (Date.now() - started) + "ms");
         }
-      }
-      const made = await produceWrite({
-        prompt: session.prompt,
-        dj,
-        identity,
-        clock: clockOf(clockMs),
-        seq,
-        clockSaysBreak,
-        proposal: { title: slot.title, artist: slot.artist, why: slot.why },
-        hits: slot.hits,
-        recent: recent.reverse().map(
-          (r): RecentSlot => ({
-            seq: r.seq,
-            kind: r.kind,
-            words: r.words,
-            leadLine: r.lead_line,
-            title: r.title,
-            artist: r.artist,
-          }),
-        ),
-        played,
-        priorCharts: priors.flatMap((r): PriorChart[] => {
-          const h = r.hits.find((x) => x.id === r.qobuz_id);
-          return h
-            ? [
-                {
-                  id: h.id,
-                  title: h.title,
-                  artists: h.artists,
-                  rampMs: r.ramp_ms,
-                  sure: r.sure,
-                  post: r.post,
-                  outro: r.outro,
-                  outroMs: r.outro_ms,
-                  energy: r.energy,
-                  tempo: r.tempo,
-                  mood: r.mood,
-                  words: r.words,
-                },
-              ]
-            : [];
-        }),
-        legalId,
-        weather,
-        newsReserved: Boolean(news?.words),
-      });
+      };
+      const writeCopy = async () => {
+        if (planning.plan.kind === "segue") return { written: { words: "", leadLine: "" }, thinking: "" };
+        const started = Date.now();
+        try {
+          return await produceWrite({
+            prompt: session.prompt,
+            dj,
+            identity,
+            clock: clockOf(clockMs),
+            seq,
+            clockSaysBreak,
+            proposal: { title: slot.title, artist: slot.artist, why: slot.why },
+            hit,
+            recent: recent.reverse().map(
+              (r): RecentSlot => ({
+                seq: r.seq,
+                kind: r.kind,
+                words: r.words,
+                leadLine: r.lead_line,
+                title: r.title,
+                artist: r.artist,
+              }),
+            ),
+            played,
+            plan: planning.plan,
+            legalId,
+            weather,
+            newsReserved: Boolean(clockSaysBreak && snapshot?.config.enabled),
+          });
+        } finally {
+          console.log(tag + " Claude prose: " + (Date.now() - started) + "ms");
+        }
+      };
+      // Settle both before ending the transaction: the news lane writes its evidence receipt.
+      const [edited, written] = await Promise.allSettled([editNews(), writeCopy()]);
+      if (edited.status === "rejected") throw edited.reason;
+      if (written.status === "rejected") throw written.reason;
+      let news = edited.value;
+      const made = written.value;
 
-      let w:
-        | WrittenSlot
-        | (Pick<
-            WrittenSlot,
-            | "qobuzId"
-            | "kind"
-            | "words"
-            | "leadLine"
-            | "legalId"
-            | "treatment"
-            | "fallback"
-            | "recordUnderMs"
-            | "voiceInMs"
-          > & { chart: null });
-      let thinking = "";
-      if (made) {
-        const hit = slot.hits.find((h) => h.id === made.written.pick) ?? slot.hits[0];
-        w = checkSlot(clockSaysBreak, made.written, hit, legalId);
-        thinking = made.thinking;
-      } else {
-        // The writer gave nothing usable twice: a segue on the first hit, no chart. The show goes on.
-        w = {
-          chart: null,
-          qobuzId: slot.hits[0].id,
-          kind: "segue",
-          words: null,
-          leadLine: null,
-          legalId: null,
-          treatment: "the writer gave nothing usable twice: a segue on the first version found",
-          fallback: null,
-          recordUnderMs: null,
-          voiceInMs: null,
-        };
-      }
+      enterStage("saving opening script");
+      const w = checkSlot(clockSaysBreak, planning.plan, made.written, hit, legalId);
+      const thinking = made.thinking;
       if (news) {
         news.musicWords = w.words ?? "";
         if (w.kind !== "break" || newsExpired(news, Date.now()))
           news = { ...news, words: null, reason: "No valid news at composition" };
         w.words = [news.words, w.words].filter(Boolean).join(" ") || null;
       }
-      const chart = "chart" in w ? null : w;
       const { rows } = await client.query<SlotRow & { id: string }>(
         `update session_slot set
            qobuz_id = $2, clock_ms = $3,
            ramp_ms = $4, sure = $5, post = $6, outro = $7, outro_ms = $8, energy = $9, tempo = $10, mood = $11,
            kind = $12, words = $13, lead_line = $14, legal_id = $15, treatment = $16, fallback = $17,
-           record_under_ms = $18, voice_in_ms = $19, thinking = $20, news = $21
+           record_under_ms = $18, voice_in_ms = $19, thinking = $20, news = $21, selection = $22
          where id = $1 returning id, ${SLOT_COLUMNS}`,
         [
           slot.id,
           w.qobuzId,
           clockMs,
-          chart?.rampMs ?? null,
-          chart?.sure ?? null,
-          chart?.post ?? null,
-          chart?.outro ?? null,
-          chart?.outroMs ?? null,
-          chart?.energy ?? null,
-          chart?.tempo ?? null,
-          chart?.mood ?? null,
+          w.rampMs,
+          w.sure,
+          w.post,
+          w.outro,
+          w.outroMs,
+          w.energy,
+          w.tempo,
+          w.mood,
           w.kind,
           w.words,
           w.leadLine,
@@ -424,6 +411,7 @@ export async function POST(req: Request, ctx: Route) {
           w.voiceInMs,
           thinking,
           news ? JSON.stringify(news) : null,
+          JSON.stringify({ ...selection, planning }),
         ],
       );
       slot = rows[0];
@@ -435,6 +423,7 @@ export async function POST(req: Request, ctx: Route) {
       if (w.fallback) console.log(`${tag}: ${w.fallback.from} → ${w.fallback.to}: ${w.fallback.reason}`);
     }
 
+    enterStage("ElevenLabs voicing");
     // ---- the voice ------------------------------------------------------------------------
     try {
       // Failed TTS retries must not revive expired facts. Archive revoice is explicit via again.
@@ -469,6 +458,7 @@ export async function POST(req: Request, ctx: Route) {
         // Keep a news-free take ready before any time-sensitive clip becomes playable.
         // The player can use it even if revalidation is offline; the legal ID is preserved.
         if (slot.news?.words && !slot.news.fallbackClipKey) {
+          enterStage("news-free voice and storage");
           const fallbackText = [slot.legal_id, slot.news.musicWords, slot.lead_line]
             .filter(Boolean)
             .join(" ");
@@ -501,6 +491,7 @@ export async function POST(req: Request, ctx: Route) {
               },
             ],
           };
+        enterStage("saving audio");
         await store.put(clipKey, bytes, "audio/mpeg");
         const { rows } = await client.query<SlotRow & { id: string }>(
           `update session_slot set clip_key = $2, voiced_at = now(), words = $3, news = $4 where id = $1 returning id, ${SLOT_COLUMNS}`,
@@ -528,6 +519,7 @@ export async function POST(req: Request, ctx: Route) {
     console.warn(`${tag} failed: ${message}`);
     return Response.json({ error: message }, { status: 502 });
   } finally {
+    console.log(`${tag} timing: ${stage} ${Date.now() - stageAt}ms; total ${Date.now() - startedAt}ms`);
     client.release();
   }
 }

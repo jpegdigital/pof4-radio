@@ -53,66 +53,20 @@ describe("numbered().list — the keys read back in order", () => {
   });
 });
 
-describe("Written — one slot as the writer returns it", () => {
+describe("Written — prose only", () => {
   const sent = zodOutputFormat(Written).schema as unknown as Sent;
-
-  it("is the pick, the chart, the copy and the timing — every key required, nothing else", () => {
-    expect(sent.required).toEqual([
-      "pick",
-      "rampSec",
-      "sure",
-      "post",
-      "outro",
-      "outroSec",
-      "energy",
-      "tempo",
-      "mood",
-      "kind",
-      "words",
-      "leadLine",
-      "treatment",
-      "recordUnderSec",
-      "voiceInSec",
-    ]);
+  it("gives Claude only words and the lead line", () => {
+    expect(sent.required).toEqual(["words", "leadLine"]);
     expect(sent.additionalProperties).toBe(false);
+    expect(Written.parse({ words: "Hello", leadLine: "Here it is." })).toEqual({
+      words: "Hello",
+      leadLine: "Here it is.",
+    });
   });
-
-  const good = {
-    pick: "123",
-    rampSec: 12,
-    sure: true,
-    post: "the title line",
-    outro: "fade",
-    outroSec: 200,
-    energy: 3,
-    tempo: "mid",
-    mood: "easy",
-    kind: "talkup",
-    words: "hi",
-    leadLine: "",
-    treatment: "why",
-    recordUnderSec: 0,
-    voiceInSec: 1.5,
-  };
-
-  it("parses a good answer", () => {
-    expect(Written.parse(good)).toEqual(good);
-  });
-
-  it.each(["break", "talkup", "sweeper", "segue"])("kind %s parses", (kind) => {
-    expect(Written.parse({ ...good, kind }).kind).toBe(kind);
-  });
-
-  it.each<{ id: string; over: object }>([
-    { id: "a kind that is not one of the four", over: { kind: "jingle" } },
-    { id: "energy past 5", over: { energy: 6 } },
-    { id: "energy under 1", over: { energy: 0 } },
-    { id: "a fractional energy", over: { energy: 3.5 } },
-    { id: "a pick that is not a string", over: { pick: 123 } },
-    { id: "an outro that is not cold or fade", over: { outro: "loop" } },
-    { id: "a tempo that is not down, mid or up", over: { tempo: "fast" } },
-    { id: "sure as a string", over: { sure: "yes" } },
-  ])("rejects $id", ({ over }) => {
-    expect(Written.safeParse({ ...good, ...over }).success).toBe(false);
-  });
+  it.each(["pick", "kind", "rampSec", "voiceInSec", "recordUnderSec", "energy"])(
+    "rejects a writer deciding %s",
+    (key) => {
+      expect(Written.safeParse({ words: "Hi", leadLine: "", [key]: 1 }).success).toBe(false);
+    },
+  );
 });

@@ -25,10 +25,10 @@ export interface Chart {
   rampMs: number;
   sure: boolean;
   post: string;
-  outro: "cold" | "fade";
+  outro: "cold" | "fade" | "unknown";
   outroMs: number;
   energy: number;
-  tempo: "down" | "mid" | "up";
+  tempo: "down" | "mid" | "up" | "unknown";
   mood: string;
 }
 
