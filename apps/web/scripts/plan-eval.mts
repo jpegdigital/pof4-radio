@@ -39,6 +39,7 @@ const results = await Promise.allSettled(
         prompt,
         seq: 2,
         clockSaysBreak: false,
+        stationName: "56.6, Claude Radio",
         proposal: { ...proposal, why: "planning evaluation" },
         hit,
         recent: [],

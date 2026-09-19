@@ -119,7 +119,14 @@ export function writeBrief(input: WriteInput): string {
       ? [
           "The DJ has approximately " +
             plan.talkOverMs / 1000 +
-            " seconds over the music. Write for that duration at a natural speaking pace; never pad to fill the intro. A one-word tag or tiny phrase is a complete introduction. If the full artist/title will not fit, use a short hook or station tag instead. No ellipses or dramatic pauses in a tiny sting. The vocal estimate is guidance; the supplied plan may intentionally cross an opening word.",
+            " seconds over the music. Write one complete thought at a natural speaking pace, with the song or artist woven in. A bare title, surname or generic exclamation is not an introduction. Use one specific connection to the listener's show; do not invent facts or substitute a station tag. Do not pad, rush, or truncate names to fit a stopwatch. The vocal estimate is guidance; the supplied plan may intentionally cross an opening word.",
+        ]
+      : []),
+    ...(plan.wordsMin !== undefined
+      ? [
+          "Use at least " +
+            plan.wordsMin +
+            " words for the complete planned introduction, within the maximum above.",
         ]
       : []),
     "",
@@ -143,6 +150,8 @@ const thinkingOf = (content: { type: string; thinking?: string }[]) =>
     .join("\n\n");
 
 export async function produceWrite(input: WriteInput): Promise<{ written: Written; thinking: string }> {
+  if (input.plan.fixedWords !== undefined)
+    return { written: { words: input.plan.fixedWords, leadLine: "" }, thinking: "" };
   const res = await claude().messages.parse({
     model: env().CLAUDE_MODEL,
     max_tokens: 2048,

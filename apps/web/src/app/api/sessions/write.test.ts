@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clockOf, legalIdOf, type WriteInput, writeBrief } from "./write";
+import { clockOf, legalIdOf, produceWrite, type WriteInput, writeBrief } from "./write";
 
 /** The brief the writer gets for one slot: what it carries, and what it leaves out. */
 
@@ -104,15 +104,31 @@ describe("writeBrief — what came before", () => {
     expect(brief).not.toContain("Chart the supplied recording");
   });
 
-  it("briefs a two-second sting as a complete introduction", () => {
+  it("asks for a complete thought rather than a one-word fragment", () => {
     const base = input();
     const brief = writeBrief({
       ...base,
-      plan: { ...base.plan, kind: "talkup", talkOverMs: 2000, wordsMax: 3 },
+      plan: {
+        ...base.plan,
+        kind: "talkup",
+        copyStyle: "context",
+        talkOverMs: 8000,
+        wordsMin: 6,
+        wordsMax: 14,
+      },
     });
-    expect(brief).toContain("approximately 2 seconds");
-    expect(brief).toContain("at most 3 words");
-    expect(brief).toContain("A one-word tag or tiny phrase is a complete introduction");
+    expect(brief).toContain("approximately 8 seconds");
+    expect(brief).toContain("at least 6 words");
+    expect(brief).toContain("complete thought");
+    expect(brief).not.toContain("A one-word tag");
+  });
+  it("returns the complete fixed introduction without a Claude request", async () => {
+    const base = input();
+    const result = await produceWrite({
+      ...base,
+      plan: { ...base.plan, copyStyle: "identify", fixedWords: "Panama, Van Halen." },
+    });
+    expect(result.written).toEqual({ words: "Panama, Van Halen.", leadLine: "" });
   });
 });
 

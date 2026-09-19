@@ -65,6 +65,18 @@ const plan = (over: Partial<MixPlan> = {}): MixPlan => ({
 });
 const hit = { id: "jev-picked", durationMs: 200000 };
 describe("checkSlot — preserves Jev's plan", () => {
+  it.each(["Panama.", "Adams."])("rejects the fragment %s for a contextual talk-up", (words) => {
+    expect(() =>
+      checkSlot(false, plan({ copyStyle: "context", wordsMin: 6 }), { words, leadLine: "" }, hit, null),
+    ).toThrow(/complete/);
+  });
+  it("does not allow a fixed song-and-artist introduction to be shortened", () => {
+    const fixed = plan({ copyStyle: "identify", fixedWords: "Panama, Van Halen." });
+    expect(checkSlot(false, fixed, { words: "Panama, Van Halen.", leadLine: "" }, hit, null).words).toBe(
+      "Panama, Van Halen.",
+    );
+    expect(() => checkSlot(false, fixed, { words: "Panama.", leadLine: "" }, hit, null)).toThrow(/fixed/);
+  });
   it("combines fixed chart and timing with prose only", () => {
     const out = checkSlot(false, plan(), { words: "  Here comes the sun.  ", leadLine: "" }, hit, null);
     expect(out).toMatchObject({

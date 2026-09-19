@@ -7,6 +7,7 @@ import {
   readMix,
   type PlanningInput,
   type PlanningReceipt,
+  PLANNING_VERSION,
 } from "./planning";
 import type { SlotRow } from "./doc";
 import type { WriteInput } from "./write";
@@ -82,11 +83,12 @@ const receipt = () =>
     },
     1,
   );
-const planningReceipt = () => {
+const planningReceipt = (action = "sweeper") => {
   const input: PlanningInput = {
     prompt: "play Song",
     seq: 2,
     clockSaysBreak: false,
+    stationName: "Radio",
     proposal: { title: "Song", artist: "Artist", why: "requested" },
     hit: hits[1],
     recent: [],
@@ -118,8 +120,8 @@ const planningReceipt = () => {
     1,
   );
   const mixReq = mixRequest(input, chart, "jev-1.13.0");
-  const mix = readMix(mixReq, raw(mixReq, { action: "sweeper" }), 1);
-  return { version: "mix-1", plan: mix.plan, chart, mix, elapsedMs: 2 };
+  const mix = readMix(mixReq, raw(mixReq, { action }), 1);
+  return { version: PLANNING_VERSION, plan: mix.plan, chart, mix, elapsedMs: 2 };
 };
 let row: SlotRow & { id: string };
 const call = () =>
@@ -169,10 +171,12 @@ beforeEach(() => {
     "fetch",
     vi.fn(() => Promise.resolve(new Response(new Uint8Array([1, 2, 3])))),
   );
-  boundary.write.mockResolvedValue({
-    thinking: "",
-    written: { words: "You are listening to Radio.", leadLine: "" },
-  });
+  boundary.write.mockImplementation(({ plan }) =>
+    Promise.resolve({
+      thinking: "",
+      written: { words: plan.fixedWords ?? "A little sunshine to keep this show moving.", leadLine: "" },
+    }),
+  );
   boundary.query.mockImplementation((sql: string, values: unknown[] = []) => {
     if (sql.includes("select prompt, voice_id"))
       return Promise.resolve({ rows: [{ prompt: "play Song", voice_id: "voice" }] });
@@ -249,8 +253,7 @@ describe("slot selection has one path", () => {
     },
   );
   it("a Jev segue needs no Claude or ElevenLabs call", async () => {
-    const receipt = planningReceipt();
-    boundary.plan.mockResolvedValue({ ...receipt, plan: { ...receipt.plan, kind: "segue", wordsMax: 0 } });
+    boundary.plan.mockResolvedValue(planningReceipt("segue"));
     expect((await call()).status).toBe(200);
     expect(boundary.write).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();

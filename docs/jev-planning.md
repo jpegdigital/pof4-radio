@@ -1,7 +1,7 @@
 # Jev plans; Claude writes
 
 The slot route has one decision path: Claude proposes → Qobuz supplies recordings → Jev picks →
-Jev charts and plans → Claude writes prose → ElevenLabs voices → the browser schedules playback.
+Jev charts and plans → fixed identification or Claude prose → ElevenLabs voices → the browser schedules playback.
 No substitute model, automatic selection retry, or alternate mixer plan is used on failure.
 
 After the pick, planning.ts asks five independent Choice questions in one TypeSafe request:
@@ -11,21 +11,31 @@ These are knowledge-based estimates from catalog identity, not audio analysis. C
 not treated as proof of a vocal timestamp. Vocal timing is musical guidance, not overlap eligibility.
 
 The second request supplies that chart and its probability distributions, the prompt, the clock's break decision, and recent slots.
-Jev chooses one executable action: break with zero or 1–20 seconds of overlap; segue; dry sweeper;
-or talk-up starting at 0/1/2/3 seconds with a target duration of 1–20 seconds. This duration range
-covers the existing 35-word short-copy budget at 1.8 words/second. There is no minimum intro length,
-five-word minimum, or first-vocal cutoff. Even an unknown or immediate vocal permits overlap.
-The prompt strongly favors well-placed voice over music and tiny stings, allows an opening word
-to overlap intentionally, and asks Jev to preserve striking hits and sustained vocal phrases.
-Zero overlap remains a deliberate choice for musical impact, breathing room or listener preference.
-Talk-up word budgets follow the chosen duration, not the full intro. Break lead lines retain their
-separate 8-word cap. `talkOverMs` records the target in the planning receipt and writer brief;
-the treatment also states the target duration. The model chooses; code calculates milliseconds and budgets.
+For non-breaks, Jev chooses a complete spoken format and entry at 0/1/2/3 seconds:
+
+- Song and artist: the full phrase, such as “Panama, Van Halen.”, assembled from the proposal.
+- Station identification: the complete configured on-air name, as an occasional branding accent.
+  The identical station tag is unavailable if it was the immediately preceding slot's entire copy.
+- Context: one complete, specific thought, 6–14 words with an approximately eight-second target.
+- Segue or a dry station ID when overlap would not fit naturally or add anything.
+
+Fixed IDs are assembled before estimating their natural duration (minimum two seconds), including
+extra allowance for numbers/frequencies and long names. They are never truncated to meet a small
+word cap and bypass Claude entirely. Longer IDs get more time; no ID over the existing 35-word/
+20-second short-copy envelope is offered. The contextual format goes to Claude, and `checkSlot`
+rejects fragments below its minimum. Recent spoken copy is supplied to Jev for variety.
+
+The prompt favors worthwhile DJ voice over music, not the shortest possible utterance. It asks
+Jev to preserve striking opening hits and sustained vocals and choose a segue when no complete
+phrase fits. There is no ten-second intro minimum or hard first-vocal cutoff; a brief intentional
+overlap can still work. A break retains zero or 1–20 seconds of overlap, a 35-word copy budget and
+an 8-word lead-line cap. `copyStyle`, `fixedWords`, `wordsMin` and `talkOverMs` are retained in the
+planning receipt and writer brief; the treatment describes the format and duration.
 The house still owns break cadence, legal IDs, gains, fades and Web Audio scheduling.
 
 Claude's schema contains only words and leadLine. Its call has thinking disabled and a 2048-token
 output limit. News editing and music copy run concurrently; copy always leaves room for news when
-news is enabled. A segue requires no prose or voice call. The existing evidence-checked news editor
+news is enabled. Fixed IDs require no prose call; a segue requires no prose or voice call. The existing evidence-checked news editor
 is unchanged, including its omission/expiry rules; those are separate from mixer planning.
 
 checkSlot rejects empty or over-budget copy and clock violations. The browser plays the complete
@@ -62,6 +72,11 @@ mass within the per-entry rounding bound; consume the explicit choice without re
 argmax. Keep the raw distributions for evaluation. They do not override Jev's action.
 
 ## Local verification, 2026-09-19
+
+For `mix-3`, `pnpm check` passed (374 tests) and the production build passed. Regressions cover
+the observed “Panama.” and “Adams.” failure: complete fixed title/artist copy, full numeric station
+identification, a two-second minimum target, consecutive station-tag suppression, minimum contextual
+copy, and fixed-copy delivery without a Claude call. No live Jev/TTS listening evaluation was run.
 
 For `mix-2`, `pnpm check` passed (367 tests) and the production build passed. Regression cases
 cover two-second talk-ups with short, immediate and unknown vocals, zero overlap, one-word stings,

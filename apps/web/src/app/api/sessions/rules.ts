@@ -49,6 +49,10 @@ export function checkSlot(
   const count = (text: string) => (text ? text.split(/\s+/u).length : 0);
   if (count(words) > plan.wordsMax || count(leadLine) > plan.leadWordsMax)
     throw new Error("Claude copy exceeds Jev's word budget");
+  if (plan.fixedWords !== undefined && words !== plan.fixedWords)
+    throw new Error("Copy does not match the complete fixed introduction");
+  if (plan.wordsMin !== undefined && count(words) < plan.wordsMin)
+    throw new Error("Copy is too short for a complete introduction");
   if (plan.kind !== "segue" && !words) throw new Error("Claude returned empty copy for Jev's spoken plan");
   if (plan.kind === "break" && !leadLine) throw new Error("Claude returned no lead line for Jev's break");
   return {

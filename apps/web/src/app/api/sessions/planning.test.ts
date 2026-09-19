@@ -4,6 +4,7 @@ const input: PlanningInput = {
   prompt: "warm evening radio",
   seq: 2,
   clockSaysBreak: false,
+  stationName: "56.6, Claude Radio",
   proposal: { title: "Song", artist: "Artist", why: "requested" },
   hit: { id: "one", title: "Song", artists: ["Artist"], album: "Album", image: null, durationMs: 200000 },
   recent: [],
@@ -44,10 +45,16 @@ describe("Jev chart and mixer decisions", () => {
     expect(req.questions.intro.criteria).toHaveProperty("unknown");
     expect(chart().chart).toMatchObject({ rampMs: 10000, sure: false, outro: "fade", outroMs: 190000 });
   });
-  it.each(["unknown", "0", "1", "5"])("%s intro permits a two-second talk-up or zero overlap", (intro) => {
+  it.each(["unknown", "0", "1", "5"])("%s intro permits a complete introduction or a segue", (intro) => {
     const req = mixRequest(input, chart(intro), "jev-1.13.0");
-    const out = readMix(req, response(req, { action: "talkup_after_0_for_2" }), 100);
-    expect(out.plan).toMatchObject({ kind: "talkup", voiceInMs: 0, talkOverMs: 2000, wordsMax: 3 });
+    const out = readMix(req, response(req, { action: "talkup_identify_after_0" }), 100);
+    expect(out.plan).toMatchObject({
+      kind: "talkup",
+      voiceInMs: 0,
+      copyStyle: "identify",
+      fixedWords: "Song, Artist.",
+    });
+    expect(out.plan.talkOverMs).toBeGreaterThanOrEqual(2000);
     expect(readMix(req, response(req, { action: "segue" }), 100).plan.wordsMax).toBe(0);
   });
   it("lets Jev choose break overlap even across an immediate vocal", () => {
@@ -56,20 +63,51 @@ describe("Jev chart and mixer decisions", () => {
     expect(out.plan).toMatchObject({ kind: "break", recordUnderMs: 2000, voiceInMs: null, wordsMax: 35 });
     expect(readMix(req, response(req, { action: "break_dry" }), 100).plan.recordUnderMs).toBe(0);
   });
-  it("budgets the chosen duration without filling the whole available intro", () => {
-    const req = mixRequest(input, chart(), "jev-1.13.0");
-    const out = readMix(req, response(req, { action: "talkup_after_1_for_2" }), 100);
-    expect(out.plan).toMatchObject({ kind: "talkup", voiceInMs: 1000, talkOverMs: 2000, wordsMax: 3 });
+  it.each([
+    { title: "Panama", artist: "Van Halen", words: "Panama, Van Halen." },
+    { title: "Summer Of '69", artist: "Bryan Adams", words: "Summer Of '69, Bryan Adams." },
+  ])("preserves the complete $title identification", ({ title, artist, words }) => {
+    const req = mixRequest(
+      { ...input, proposal: { title, artist, why: "requested" } },
+      chart(),
+      "jev-1.13.0",
+    );
+    const out = readMix(req, response(req, { action: "talkup_identify_after_1" }), 100);
+    expect(out.plan.fixedWords).toBe(words);
+    expect(out.plan.wordsMax).toBe(words.split(/\s+/u).length);
+    expect(out.plan.voiceInMs).toBe(1000);
   });
-  it("offers a one-word sting and a delayed entry after an opening hit", () => {
+  it("offers complete formats with no sub-two-second talk-ups", () => {
     const req = mixRequest(input, chart("0"), "jev-1.13.0");
-    expect(readMix(req, response(req, { action: "talkup_after_0_for_1" }), 1).plan.wordsMax).toBe(1);
-    expect(readMix(req, response(req, { action: "talkup_after_3_for_2" }), 1).plan.voiceInMs).toBe(3000);
+    const talkups = Object.values(req.state.actions).filter((a) => a.kind === "talkup");
+    expect(talkups.length).toBeGreaterThan(0);
+    expect(talkups.every((a) => (a.talkOverMs ?? 0) >= 2000)).toBe(true);
+    expect(readMix(req, response(req, { action: "talkup_identify_after_3" }), 1).plan.voiceInMs).toBe(3000);
+    expect(readMix(req, response(req, { action: "talkup_context_after_0" }), 1).plan.wordsMin).toBe(6);
+  });
+  it("gives the full station name enough time to pronounce its frequency", () => {
+    const req = mixRequest(input, chart(), "jev-1.13.0");
+    const out = readMix(req, response(req, { action: "talkup_station_after_0" }), 1);
+    expect(out.plan.fixedWords).toBe("56.6, Claude Radio.");
+    expect(out.plan.talkOverMs).toBeGreaterThanOrEqual(4000);
+  });
+  it("does not offer the same station tag on consecutive slots", () => {
+    const req = mixRequest(
+      {
+        ...input,
+        recent: [{ title: "Previous", artist: "Artist", kind: "talkup", words: "56.6, Claude Radio." }],
+      },
+      chart(),
+      "jev-1.13.0",
+    );
+    expect(req.questions.action.criteria).not.toHaveProperty("talkup_station_after_0");
+    expect(req.questions.action.criteria).not.toHaveProperty("sweeper");
+    expect(req.questions.action.criteria).toHaveProperty("talkup_identify_after_0");
   });
   it("keeps talk-up targets inside the actual track length", () => {
     const req = mixRequest({ ...input, hit: { ...input.hit, durationMs: 4000 } }, chart(), "jev-1.13.0");
-    expect(req.questions.action.criteria).toHaveProperty("talkup_after_1_for_2");
-    expect(req.questions.action.criteria).not.toHaveProperty("talkup_after_3_for_2");
+    expect(req.questions.action.criteria).toHaveProperty("talkup_identify_after_1");
+    expect(req.questions.action.criteria).not.toHaveProperty("talkup_identify_after_3");
   });
   it("fails instead of replacing a rejected or invalid action", () => {
     const req = mixRequest(input, chart(), "jev-1.13.0");

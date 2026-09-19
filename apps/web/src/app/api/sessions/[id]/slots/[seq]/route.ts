@@ -262,9 +262,12 @@ export async function POST(req: Request, ctx: Route) {
             prompt: session.prompt,
             seq,
             clockSaysBreak,
+            stationName: identity.onAir,
             proposal: { title: slot.title, artist: slot.artist, why: slot.why },
             hit,
-            recent: [...recent].reverse().map(({ title, artist, kind }) => ({ title, artist, kind })),
+            recent: [...recent]
+              .reverse()
+              .map(({ title, artist, kind, words }) => ({ title, artist, kind, words })),
           },
           { apiKey: env().TYPESAFE_API_KEY, model: env().TYPESAFE_MODEL },
         ),
@@ -273,7 +276,7 @@ export async function POST(req: Request, ctx: Route) {
           : Promise.resolve(null),
       ]);
       console.log(tag + " Jev planning: " + JSON.stringify(planning));
-      enterStage("news editing and Claude prose");
+      enterStage("news editing and DJ copy");
       const editNews = async () => {
         const started = Date.now();
         try {
@@ -363,7 +366,7 @@ export async function POST(req: Request, ctx: Route) {
             newsReserved: Boolean(clockSaysBreak && snapshot?.config.enabled),
           });
         } finally {
-          console.log(tag + " Claude prose: " + (Date.now() - started) + "ms");
+          console.log(tag + " DJ copy: " + (Date.now() - started) + "ms");
         }
       };
       // Settle both before ending the transaction: the news lane writes its evidence receipt.
