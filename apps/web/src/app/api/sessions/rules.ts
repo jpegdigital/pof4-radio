@@ -48,7 +48,9 @@ export function checkSlot(
   const leadLine = w.leadLine.trim();
   const count = (text: string) => (text ? text.split(/\s+/u).length : 0);
   if (count(words) > plan.wordsMax || count(leadLine) > plan.leadWordsMax)
-    throw new Error("Claude copy exceeds Jev's word budget");
+    throw new Error(
+      `Claude copy exceeds Jev's word budget (words ${count(words)}/${plan.wordsMax}, leadLine ${count(leadLine)}/${plan.leadWordsMax})`,
+    );
   if (plan.fixedWords !== undefined && words !== plan.fixedWords)
     throw new Error("Copy does not match the complete fixed introduction");
   if (plan.wordsMin !== undefined && count(words) < plan.wordsMin)

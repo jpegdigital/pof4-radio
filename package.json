@@ -17,6 +17,8 @@
     "db:clear": "op run --env-file=.env.op -- node db/clear.mts",
     "format": "biome format --write .",
     "format:check": "biome format .",
+    "prep:news": "op run --env-file=.env.op -- pnpm --filter web prep:news",
+    "prep:weather": "op run --env-file=.env.op -- pnpm --filter web prep:weather",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test"

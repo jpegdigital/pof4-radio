@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
-    "typegen": "next typegen"
+    "typegen": "next typegen",
+    "prep:news": "node scripts/prep.mts news",
+    "prep:weather": "node scripts/prep.mts weather"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

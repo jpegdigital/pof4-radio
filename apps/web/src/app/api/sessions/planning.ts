@@ -21,6 +21,8 @@ export interface PlanningInput {
   seq: number;
   clockSaysBreak: boolean;
   stationName: string;
+  /** Extra words for already selected news and structured weather on a full break. */
+  contentWords?: number;
   proposal: { title: string; artist: string; why: string };
   hit: Hit;
   recent: { title: string; artist: string; kind: string; words?: string | null }[];
@@ -202,7 +204,7 @@ export function mixRequest(input: PlanningInput, estimate: ReturnType<typeof rea
       recordUnderMs: 0,
       voiceInMs: null,
       talkOverMs: 0,
-      wordsMax: WORDS_MAX,
+      wordsMax: WORDS_MAX + (input.contentWords ?? 0),
       leadWordsMax: 8,
       treatment: "Zero overlap: DJ over a bed, then start the recording after the lead line.",
     };
@@ -213,7 +215,7 @@ export function mixRequest(input: PlanningInput, estimate: ReturnType<typeof rea
           recordUnderMs: seconds * 1000,
           voiceInMs: null,
           talkOverMs: seconds * 1000,
-          wordsMax: WORDS_MAX,
+          wordsMax: WORDS_MAX + (input.contentWords ?? 0),
           leadWordsMax: 8,
           treatment:
             "DJ over a bed; start the recording " +

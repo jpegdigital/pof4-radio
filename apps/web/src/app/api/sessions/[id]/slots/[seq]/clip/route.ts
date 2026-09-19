@@ -1,7 +1,7 @@
+import type { SlotGeneration } from "../../../../generation";
 import { z } from "zod";
 import { bucket } from "@/lib/bucket";
 import { pool } from "@/lib/db";
-import type { NewsReceipt } from "@/lib/news";
 
 /**
  * GET /api/sessions/:id/slots/:seq/clip — the clip's bytes, streamed from the bucket. A key is
@@ -17,17 +17,13 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[id]/s
   const store = bucket();
   if (!store)
     return Response.json({ error: "the clips bucket is not configured (BUCKET_*)" }, { status: 503 });
-  const { rows } = await pool().query<{ clip_key: string | null; news: NewsReceipt | null }>(
-    "select clip_key, news from session_slot where session_id = $1 and seq = $2",
-    [p.id, seq],
-  );
+  const { rows } = await pool().query<{
+    clip_key: string | null;
+    generation: SlotGeneration | null;
+  }>("select clip_key, generation from session_slot where session_id = $1 and seq = $2", [p.id, seq]);
   const requested = new URL(_req.url).searchParams.get("take");
   const row = rows[0];
-  const allowed = new Set([
-    row?.clip_key,
-    row?.news?.fallbackClipKey,
-    ...(row?.news?.previous ?? []).map((p) => p.clipKey),
-  ]);
+  const allowed = new Set([row?.clip_key, ...(row?.generation?.takes ?? []).map((take) => take.clipKey)]);
   if (requested && !allowed.has(requested))
     return Response.json({ error: "unknown clip take" }, { status: 404 });
   const clipKey = requested ?? row?.clip_key;

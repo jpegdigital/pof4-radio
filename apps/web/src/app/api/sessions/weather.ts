@@ -3,8 +3,7 @@ import { z } from "zod";
 /**
  * The weather as the DJ reads it, from two National Weather Service feeds (api.weather.gov):
  * the latest observation at the nearest station and the 12-hour forecast periods for the grid.
- * No key, no package: plain fetch with the User-Agent NWS asks for, cached for ten minutes so
- * every segment of a show reads one pull. The JSON is rounded to what is said on air — whole °F
+ * No key, no package: plain fetch with the User-Agent NWS asks for, fetched only by the scheduled preparation worker. The JSON is rounded to what is said on air — whole °F
  * and mph — and the forecast prose kept exactly as NWS wrote it.
  *
  * The place is fixed: ZIP 75229, northwest Dallas. Its grid and nearest station were resolved
@@ -26,11 +25,6 @@ export const WEATHER_URLS = {
   observation: `${NWS}/stations/${WEATHER_PLACE.station}/observations/latest`,
   forecast: `${NWS}/gridpoints/${WEATHER_PLACE.grid}/forecast`,
 } as const;
-
-/** NWS refuses anonymous callers: an app name and a way to reach whoever runs it. */
-const USER_AGENT = "pof4-radio (jpegdigital@users.noreply.github.com)";
-export const WEATHER_TTL_MS = 10 * 60 * 1000;
-const TIMEOUT_MS = 8_000;
 
 /** How many forecast periods the brief carries: today and tonight (after dark, tonight and tomorrow). */
 export const WEATHER_PERIODS = 2;
@@ -143,32 +137,4 @@ export function weatherText(w: Weather, timeZone: string): string {
       `${p.name}: ${p.short}, ${p.isDaytime ? "high" : "low"} ${p.isDaytime ? "near" : "around"} ${p.tempF}. ${p.detailed}`,
   );
   return [now, ...periods].join("\n");
-}
-
-// ── the pull ─────────────────────────────────────────────────────────────────────────────────
-
-let cached: { at: number; weather: Weather } | null = null;
-
-async function pull(url: string, fetchFn: typeof fetch): Promise<unknown> {
-  const res = await fetchFn(url, {
-    headers: { "User-Agent": USER_AGENT, Accept: "application/geo+json" },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  if (!res.ok)
-    throw new Error(`nws ${res.status} ${url}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
-  return res.json();
-}
-
-/** The weather now, from the cache inside its window, else pulled fresh. A failed pull throws. */
-export async function fetchWeather(opts: { fetchFn?: typeof fetch; now?: number } = {}): Promise<Weather> {
-  const now = opts.now ?? Date.now();
-  if (cached && now - cached.at < WEATHER_TTL_MS) return cached.weather;
-  const fetchFn = opts.fetchFn ?? fetch;
-  const [observation, forecast] = await Promise.all([
-    pull(WEATHER_URLS.observation, fetchFn),
-    pull(WEATHER_URLS.forecast, fetchFn),
-  ]);
-  const weather = readWeather(observation, forecast);
-  cached = { at: now, weather };
-  return weather;
 }

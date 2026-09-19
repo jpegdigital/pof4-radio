@@ -18,7 +18,5 @@ export type SessionParams = z.infer<typeof SessionParams>;
 export const SlotBody = z.object({
   clockMs: z.number().int().min(0).max(86_400_000),
   again: z.boolean().optional(),
-  /** Preflight for live playback: expire the news without changing archive takes. */
-  live: z.boolean().optional(),
 });
 export type SlotBody = z.infer<typeof SlotBody>;

@@ -1,3 +1,4 @@
+import type { SlotGeneration } from "./generation";
 import type { SlotFallback, SlotKind } from "./rules";
 import type { NewsReceipt } from "@/lib/news";
 
@@ -28,6 +29,7 @@ export type SlotStatus = "proposed" | "written" | "voiced";
 
 /** One session_slot row as the routes read it (`SLOT_COLUMNS`). */
 export interface SlotRow {
+  generation?: SlotGeneration | null;
   news?: NewsReceipt | null;
   seq: number;
   title: string;
@@ -58,7 +60,7 @@ export interface SlotRow {
 
 /** The columns `SlotRow` reads, in one place so every route selects the same. */
 export const SLOT_COLUMNS =
-  "seq, title, artist, why, hits, qobuz_id, clock_ms, ramp_ms, sure, post, outro, outro_ms, energy, tempo, mood, kind, words, lead_line, legal_id, treatment, fallback, record_under_ms, voice_in_ms, clip_key, voiced_at, news";
+  "seq, title, artist, why, hits, qobuz_id, clock_ms, ramp_ms, sure, post, outro, outro_ms, energy, tempo, mood, kind, words, lead_line, legal_id, treatment, fallback, record_under_ms, voice_in_ms, clip_key, voiced_at, news, generation";
 
 export interface Chart {
   rampMs: number;
@@ -72,6 +74,7 @@ export interface Chart {
 }
 
 export interface SlotDoc {
+  takes?: { clipKey: string; at: string; words: string; legalId?: string; leadLine?: string }[];
   news?: NewsReceipt;
   seq: number;
   status: SlotStatus;
@@ -139,6 +142,15 @@ export function slotDoc(r: SlotRow, held: ReadonlySet<string>): SlotDoc {
   if (r.fallback !== null && r.fallback !== undefined) d.fallback = r.fallback as SlotFallback;
   if (r.record_under_ms !== null) d.recordUnderMs = r.record_under_ms;
   if (r.voice_in_ms !== null) d.voiceInMs = r.voice_in_ms;
-  if (r.clip_key !== null) d.clipKey = r.clip_key;
+  if (r.clip_key !== null) {
+    d.clipKey = r.clip_key;
+    d.takes = r.generation?.takes?.map((take) => ({
+      clipKey: take.clipKey,
+      at: take.at,
+      words: take.words,
+      legalId: take.legalId ?? undefined,
+      leadLine: take.leadLine ?? undefined,
+    }));
+  }
   return d;
 }

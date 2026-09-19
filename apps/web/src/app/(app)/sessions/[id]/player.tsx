@@ -33,7 +33,6 @@ export function Player({
   onSeekTrack,
   preparation,
   startup,
-  studio,
 }: {
   cue: Cue;
   phase: DeckPhase;
@@ -51,7 +50,6 @@ export function Player({
   onSeekTrack: (ms: number) => void;
   preparation: Preparation;
   startup?: ReactNode;
-  studio?: ReactNode;
 }) {
   const { pick } = cue;
   const making = phase === "loading" || !preparation.ready;
@@ -123,7 +121,7 @@ export function Player({
           <SkipForward className="size-6" fill="currentColor" strokeWidth={0} />
         </button>
       </div>
-      {(plan || studio) && (
+      {plan && (
         <details className="group border-t border-zinc-800 pt-2">
           <summary
             className={`cursor-pointer py-3 text-sm text-zinc-400 transition hover:text-zinc-100 ${focusRing}`}
@@ -131,7 +129,6 @@ export function Player({
             Studio <span className="ml-2 text-xs text-zinc-500">The mix behind the music</span>
           </summary>
           <div className="pt-3 pb-2">
-            {studio}
             {plan && (
               <Lanes
                 plan={plan}

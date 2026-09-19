@@ -1,8 +1,6 @@
 import { z } from "zod";
 
 export const NEWS_KEY = "station.news";
-/** Enough validity to finish a short news read after the ID and playback setup. */
-export const NEWS_AIR_MARGIN_MS = 45_000;
 export type NewsScope = "local" | "nation" | "world" | "culture";
 export interface NewsSource {
   id: string;
@@ -94,22 +92,16 @@ export const NEWS_DEFAULTS: NewsConfig = {
 
 /** Public receipt: evidence is kept on the server, these fields explain the spoken choice. */
 export interface NewsReceipt {
+  version?: "prepared-1";
+  stories?: { articleId: string; storyId: string; revision: string; title: string; topic: string }[];
+  weather?: { entryId: string; observedAt: string; forecastUpdatedAt: string };
   snapshotId: string;
   selectedAt: string;
   checkedAt: string;
-  expiresAt: string;
   storyId: string | null;
   revision: string | null;
   topic: string;
   words: string | null;
   reason: string;
   sources: { title: string; source: string; url: string; at: string }[];
-  /** The news-free copy, so an expired news sentence can be removed deterministically. */
-  musicWords?: string;
-  fallbackClipKey?: string;
-  /** Old takes remain immutable and accessible in the receipt. */
-  previous?: { clipKey: string; words: string; at: string }[];
 }
-
-export const newsExpired = (news: Pick<NewsReceipt, "words" | "expiresAt"> | undefined, now: number) =>
-  Boolean(news?.words && (!Number.isFinite(Date.parse(news.expiresAt)) || Date.parse(news.expiresAt) <= now));

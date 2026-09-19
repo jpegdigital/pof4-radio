@@ -5,8 +5,7 @@
 --              (qobuz_id set, voiced_at null — a voicing that failed leaves it here)
 --   voiced     the clip exists (clip_key), or there was nothing to say (a segue): voiced_at set
 -- Nothing goes backwards. `{again: true}` on a voiced slot moves clip_key to a new take and bumps
--- voiced_at; that revoice keeps the words. Live news preflight can replace expired news with a
--- prepared safe take; the receipt preserves original words and keys. clip_key is written only after the bucket PUT succeeded, so a
+-- voiced_at; that revoice keeps the words. Playback always uses the saved production. clip_key is written only after the bucket PUT succeeded, so a
 -- key always points at media. The mix is the player's: Jev's timing numbers plus house
 -- constants, the clip's length read on load.
 create table session_slot (
@@ -21,6 +20,7 @@ create table session_slot (
   hits            jsonb not null,                      -- Hit[] — the streamable versions Qobuz found, up to 3
 
   -- Jev picks/charts/plans; Claude writes prose. One update lands all receipts.
+  generation      jsonb,                               -- immutable prepared inputs, Jev choices, exact Claude request/response
   selection       jsonb,                               -- pick and planning receipts, exact requests/responses; server only
   qobuz_id        text,                                -- the pick: one of hits[].id
   clock_ms        integer,                             -- the browser's clock at the write, ms since local midnight

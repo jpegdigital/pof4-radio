@@ -1,7 +1,7 @@
 # Jev plans; Claude writes
 
 The slot route has one decision path: Claude proposes → Qobuz supplies recordings → Jev picks →
-Jev charts and plans → fixed identification or Claude prose → ElevenLabs voices → the browser schedules playback.
+Jev chooses prepared headlines for breaks → Jev charts and plans → fixed identification or unified Claude prose → ElevenLabs voices → the browser schedules playback.
 No substitute model, automatic selection retry, or alternate mixer plan is used on failure.
 
 After the pick, planning.ts asks five independent Choice questions in one TypeSafe request:
@@ -28,15 +28,17 @@ rejects fragments below its minimum. Recent spoken copy is supplied to Jev for v
 The prompt favors worthwhile DJ voice over music, not the shortest possible utterance. It asks
 Jev to preserve striking opening hits and sustained vocals and choose a segue when no complete
 phrase fits. There is no ten-second intro minimum or hard first-vocal cutoff; a brief intentional
-overlap can still work. A break retains zero or 1–20 seconds of overlap, a 35-word copy budget and
+overlap can still work. A break retains zero or 1–20 seconds of overlap, a 35-word music budget plus 25 words per selected headline and 25 for available weather, and
 an 8-word lead-line cap. `copyStyle`, `fixedWords`, `wordsMin` and `talkOverMs` are retained in the
 planning receipt and writer brief; the treatment describes the format and duration.
 The house still owns break cadence, legal IDs, gains, fades and Web Audio scheduling.
 
 Claude's schema contains only words and leadLine. Its call has thinking disabled and a 2048-token
-output limit. News editing and music copy run concurrently; copy always leaves room for news when
-news is enabled. Fixed IDs require no prose call; a segue requires no prose or voice call. The existing evidence-checked news editor
-is unchanged, including its omission/expiry rules; those are separate from mixer planning.
+output limit. Full breaks use one script containing Jev-selected prepared
+headlines, latest valid structured weather, and music copy. Jev explicitly includes/omits/rejects
+repeats; code orders includes by probability and caps them at three. Fixed IDs require no prose
+call; a segue requires no prose or voice call. No source fetching or separate news writer runs
+inside a session request. See [the prepared-content contract](prepared-content.md).
 
 checkSlot rejects empty or over-budget copy and clock violations. The browser plays the complete
 TTS take at Jev's chosen entry, ducking music for its actual length. It does not reject, truncate or
@@ -46,7 +48,7 @@ A break's overlap is limited to the voice remaining after its estimated dry lega
 A new voice take can be requested through the existing rundown control.
 
 The existing selection JSON column also stores selection.planning, including both exact requests,
-responses, probabilities, usage, durations and the resulting plan. No new schema migration is needed.
+responses, probabilities, usage, durations and the resulting plan. The new generation JSON column retains prepared choices, exact writer input/output and every voice take.
 Existing written slots keep their saved decisions; voice retries do not re-plan them.
 
 ## Manual checks
@@ -63,7 +65,7 @@ intro lower bounds are conservative. Include immediate vocals, opening speech/ad
 instrumentals, live takes, edits and unfamiliar tracks in subsequent listening tests.
 
 For an end-to-end test, create a labeled local show, prepare slots 1 and 2, and inspect the logged
-phase durations. Startup also includes Claude proposal/search, news discovery/editing, TTS and
+phase durations. Startup also includes Claude proposal/search, prepared-content selection, TTS and
 track download; fast Jev decisions alone do not establish fast overall preparation.
 
 The API has returned two-decimal distributions totaling 0.99, and occasionally a declared choice

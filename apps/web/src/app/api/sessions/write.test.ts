@@ -54,7 +54,7 @@ const input = (over: Partial<WriteInput> = {}): WriteInput => ({
   },
   legalId: null,
   weather: null,
-  newsReserved: false,
+  headlines: [],
   ...over,
 });
 
@@ -89,6 +89,20 @@ describe("writeBrief — what came before", () => {
     expect(brief.indexOf("Good morning.")).toBeLessThan(brief.indexOf("Song B"));
     expect(brief).toMatch(/played so far/i);
     expect(brief).toContain("Artist A — Song A");
+  });
+
+  it.each(["Ada", null])("opens a new show with a welcome and host identity (%s)", (dj) => {
+    const brief = writeBrief(input({ seq: 1, dj, recent: [], played: [], clockSaysBreak: true }));
+    expect(brief).toContain("Welcome the listener");
+    expect(brief).toContain(dj ? "introduce yourself by name as Ada" : "do not invent a DJ name");
+    expect(brief).toContain("before the headlines and weather");
+    expect(brief).not.toContain("Skip greetings");
+  });
+
+  it("does not restart the show at subsequent breaks", () => {
+    const brief = writeBrief(input({ seq: 6, clockSaysBreak: true }));
+    expect(brief).toContain("Skip greetings");
+    expect(brief).not.toContain("Welcome the listener");
   });
 
   it("a fresh show says so", () => {
@@ -144,33 +158,42 @@ describe("writeBrief — the legal ID, the weather, the headlines", () => {
     expect(writeBrief(input())).not.toMatch(/legal ID on this break|said first, dry/);
   });
 
-  it("carries the weather, and asks for it tight, in the break", () => {
+  it("passes selected checked facts into the single script brief", () => {
     const brief = writeBrief(
       input({
         clockSaysBreak: true,
-        weather: "Now (7:25 AM): Cloudy, 81°F.\nToday: Storms, high near 93.\nTonight: Low around 76.",
+        headlines: [
+          {
+            articleId: "a",
+            storyId: "story-a",
+            revision: "v1",
+            title: "Dallas concert",
+            topic: "music",
+            sourceId: "kxt",
+            source: "KXT",
+            url: "https://kxt.org/concert",
+            scope: "culture",
+            publishedAt: "2026-09-19T12:00:00Z",
+            fetchedAt: "2026-09-19T13:00:00Z",
+            checkedAt: "2026-09-19T13:00:00Z",
+            expiresAt: "2026-09-19T18:00:00Z",
+            evidence: "The Dallas concert is free.",
+            facts: [{ text: "The Dallas concert is free.", quote: "The Dallas concert is free." }],
+          },
+        ],
       }),
     );
-    expect(brief).toContain("The weather in Dallas right now");
-    expect(brief).toContain("Today: Storms, high near 93.");
-    expect(brief).toMatch(/one breath/);
+    expect(brief).toContain("The Dallas concert is free.");
+    expect(brief).toContain("KXT");
+    expect(brief).toContain("Jev selected");
+    expect(brief).not.toContain("news editor");
+    expect(brief).not.toContain("inserted before your words");
   });
-
-  it("says nothing of the weather or the headlines when there are none", () => {
+  it("prohibits researching missing material and inventing news", () => {
     const brief = writeBrief(input({ clockSaysBreak: true }));
-    expect(brief).not.toMatch(/weather/i);
-    expect(brief).not.toMatch(/headline/i);
-  });
-
-  it("reserves news for the editor and forbids the music writer from repeating it", () => {
-    const brief = writeBrief(
-      input({
-        clockSaysBreak: true,
-        newsReserved: true,
-      }),
-    );
-    expect(brief).toContain("A checked news sentence is inserted before your words");
-    expect(brief).toContain("Do not write news");
+    expect(brief).toContain("No headlines selected");
+    expect(brief).toContain("No prepared weather");
+    expect(brief).toContain("Do not research");
   });
 });
 

@@ -52,3 +52,9 @@ railway variables -s radio-web \
   --set "CLAUDE_KEY=$(op read op://Developer/pof4-radio-claude-pof4/credential)" \
   --set "ELEVENLABS_KEY=$(op read op://Developer/pof4-radio-elevenlabs-proart/credential)"
 ```
+
+## Scheduled preparation
+
+News and weather cron workers save dated editions for later Jev selection and Claude scripting.
+See [prepared content](docs/prepared-content.md) for schedules, storage, commands, and the session contract.
+Railway resources live in the sibling pof4-infra repository.

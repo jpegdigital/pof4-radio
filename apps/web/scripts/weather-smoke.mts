@@ -1,18 +1,4 @@
-/**
- * `node apps/web/scripts/weather-smoke.mts` — the real pull from api.weather.gov for 75229, no
- * env needed: the observation and the forecast as the producer reads them, then the text the
- * brief would carry. Proves the User-Agent, the URLs and the shapes against the live feeds.
- */
-import { fetchWeather, WEATHER_PLACE, WEATHER_URLS, weatherText } from "../src/app/api/sessions/weather.ts";
-
-console.log(
-  `${WEATHER_PLACE.city} ${WEATHER_PLACE.zip} — ${WEATHER_URLS.observation}\n${" ".repeat(WEATHER_PLACE.city.length + WEATHER_PLACE.zip.length + 4)}${WEATHER_URLS.forecast}\n`,
-);
-const t = Date.now();
-const w = await fetchWeather();
-console.log(`pulled in ${Date.now() - t} ms\n`);
-console.log(JSON.stringify(w, null, 2));
-console.log(`\n--- as the brief carries it ---\n${weatherText(w, WEATHER_PLACE.timeZone)}`);
-const again = Date.now();
-await fetchWeather();
-console.log(`\ncached: second call ${Date.now() - again} ms`);
+/** Live NWS validation through the scheduled worker's only fetch path. */
+import { prepareWeather } from "./prep-weather.mts";
+const result = await prepareWeather(AbortSignal.timeout(30_000));
+console.log(JSON.stringify({ weather: result.weather, expiresAt: result.expiresAt }, null, 2));

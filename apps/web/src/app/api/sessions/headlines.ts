@@ -176,10 +176,19 @@ export function createHeadlineReader(fetchFn: typeof fetch = fetch) {
   const inflight = new Map<string, Promise<void>>();
   return async (
     config: NewsConfig,
-    opts: { now?: number; refresh?: boolean } = {},
+    opts: {
+      now?: number;
+      refresh?: boolean;
+      budgetMs?: number;
+      timeoutMs?: number;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<HeadlineSnapshot> => {
     const clock = () => opts.now ?? Date.now();
-    const deadline = AbortSignal.timeout(6_000);
+    const deadline = AbortSignal.any([
+      AbortSignal.timeout(opts.budgetMs ?? 6_000),
+      ...(opts.signal ? [opts.signal] : []),
+    ]);
     const articles: Article[] = [];
     const statuses: SourceStatus[] = [];
     const sources = config.enabled
@@ -238,7 +247,10 @@ export function createHeadlineReader(fetchFn: typeof fetch = fetch) {
                   // All destinations are code-owned. Redirects stay on the same publisher host (www alias allowed).
                   let target = url;
                   let res: Response | undefined;
-                  const signal = AbortSignal.any([deadline, AbortSignal.timeout(TIMEOUT_MS)]);
+                  const signal = AbortSignal.any([
+                    deadline,
+                    AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS),
+                  ]);
                   for (let n = 0; n <= 3; n++) {
                     res = await fetchFn(target, { headers, signal, redirect: "manual", cache: "no-store" });
                     if (![301, 302, 303, 307, 308].includes(res.status)) break;

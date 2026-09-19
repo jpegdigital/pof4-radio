@@ -13,8 +13,7 @@ philosophy).
 ## Philosophy — minimize cost, maximize simplicity
 
 - One service (`radio-web`) in the **`pof4`** Railway project, sharing the one Postgres (database
-  `radio`) and one bucket (`radio-clips`, for the voice clips and the tracks). No worker, no queue:
-  nothing runs when nobody is listening. Infra is not in this repo: `../pof4-infra/.railway/railway.ts`
+  `radio`) and one bucket (`radio-clips`, for the voice clips and the tracks). Two bounded cron workers prepare news/weather; there is no queue. See docs/prepared-content.md. Infra is not in this repo: `../pof4-infra/.railway/railway.ts`
   is the only place Railway resources are declared — edit there, `pnpm plan` → `pnpm apply` **from
   that directory**. Secrets stay `preserve()`d, set via `railway variables`.
 - One database, on purpose: `pnpm dev` talks to the same Railway Postgres (and bucket) as prod over its
@@ -62,7 +61,7 @@ Three places, each owning what it alone needs:
   dedupe), `write` (the writer's
   brief and call), `rules` (the clock's law: `isBreak`, `legalIdDue`, `checkSlot`), `qobuz` (search
   and the pull, on the listener's token), `weather`, `headlines` (fetch/cache/evidence),
-  `headline-edit` (editor and evidence check), `doc` (the slot on the wire). Tests
+  `headline-choice` (Jev choices over prepared facts), `generation` (retained audit), `doc` (the slot on the wire). Tests
   sit next to the pure parts.
 - **`apps/web/src/app/(app)/`** — the browser: the home (`page.tsx` + `home-desk.tsx`), the session
   page (`sessions/[id]/`: `session-view` (the loop), `loop` (pure: `nextMove`), `player`, `rundown`,
@@ -70,7 +69,7 @@ Three places, each owning what it alone needs:
   and tracks fetched once as blobs, `voice-store`, `dj-picker`, `ui`).
 - **`apps/web/src/app/(settings)/`** — the control room, desktop-wide: the identity, the clock and the
   voice roster and news desk, every row in the `settings` table. `/api/tts/preview` is its "hear it";
-  `/settings?news=1` previews fresh or saved evidence through `/api/news/preview` without TTS.
+  `/settings?news=1` previews prepared options through the shared Jev selector at `/api/news/preview` without writing or TTS.
 
 `docs/sessions.html` is the API dance and `docs/domain.html` the data model — the source of truth for
 how the pieces talk; keep them current. `docs/slot-first.md` is why the show is shaped this way.
@@ -104,28 +103,25 @@ the track pull, lock-free:
   message is the structured answer). Then Qobuz search finds each one's versions, and one row per
   proposal with a hit is appended: the proposal and its hits, nothing judged. Nothing found → 502
   with the reasons.
-- `POST …/slots/:seq` `{ clockMs, again?, live? }` — **write, then voice**, one request. The clock says
+- `POST …/slots/:seq` `{ clockMs, again? }` — **write, then voice**, one request. The clock says
   whether this slot is the break (`isBreak`: slot 1 and every `breakEvery` after) and whether the
   legal ID is due (`legalIdDue`: slot 1, or the hour turned since the last break). The brief carries
   the ask, the clock, the identity, the DJ, the proposal and the fixed recording selected by Jev, the last three slots'
   copy, everything played, Jev's fixed mixer plan and word budgets, and for a break the
-  weather (NWS) and a flag reserving room for separately checked news. **One Jev Choice call** selects a recording from the hits (or fails if none fits). Its request,
+  latest prepared NWS weather and at most one prepared story selected by Jev. **One Jev Choice call** selects a recording from the hits (or fails if none fits). Its request,
   response, model, usage and elapsed time are retained in `session_slot.selection`. No alternative
   picker or automatic retry. Jev then answers five chart questions in parallel (coarse intro,
   ending, energy, tempo, mood), followed by one action choice over code-built executable mixer
   plans. All judgments and probabilities are retained under selection.planning. Unknown timing
-  offers dry/no-voice actions; estimates are not audio measurements. **One music-writing** Claude
-  call returns only words and leadLine, with thinking disabled and fixed word budgets. News editing
-  and prose run concurrently. checkSlot fails on invalid copy or a clock mismatch; it never changes
+  offers dry/no-voice actions; estimates are not audio measurements. **One unified** Claude
+  call returns only words and leadLine, combining news, weather and music with thinking disabled and fixed word budgets. checkSlot fails on invalid copy or a clock mismatch; it never changes
   Jev's action. A Jev segue skips prose and TTS. One update lands the plan, copy and receipts. Then
   the clip: legal ID + words + lead line through ElevenLabs in the session's voice, `PUT` to
   `sessions/<session>/<seq>.mp3`, the row stamped — bucket first, row second; a segue is stamped
   voiced with no clip. A voicing that fails after the write **keeps the write** (502 with the slot as
   written; the next request voices only). `{ again: true }` is another take under a new key. `GET
   …/clip?take=…` streams that exact retained take, immutable; unknown keys return 404.
-  `{ live: true }` checks the news receipt before playing: expired news (with a 45-second airtime
-  margin), disabled news or a newer known story revision switches to the prepared news-free take.
-  Older breaks without receipts are revoiced with only their legal ID and music lead-in.
+  Playback always uses the saved production without a freshness preflight or alternate mode.
 - `POST …/slots/:seq/track` — the slot's pick, held: a `track` row → held; else the bucket's `HEAD`
   finds the bytes → the row rebuilt from the pick's tags; else Qobuz → `PUT` → row. **Not under the
   session lock**: the track is the library's, and the browser fires this the moment the pick is
@@ -135,26 +131,22 @@ the track pull, lock-free:
 `/settings`, read per request by the fill, the slot rung and the snapshot; no default in code — a
 missing row is a fault naming it. Defaults as seeded: 5, 6, 2.
 
-**Headlines have an editor and an expiry.** `station.news` defaults to the Dallas pilot until saved
-in the control room. On a proposed break, allowed RSS/Atom feeds are fetched before the session lock:
-KERA, KXT, Dallas City Hall and NPR supply bounded excerpts; Google feeds are discovery only.
-Per-source process caches use validators, HTTP cache directives, singleflight and backoff; defaults
-are 5 minutes for news and 15 for culture. Source failures are isolated; stale evidence does not air.
-Inside the existing slot request, `headline-edit.ts` selects one useful story against six hours of
-session history, drafts attributed copy with exact evidence quotes, and separately checks every
-clause. One optional repair shares a 45-second total editing budget. Failure means an explicit
-omission. Approved words are prepended outside the music writer. A second, news-free voice take
-preserves the music copy, legal ID and lead-in for offline or expired-news fallback.
+**News and weather are prepared before sessions.** Railway cron workers append dated editions to
+`news_entries` and `weather_entries`; source evidence and reviews are retained. The web request only
+reads the latest saved editions. Jev marks each headline include/omit/repeat against the prompt and reserved
+session history; code ranks explicit includes by probability and caps them at one. Empty is valid.
+The session lock serializes reservations; `session_slot.generation` retains choices before writing,
+so later breaks cannot reuse stories even if playback never happens. It retains exact model inputs,
+outputs, probabilities, source edition IDs/dates, Claude's brief, and every voice take's text/settings/key.
+Claude writes one coherent news, weather and music script, then ElevenLabs makes one take. A failed
+writer keeps the reservation; a failed voice keeps the script. No request-time fetching or alternate
+news-free generation exists. See `docs/prepared-content.md` for the complete contract.
 
-`headline_snapshot` keeps the source evidence and model audit; `headline_story` holds the latest
-selected revision; `session_slot.news` is the playback receipt, including retained old takes.
-`POST …/slots/:seq/news` idempotently records a matching clip/story/revision after the browser reports
-a complete live voice read; generated copy is never assumed heard. The rundown shows source links
-and decisions. Original-recording mode explicitly selects preserved takes and sends no heard receipt.
-No worker, queue, scraping service, embeddings or automatic correction crawl. The source/quality
-pilot and implementation notes live in `docs/handoffs/2026-09-06-headlines.html`.
+`session_slot.news` is the public source receipt. `POST …/slots/:seq/news` records every
+included story after a complete live read of the matching clip; generated does not imply heard.
+Playback always uses the saved script and audio. Explicit revoice appends another take.
 
-**The prompts are inline** at each call site (`fill.ts`, `write.ts`, `headline-edit.ts`) — structured outputs via
+**The prompts are inline** at each call site (`fill.ts`, `write.ts`, `headline-choice.ts`, `scripts/prep-news.mts`) — structured outputs via
 `messages.parse` + `zodOutputFormat` for the writer, `beta.messages.toolRunner` +
 `betaZodOutputFormat` for the proposer (tools and a shape on one call; the last message's text is
 parsed by hand), one zod shape per call in `shapes.ts`; the fill's count is enforced with
@@ -174,7 +166,7 @@ track (its MP3 in its own `<audio>` through a gain node), the bed's and the trac
 the audio clock, the track started at its mark and ducked under the voice. The transport is
 start/stop; rows (voiced and held) and ⏮ ⏭ pick the slot; the track ending advances to the next
 voiced slot (`transport.ts`, pure), whose track was pulled while this one played. First sound after
-the fill and slot 1 (a news break also runs the editor and evidence check). **iOS in the background** (Safari hidden, the screen
+the fill and slot 1 (a full break includes prepared news and weather). **iOS in the background** (Safari hidden, the screen
 locked): the graph is made under a `"playback"` audio session (`navigator.audioSession`, iOS 17.5+ —
 WebKit interrupts an `AudioContext` on hide under any other type, and the ringer switch silences
 it), each lane is seeked to the real head when its start fires (a hidden page's timers run up to a

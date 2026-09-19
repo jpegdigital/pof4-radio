@@ -2,7 +2,7 @@ import { ChevronDown, Disc3, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { focusRing, Label } from "../../lib/ui";
 import { preparation } from "./preparation";
-import { type Cue, clock, cueKey, isCue, KIND_LABEL, secs, type Slot } from "./types";
+import { type Chart, type Cue, clock, cueKey, isCue, KIND_LABEL, secs, type Slot } from "./types";
 
 /**
  * The show as one list, in order. A proposed slot is a dim row — "coming up", the proposer's
@@ -216,8 +216,8 @@ function Row({
 /** The words as written, the writer's numbers, the chart, the treatment, the fallback and its reason. Nothing editable. */
 function Detail({ cue }: { cue: Cue }) {
   const numbers: [string, number | undefined][] = [
-    ["record under", cue.recordUnderMs],
-    ["voice in", cue.voiceInMs],
+    ["Song starts before DJ ends:", cue.recordUnderMs],
+    ["DJ starts at", cue.voiceInMs],
   ];
   const chart = cue.chart;
   return (
@@ -232,7 +232,9 @@ function Detail({ cue }: { cue: Cue }) {
           {cue.leadLine}
         </p>
       )}
-      {cue.kind === "segue" && !cue.words && <p className="text-zinc-500">straight in</p>}
+      {cue.kind === "segue" && !cue.words && (
+        <p className="text-zinc-500">Music continues without DJ voice</p>
+      )}
       <p className="flex flex-wrap gap-x-4 gap-y-1 font-mono tabular-nums">
         {numbers.map(
           ([k, v]) =>
@@ -242,37 +244,41 @@ function Detail({ cue }: { cue: Cue }) {
               </span>
             ),
         )}
-        <span>{cue.voiced ? (cue.clipKey ? takeOf(cue.clipKey) : "no clip") : "not voiced yet"}</span>
-        <span>{cue.held ? "held" : "not held"}</span>
+        <span>{cue.voiced ? (cue.clipKey ? takeOf(cue.clipKey) : "No DJ voice") : "DJ voice not ready"}</span>
+        <span>{cue.held ? "Audio ready" : "Audio not ready"}</span>
       </p>
-      {chart ? (
-        <p className="flex flex-wrap gap-x-4 gap-y-1 font-mono tabular-nums text-zinc-500">
-          <span>
-            ramp {secs(chart.rampMs)} ({chart.sure ? "sure" : "estimated"})
-          </span>
-          {chart.post && <span>post: {chart.post}</span>}
-          <span>
-            {chart.outro === "unknown" ? (
-              "ending unknown"
-            ) : (
-              <>
-                ends: {chart.outro} at {clock(chart.outroMs)}
-              </>
-            )}
-          </span>
-          <span>
-            {chart.energy ? `energy ${chart.energy}/5` : "energy unknown"} · {chart.tempo} · {chart.mood}
-          </span>
-        </p>
-      ) : (
-        <p className="text-zinc-500">no chart</p>
-      )}
       {cue.treatment && <p className="text-zinc-500">{cue.treatment}</p>}
+      <div className="mt-1 border-t border-zinc-800 pt-3">
+        <Label>Track estimates</Label>
+        {chart ? (
+          <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 tabular-nums text-zinc-400">
+            <span>{vocalEstimate(chart)}</span>
+            <span>
+              {chart.outro === "unknown"
+                ? "Ending unknown"
+                : chart.outro === "fade"
+                  ? `Fade starts around ${clock(chart.outroMs)}`
+                  : "Ends without a fade"}
+            </span>
+            <span>
+              {ENERGY_LABEL[chart.energy] ?? "Energy unknown"} · {TEMPO_LABEL[chart.tempo]} ·{" "}
+              {chart.mood && chart.mood !== "unknown" ? chart.mood : "mood unknown"}
+            </span>
+          </p>
+        ) : (
+          <p className="mt-1 text-zinc-500">Track estimates unavailable</p>
+        )}
+      </div>
       {cue.news && (
         <div className="mt-2 border-t border-zinc-800 pt-3">
           <p className="font-medium text-zinc-300">{cue.news.words ? "News sources" : "News omitted"}</p>
           <p className="mt-1">{cue.news.reason}</p>
           <p className="mt-1 text-zinc-500">Checked {new Date(cue.news.checkedAt).toLocaleString()}</p>
+          {cue.news.weather && (
+            <p className="mt-1 text-zinc-500">
+              National Weather Service · observed {new Date(cue.news.weather.observedAt).toLocaleString()}
+            </p>
+          )}
           {cue.news.sources.map((source) => (
             <p key={source.url} className="mt-2">
               <a href={source.url} target="_blank" rel="noreferrer" className="text-lamp underline">
@@ -281,14 +287,16 @@ function Detail({ cue }: { cue: Cue }) {
               <span className="block text-zinc-500">Published {new Date(source.at).toLocaleString()}</span>
             </p>
           ))}
-          {(cue.news.previous ?? []).map((take) => (
-            <details key={take.clipKey} className="mt-2">
-              <summary className="cursor-pointer">
-                Earlier recording · {new Date(take.at).toLocaleString()}
-              </summary>
-              <p className="mt-1">{take.words}</p>
-            </details>
-          ))}
+          {(cue.takes ?? [])
+            .filter((take) => take.clipKey !== cue.clipKey)
+            .map((take) => (
+              <details key={take.clipKey} className="mt-2">
+                <summary className="cursor-pointer">
+                  Earlier recording · {new Date(take.at).toLocaleString()}
+                </summary>
+                <p className="mt-1">{take.words}</p>
+              </details>
+            ))}
         </div>
       )}
       <p className="text-zinc-600">{cue.why}</p>
@@ -301,8 +309,37 @@ function Detail({ cue }: { cue: Cue }) {
   );
 }
 
+const ENERGY_LABEL = [
+  "Energy unknown",
+  "Very low energy",
+  "Low energy",
+  "Moderate energy",
+  "High energy",
+  "Very high energy",
+];
+const TEMPO_LABEL: Record<Chart["tempo"], string> = {
+  down: "slow",
+  mid: "moderate tempo",
+  up: "fast",
+  unknown: "tempo unknown",
+};
+
+function vocalEstimate(chart: Chart): string {
+  if (chart.post === "Intro unknown") return "Vocal timing unknown";
+  if (chart.post === "Instrumental; no vocal") return "Instrumental · no vocals";
+  // Only the current planner's lower bounds imply ranges; older charts store point estimates.
+  if (chart.post === "Estimated first-vocal lower bound; not audio-measured") {
+    const seconds = chart.rampMs / 1000;
+    const next = [0, 1, 5, 10, 20, 30, 45, 60, 90, 120].find((bound) => bound > seconds);
+    if (seconds === 0) return "Vocals at the start";
+    return next ? `Vocals around ${seconds}–${next} seconds` : `Vocals around ${seconds} seconds or later`;
+  }
+  return chart.rampMs === 0 ? "Vocals at the start" : `Vocals around ${secs(chart.rampMs)}`;
+}
+
 /** The first take's key is `<seq>.mp3`; a later take's carries a marker after the seq. */
-const takeOf = (clipKey: string) => (/-[^/]+\.mp3$/.test(clipKey) ? "voiced again" : "voiced");
+const takeOf = (clipKey: string) =>
+  /-[^/]+\.mp3$/.test(clipKey) ? "DJ voice re-recorded" : "DJ voice ready";
 
 /** A slot not written yet: what the proposer named, in the dim tone. */
 function ToCome({ slot, label }: { slot: Slot; label: string }) {

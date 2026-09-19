@@ -9,8 +9,11 @@ import {
   type PlanningReceipt,
   PLANNING_VERSION,
 } from "./planning";
+import { NEWS_DEFAULTS } from "../../../lib/news";
+import type { PreparedEntry, PreparedHeadline, PreparedWeather } from "../../../lib/prepared";
+import type { SlotGeneration } from "./generation";
 import type { SlotRow } from "./doc";
-import type { WriteInput } from "./write";
+import type { WriteInput, WriterReceipt } from "./write";
 import type { Written } from "./shapes";
 import type { PickInput, PickReceipt } from "./pick";
 import { pickRequest, readPick } from "./pick";
@@ -19,17 +22,25 @@ const boundary = vi.hoisted(() => ({
   query: vi.fn<(sql: string, values?: unknown[]) => Promise<{ rows: unknown[] }>>(),
   release: vi.fn(),
   pick: vi.fn<(input: PickInput, config: { apiKey: string; model: string }) => Promise<PickReceipt>>(),
-  write: vi.fn<(input: WriteInput) => Promise<{ written: Written; thinking: string }>>(),
+  write:
+    vi.fn<(input: WriteInput) => Promise<{ written: Written; thinking: string; receipt?: WriterReceipt }>>(),
   plan: vi.fn<
     (input: PlanningInput, config: { apiKey: string; model: string }) => Promise<PlanningReceipt>
   >(),
   put: vi.fn(),
+  news: vi.fn<() => Promise<PreparedEntry<PreparedHeadline[]> | null>>(),
+  weather: vi.fn<() => Promise<PreparedEntry<PreparedWeather> | null>>(),
 }));
 vi.mock("@/lib/db", () => ({
   pool: () => ({
     query: boundary.query,
     connect: () => Promise.resolve({ query: boundary.query, release: boundary.release }),
   }),
+}));
+vi.mock("@/lib/prepared", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/prepared")>()),
+  readPreparedNews: boundary.news,
+  readPreparedWeather: boundary.weather,
 }));
 vi.mock("@/lib/bucket", () => ({ bucket: () => ({ put: boundary.put }) }));
 vi.mock("@/lib/env", () => ({
@@ -39,7 +50,7 @@ vi.mock("@/lib/settings", () => ({
   loadClock: () => Promise.resolve({ breakEvery: 5 }),
   loadIdentity: () => Promise.resolve({ calls: "WFAI", city: "Dallas", onAir: "Radio" }),
   loadVoices: () => Promise.resolve([{ id: "voice", name: "DJ" }]),
-  loadNews: () => Promise.resolve({ enabled: false }),
+  loadNews: () => Promise.resolve(NEWS_DEFAULTS),
 }));
 vi.mock("./pick", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./pick")>()),
@@ -87,7 +98,7 @@ const planningReceipt = (action = "sweeper") => {
   const input: PlanningInput = {
     prompt: "play Song",
     seq: 2,
-    clockSaysBreak: false,
+    clockSaysBreak: action.startsWith("break"),
     stationName: "Radio",
     proposal: { title: "Song", artist: "Artist", why: "requested" },
     hit: hits[1],
@@ -124,17 +135,21 @@ const planningReceipt = (action = "sweeper") => {
   return { version: PLANNING_VERSION, plan: mix.plan, chart, mix, elapsedMs: 2 };
 };
 let row: SlotRow & { id: string };
-const call = () =>
+let prior: (SlotRow & { id: string })[] = [];
+const call = (body: Record<string, unknown> = {}) =>
   POST(
     new Request(`http://radio/api/sessions/${id}/slots/2`, {
       method: "POST",
-      body: JSON.stringify({ clockMs: 1000 }),
+      body: JSON.stringify({ clockMs: 1000, ...body }),
     }),
-    { params: Promise.resolve({ id, seq: "2" }) },
+    { params: Promise.resolve({ id, seq: String(row.seq) }) },
   );
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prior = [];
+  boundary.news.mockResolvedValue(null);
+  boundary.weather.mockResolvedValue(null);
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
   row = {
@@ -174,7 +189,10 @@ beforeEach(() => {
   boundary.write.mockImplementation(({ plan }) =>
     Promise.resolve({
       thinking: "",
-      written: { words: plan.fixedWords ?? "A little sunshine to keep this show moving.", leadLine: "" },
+      written: {
+        words: plan.fixedWords ?? "A little sunshine to keep this show moving.",
+        leadLine: plan.kind === "break" ? "Here is Song." : "",
+      },
     }),
   );
   boundary.query.mockImplementation((sql: string, values: unknown[] = []) => {
@@ -184,6 +202,11 @@ beforeEach(() => {
       return Promise.resolve({ rows: [{ qobuz_id: row.qobuz_id }] });
     if (sql.includes("from session_slot where session_id = $1 and seq = $2"))
       return Promise.resolve({ rows: [row] });
+    if (sql.startsWith("select seq, generation, news")) return Promise.resolve({ rows: prior });
+    if (sql.startsWith("update session_slot set generation")) {
+      row = { ...row, generation: JSON.parse(values[1] as string) as SlotGeneration };
+      return Promise.resolve({ rows: [row] });
+    }
     if (sql.includes("qobuz_id = $2, clock_ms")) {
       row = {
         ...row,
@@ -192,11 +215,20 @@ beforeEach(() => {
         words: values[12] as string,
         lead_line: values[13] as string,
         treatment: values[15] as string,
+        legal_id: values[14] as string | null,
+        news: values[20] ? (JSON.parse(values[20] as string) as SlotRow["news"]) : null,
+        generation: JSON.parse(values[22] as string) as SlotGeneration,
       };
       return Promise.resolve({ rows: [row] });
     }
     if (sql.startsWith("update session_slot set clip_key")) {
-      row = { ...row, clip_key: values[1] as string, voiced_at: new Date() };
+      row = {
+        ...row,
+        clip_key: values[1] as string,
+        voiced_at: new Date(),
+        news: values[2] ? (JSON.parse(values[2] as string) as SlotRow["news"]) : null,
+        generation: values[3] ? (JSON.parse(values[3] as string) as SlotGeneration) : null,
+      };
       return Promise.resolve({ rows: [row] });
     }
     if (sql.startsWith("update session_slot set voiced_at")) {
@@ -278,7 +310,12 @@ describe("slot selection has one path", () => {
     expect((await call()).status).toBe(502);
     expect(row.qobuz_id).toBeNull();
     expect(boundary.put).not.toHaveBeenCalled();
-    expect(boundary.query).toHaveBeenCalledWith("rollback");
+    expect(boundary.query).toHaveBeenCalledWith("rollback to savepoint generation_ready");
+    expect(row.generation?.selection.pick).toBe("chosen");
+    boundary.write.mockResolvedValue({ thinking: "", written: { words: "Radio.", leadLine: "" } });
+    expect((await call()).status).toBe(200);
+    expect(boundary.pick).toHaveBeenCalledTimes(1);
+    expect(boundary.plan).toHaveBeenCalledTimes(1);
   });
 
   it("retrying a written slot voices the retained recording without selecting again", async () => {
@@ -288,5 +325,207 @@ describe("slot selection has one path", () => {
     expect(await res.json()).toMatchObject({ pick: { id: "chosen" } });
     expect(boundary.pick).not.toHaveBeenCalled();
     expect(boundary.write).not.toHaveBeenCalled();
+  });
+});
+
+const headlines = (): PreparedHeadline[] =>
+  ["a", "b", "c", "d"].map((id) => ({
+    articleId: id,
+    storyId: `story-${id}`,
+    revision: "v1",
+    title: `Dallas event ${id}`,
+    topic: "music",
+    sourceId: "kxt",
+    source: "KXT",
+    url: `https://kxt.org/${id}`,
+    scope: "culture",
+    publishedAt: new Date().toISOString(),
+    fetchedAt: new Date().toISOString(),
+    checkedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    evidence: "A free Dallas concert.",
+    facts: [{ text: "A free Dallas concert.", quote: "A free Dallas concert." }],
+  }));
+const weather: PreparedWeather = {
+  location: {
+    city: "Dallas",
+    zip: "75229",
+    timeZone: "America/Chicago",
+    station: "KDAL",
+    grid: "FWD/87,109",
+  },
+  sources: {
+    observation: "https://api.weather.gov/o",
+    forecast: "https://api.weather.gov/f",
+    alerts: "https://api.weather.gov/a",
+  },
+  units: { temperature: "F", wind: "mph", precipitation: "percent" },
+  observedAt: new Date().toISOString(),
+  forecastUpdatedAt: new Date().toISOString(),
+  now: { text: "Sunny", tempF: 80, feelsLikeF: null, humidity: null, windMph: null },
+  alerts: [],
+  periods: [
+    {
+      name: "Tonight",
+      isDaytime: false,
+      startTime: new Date().toISOString(),
+      endTime: new Date(Date.now() + 3600000).toISOString(),
+      tempF: 70,
+      short: "Clear",
+      detailed: "Clear skies",
+      precipitationPercent: 0,
+      windSpeed: "5 mph",
+      windDirection: "S",
+    },
+  ],
+};
+const prepareBreak = () => {
+  row.seq = 1;
+  boundary.plan.mockResolvedValue(planningReceipt("break_dry"));
+  boundary.news.mockResolvedValue({
+    id: "edition",
+    date: "2026-09-19",
+    preparedAt: new Date(),
+    expiresAt: new Date(Date.now() + 3600000),
+    data: headlines(),
+  });
+  boundary.weather.mockResolvedValue({
+    id: "weather",
+    date: "2026-09-19",
+    preparedAt: new Date(),
+    expiresAt: new Date(Date.now() + 3600000),
+    data: weather,
+  });
+  vi.mocked(fetch).mockImplementation((url, init) => {
+    if ((typeof url === "string" ? url : url instanceof URL ? url.href : url.url).includes("typesafe.ai")) {
+      const req = JSON.parse(init?.body as string) as { questions: Record<string, unknown> };
+      return Promise.resolve(
+        Response.json({
+          model: "jev-1.13.0",
+          usage: { input_tokens: 10, output_tokens: 10 },
+          answers: Object.fromEntries(
+            Object.keys(req.questions).map((id) => [
+              id,
+              {
+                type: "choice",
+                choice: "include",
+                confidence: 1,
+                probabilities: { include: 1, omit: 0, repeat: 0 },
+              },
+            ]),
+          ),
+        }),
+      );
+    }
+    return Promise.resolve(new Response(new Uint8Array([1, 2, 3])));
+  });
+};
+describe("prepared news/weather has one production path", () => {
+  it("uses DB editions, one writer and one TTS, and retains the exact selected evidence", async () => {
+    prepareBreak();
+    expect((await call()).status).toBe(200);
+    expect(boundary.write).toHaveBeenCalledTimes(1);
+    expect(boundary.write.mock.calls[0][0].headlines).toHaveLength(1);
+    expect(boundary.write.mock.calls[0][0].weather).toEqual(weather);
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.filter(([url]) =>
+          (typeof url === "string" ? url : url instanceof URL ? url.href : url.url).includes("elevenlabs.io"),
+        ),
+    ).toHaveLength(1);
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.every(([url]) =>
+          /typesafe.ai|elevenlabs.io/.test(
+            typeof url === "string" ? url : url instanceof URL ? url.href : url.url,
+          ),
+        ),
+    ).toBe(true);
+    expect(row.generation?.news.selected).toHaveLength(1);
+    expect(row.generation?.takes).toHaveLength(1);
+    const original = structuredClone(row);
+    prior = [original];
+    row = {
+      ...row,
+      id: "second",
+      seq: 6,
+      qobuz_id: null,
+      voiced_at: null,
+      clip_key: null,
+      generation: null,
+      news: null,
+    };
+    expect((await call()).status).toBe(200);
+    expect(boundary.write.mock.calls[1][0].headlines.map((h) => h.articleId)).toEqual(["b"]);
+  });
+  it("retains rejected copy and retries with the same Jev decisions", async () => {
+    prepareBreak();
+    const bad = { words: "word ".repeat(200), leadLine: "Song." };
+    const receipt: WriterReceipt = {
+      version: "script-2",
+      model: "test",
+      system: "test",
+      brief: "test",
+      response: bad,
+      usage: {},
+      elapsedMs: 1,
+    };
+    boundary.write.mockResolvedValueOnce({ written: bad, thinking: "", receipt });
+    expect((await call()).status).toBe(502);
+    expect(row.qobuz_id).toBeNull();
+    expect(row.generation?.attempts?.[0].writer).toEqual(receipt);
+    expect(row.generation?.attempts?.[0].error).toContain("word budget");
+    const choices = structuredClone(row.generation?.news);
+    expect((await call()).status).toBe(200);
+    expect(boundary.pick).toHaveBeenCalledTimes(1);
+    expect(row.generation?.news).toEqual(choices);
+    expect(row.generation?.attempts?.[0].writer).toEqual(receipt);
+    expect(row.generation?.takes).toHaveLength(1);
+  });
+  it("missing prepared material produces one music script without fetching sources", async () => {
+    row.seq = 1;
+    boundary.plan.mockResolvedValue(planningReceipt("break_dry"));
+    expect((await call()).status).toBe(200);
+    expect(boundary.write.mock.calls[0][0]).toMatchObject({ headlines: [], weather: null });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("a voice failure keeps the script and retry only voices it", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("failed", { status: 500 }));
+    expect((await call()).status).toBe(502);
+    expect(row.qobuz_id).toBe("chosen");
+    const kept = row.words;
+    expect((await call()).status).toBe(200);
+    expect(row.words).toBe(kept);
+    expect(boundary.write).toHaveBeenCalledTimes(1);
+    expect(boundary.pick).toHaveBeenCalledTimes(1);
+  });
+  it("saved production stays playable regardless of news expiry", async () => {
+    prepareBreak();
+    await call();
+    Object.assign(row.news!, { expiresAt: new Date(0).toISOString() });
+    const kept = structuredClone(row);
+    vi.mocked(fetch).mockClear();
+    boundary.write.mockClear();
+    const response = await call({ live: true });
+    expect(await response.json()).toMatchObject({
+      clipKey: kept.clip_key,
+      words: kept.words,
+      legalId: kept.legal_id,
+    });
+    expect(row).toEqual(kept);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(boundary.write).not.toHaveBeenCalled();
+  });
+  it("explicit voice retries preserve all earlier takes without reselecting or rewriting", async () => {
+    prepareBreak();
+    await call();
+    const original = row.clip_key;
+    await call({ again: true });
+    expect(row.generation?.takes).toHaveLength(2);
+    expect(row.generation?.takes?.[0].clipKey).toBe(original);
+    expect(row.clip_key).not.toBe(original);
+    expect(boundary.write).toHaveBeenCalledTimes(1);
   });
 });

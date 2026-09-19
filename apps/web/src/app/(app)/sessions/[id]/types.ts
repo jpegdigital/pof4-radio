@@ -34,6 +34,7 @@ export interface Chart {
 
 export interface Slot {
   news?: NewsReceipt;
+  takes?: { clipKey: string; at: string; words: string; legalId?: string; leadLine?: string }[];
   seq: number;
   status: SlotStatus;
   // the proposal — always present

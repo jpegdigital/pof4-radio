@@ -173,7 +173,7 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
 <p>Jev chooses the kind and timing from executable actions within the clock's constraints. Coarse intro estimates and their uncertainty inform whether voice can overlap music. Claude writes only prose within fixed budgets. Invalid copy stops preparation; the code does not substitute a different kind. See <a href="jev-planning.md">Jev planning</a>.</p>
 <table>
 <tr><th>Kind</th><th>What you hear</th><th>Copy needs</th><th>Timing</th></tr>
-<tr><td><code>break</code></td><td>Voice over a bed, the last line talks the record in under it. Legal ID first, dry, when it is due. The weather is in the music brief only here; separately checked and attributed news is inserted before the music copy.</td><td><code>words</code>, <code>lead_line</code></td><td><code>record_under_ms</code></td></tr>
+<tr><td><code>break</code></td><td>Voice over a bed, the last line talks the record in under it. Legal ID first, dry, when it is due. One script combines prepared weather, at most one Jev-selected checked headline and music copy.</td><td><code>words</code>, <code>lead_line</code></td><td><code>record_under_ms</code></td></tr>
 <tr><td><code>talkup</code></td><td>The record starts full; the voice comes in over the ramp and ends a beat before the post.</td><td><code>words</code></td><td><code>voice_in_ms</code></td></tr>
 <tr><td><code>sweeper</code></td><td>A short dry ID, then a hard intro.</td><td><code>words</code></td><td>—</td></tr>
 <tr><td><code>segue</code></td><td>Straight out of the last record.</td><td>nothing</td><td>—</td></tr>
@@ -203,15 +203,16 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
 </table>
 
 <h3 id="news">News: evidence, selection and airtime</h3>
-<p><code>station.news</code> controls the city, region, time zone, enabled sources, refresh intervals, memory window, word limit and editing deadline. The source URLs are a code-owned allowlist. Default: Dallas, 5-minute news refresh, 15-minute culture refresh, 6-hour session memory, 55 words and 45 seconds for editing. KERA, KXT, Dallas City Hall and NPR supply excerpts; Google is discovery only. Dallas-specific sources drop out for other configured places.</p>
+<p><code>station.news</code> controls enabled news and publisher sources for the Dallas pilot. Railway jobs prepare news every three hours and weather every 30 minutes. Sessions read the latest saved editions; missing editions never trigger request-time fetching.</p>
 <table><thead><tr><th>Storage</th><th>Meaning</th></tr></thead><tbody>
-<tr><td><code>headline_snapshot</code></td><td>Bounded feed evidence, publication and fetch dates, source health, configuration, editorial draft and evidence-check audit.</td></tr>
-<tr><td><code>headline_story</code></td><td>Latest selected revision of a story, ordered by when its evidence was fetched. A changed title alone does not revise unchanged evidence.</td></tr>
-<tr><td><code>session_slot.news</code></td><td>The selection or omission receipt, expiry, source links, approved news words, separate music words, prepared news-free take and prior immutable takes.</td></tr>
-<tr><td><code>session_news_exposure</code></td><td>Idempotent browser reports of a complete live voice read, tied to the matching slot, take, story and revision. Production alone is not evidence of listening.</td></tr>
+<tr><td><code>headline_snapshot</code></td><td>Bounded feed evidence and the preparation/review audit.</td></tr>
+<tr><td><code>news_entries</code>, <code>weather_entries</code></td><td>Append-only editions keyed by Dallas date and preparation time, including checked options or structured NWS data and original evidence.</td></tr>
+<tr><td><code>session_slot.generation</code></td><td>Reserved headlines, exact Jev requests/answers/probabilities, source edition IDs/dates, actual Claude input/output, and every voice take's text, settings and immutable key.</td></tr>
+<tr><td><code>session_slot.news</code></td><td>Public selection/omission receipt, expiry, source links, story IDs and weather provenance. Legacy fields remain readable for archival playback.</td></tr>
+<tr><td><code>session_news_exposure</code></td><td>Idempotent reports of complete live reads for every included story. Reservation prevents reuse regardless of listening.</td></tr>
 </tbody></table>
-<p>Feed discovery happens on demand before the session lock, with independent caches, conditional requests, backoff and isolated failures. A bounded editor chooses one useful story and a separate check reviews every factual clause against its excerpt. Unusable evidence or editing failure leaves news out. The music writer cannot rewrite the approved sentence.</p>
-<p>Before live playback the server checks expiry with a 45-second airtime margin, the enabled setting and newer known story revisions. Invalid news switches to the prepared music-only take, retaining the legal ID and lead-in; a network failure can use the same prepared take in the browser. Legacy breaks without receipts require a fresh ID/lead-in take. Original-recording mode explicitly restores retained audio, including historical news. All of this runs in the web service; no worker or queue.</p>
+<p>Jev chooses include/omit/repeat for each prepared option; code ranks explicit includes by probability and takes at most one. The session lock serializes reservations before writing. One Claude script combines those facts, weather and music, followed by one voice take. Writing retries preserve choices; voice retries preserve copy; explicit revoicing appends a take.</p>
+<p>Play always uses the saved voice, bed and track. No preflight, expiry gate or alternate playback mode changes the production. See <a href="prepared-content.md">the complete contract</a>.</p>
 <h2 id="outside">6. What lives outside the database</h2>
 <table>
 <tr><th>Thing</th><th>Where</th><th>Keyed by</th></tr>
