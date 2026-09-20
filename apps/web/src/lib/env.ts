@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-/** Server-only env for the web app. Read lazily so `next build` doesn't need real values. */
+/**
+ * Server-only env for the web app, and the one place a variable is required: a missing one is a
+ * fault naming it here, never a check at the call site. Read lazily so `next build` doesn't need
+ * real values; `instrumentation.ts` reads it once as the server starts, so a bad deploy fails to boot.
+ */
 const Env = z.object({
   DATABASE_URL: z.string().url(),
   /**
@@ -22,19 +26,19 @@ const Env = z.object({
   /** Jev recording selection. Required; there is no alternate picker. */
   TYPESAFE_API_KEY: z.string().min(1),
   TYPESAFE_MODEL: z.string().min(1).default("jev-1.13.0"),
-  /** The voice. Optional so the station runs (talk skipped) before the key is set up. */
-  ELEVENLABS_KEY: z.string().min(1).optional(),
+  /** The voice: every spoken slot is one ElevenLabs take. Required; an unvoiced slot never completes. */
+  ELEVENLABS_KEY: z.string().min(1),
   /**
-   * The clips bucket (Railway's `radio-clips`, S3-compatible). Optional as a group: with any of
-   * the five unset, `bucket()` is null and the voice/clip routes answer 503. Railway sets them from
-   * the bucket's refs (`railway variables -s radio-web`); locally they come from the 1Password item
+   * The clips bucket (Railway's `radio-clips`, S3-compatible), holding the voice clips and the
+   * tracks. Required: every track plays from it. Railway sets the five from the bucket's refs
+   * (`railway variables -s radio-web`); locally they come from the 1Password item
    * `pof4-radio-clips-bucket` through `.env.op`.
    */
-  BUCKET_ENDPOINT: z.string().url().optional(),
-  BUCKET_NAME: z.string().min(1).optional(),
-  BUCKET_REGION: z.string().min(1).optional(),
-  BUCKET_ACCESS_KEY_ID: z.string().min(1).optional(),
-  BUCKET_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  BUCKET_ENDPOINT: z.string().url(),
+  BUCKET_NAME: z.string().min(1),
+  BUCKET_REGION: z.string().min(1),
+  BUCKET_ACCESS_KEY_ID: z.string().min(1),
+  BUCKET_SECRET_ACCESS_KEY: z.string().min(1),
 });
 
 let cached: z.infer<typeof Env> | null = null;

@@ -49,7 +49,9 @@ philosophy).
 Three places, each owning what it alone needs:
 
 - **`apps/web/src/lib/`** — app-level process concerns, shared by the station and the control room:
-  `env` (zod over `process.env`, read lazily), `db` (one `pg.Pool`, `pool()`), `claude` (one client, no
+  `env` (zod over `process.env`, the one place a variable is required — the bucket and the voice key
+  included, so no route checks for them; read lazily for `next build`, and once at boot by
+  `src/instrumentation.ts`, which exits the process naming what is missing), `db` (one `pg.Pool`, `pool()`), `claude` (one client, no
   SDK retries), `bucket` (`put`, `open`, `head`) + `sigv4`, `guard`, `voices` (the roster's shape:
   schema, models, `ttsBody` — pure, client-safe), `identity` (call letters, city, on-air name — pure),
   `clock` (break every, fill, low water — pure), `jev` (the one TypeSafe call and the reading every

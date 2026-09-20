@@ -57,8 +57,6 @@ export async function POST(_req: Request, ctx: Route) {
   const w = await where(ctx);
   if (!w.ok) return Response.json({ error: "unknown slot" }, { status: 404 });
   const store = bucket();
-  if (!store)
-    return Response.json({ error: "the clips bucket is not configured (BUCKET_*)" }, { status: 503 });
   const pick = await pickOf(w.id, w.seq);
   if ("error" in pick) return Response.json({ error: pick.error }, { status: pick.status });
   const tag = `[session ${w.id.slice(0, 8)}] slot ${w.seq}`;
@@ -99,8 +97,6 @@ export async function GET(_req: Request, ctx: Route) {
   const w = await where(ctx);
   if (!w.ok) return Response.json({ error: "no such track" }, { status: 404 });
   const store = bucket();
-  if (!store)
-    return Response.json({ error: "the clips bucket is not configured (BUCKET_*)" }, { status: 503 });
   const pick = await pickOf(w.id, w.seq);
   if ("error" in pick) return Response.json({ error: "no such track" }, { status: 404 });
   const { rows } = await pool().query<{ audio_key: string }>("select audio_key from track where id = $1", [

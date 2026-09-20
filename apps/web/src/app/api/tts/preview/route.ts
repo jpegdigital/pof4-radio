@@ -14,14 +14,16 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return Response.json({ error: parsed.error.issues[0]?.message ?? "invalid body" }, { status: 400 });
   }
-  const key = env().ELEVENLABS_KEY;
-  if (!key) return Response.json({ error: "ELEVENLABS_KEY is not set on the server" }, { status: 503 });
   const { voice, text } = parsed.data;
   const upstream = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice.id)}/stream?output_format=mp3_44100_128`,
     {
       method: "POST",
-      headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+      headers: {
+        "xi-api-key": env().ELEVENLABS_KEY,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
       body: JSON.stringify(ttsBody(voice, text)),
     },
   );

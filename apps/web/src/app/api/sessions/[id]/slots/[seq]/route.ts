@@ -129,11 +129,7 @@ export async function POST(req: Request, ctx: Route) {
 
     const store = bucket();
 
-    if (!store) throw new Error("the clips bucket is not configured (BUCKET_*)");
-
     const key = env().ELEVENLABS_KEY;
-
-    if (!key) throw new Error("ELEVENLABS_KEY is not set on the server");
 
     if (slot.qobuz_id === null) {
       let generation = slot.generation;
