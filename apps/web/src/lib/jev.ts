@@ -85,7 +85,7 @@ export function readJev<Q extends string>(request: JevRequest<Q>, raw: unknown):
     if (sum <= 0 || Math.abs(sum - 1) > entries.length * ROUNDING_PER_OPTION + FLOAT_SLACK)
       throw new JevError(`Invalid Jev distribution: ${id} sums to ${sum}`);
   }
-  return response as JevResponse<Q>;
+  return response;
 }
 
 export interface JevCall {
