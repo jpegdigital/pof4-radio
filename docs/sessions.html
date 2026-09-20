@@ -98,7 +98,7 @@ GET  /api/sessions/:id/slots/:seq/track  the track's bytes, immutable</code></pr
 <p>The client navigates to <code>/sessions/:id</code> and everything after this is the loop. Production starts with the first fill.</p>
 
 <h2 id="snapshot">3. <code>GET /api/sessions/:id</code> — the snapshot <span class="tag built">built</span></h2>
-<p>The session as stored, whole: the ask, the clock (so the browser knows the low-water mark), then every slot in order, each carrying whatever its production has landed — the proposal; then the pick with its tags and whether the bucket holds it, the chart, the copy, the timing; then the clip key. It never produces anything and it is <code>no-store</code> while the document can still grow. Never on the wire: the hits (the browser has no use for them), the writer's thinking, the clock the write was made at, audio. A missing <code>settings.clock</code> row is a <code>500</code> naming it.</p>
+<p>The session as stored, whole: the ask, the clock (so the browser knows the low-water mark), then every slot in order, each carrying whatever its production has landed — the proposal; then the pick with its tags and whether the bucket holds it, the chart, the copy, the timing; then the clip key. It never produces anything and it is <code>no-store</code> while the document can still grow. Never on the wire: the hits (the browser has no use for them), the clock the write was made at, audio. A missing <code>settings.clock</code> row is a <code>500</code> naming it.</p>
 <pre data-lang="json"><code>{
   "sessionId": "8f14e45f-…",
   "prompt": "play Dreams by Fleetwood Mac",

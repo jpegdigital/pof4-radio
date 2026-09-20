@@ -16,13 +16,6 @@ export function clockOf(ms: number): string {
   return `${h % 12 || 12}:${String(m % 60).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
 }
 
-/** The model's reasoning, when the answer carries any. */
-const thinkingOf = (content: { type: string; thinking?: string }[]) =>
-  content
-    .filter((b): b is { type: "thinking"; thinking: string } => b.type === "thinking")
-    .map((b) => b.thinking)
-    .join("\n\n");
-
 export interface WriterReceipt {
   version: "script-2";
   model: string | null;
@@ -33,16 +26,13 @@ export interface WriterReceipt {
   elapsedMs: number;
 }
 
-export async function produceWrite(
-  input: WriteInput,
-): Promise<{ written: Written; thinking: string; receipt: WriterReceipt }> {
+export async function produceWrite(input: WriteInput): Promise<{ written: Written; receipt: WriterReceipt }> {
   const started = Date.now();
   const { system: instructions, brief } = prompts.write.render(input);
   if (input.plan.fixedWords !== undefined) {
     const written = { words: input.plan.fixedWords, leadLine: "" };
     return {
       written,
-      thinking: "",
       receipt: {
         version: "script-2",
         model: null,
@@ -74,7 +64,6 @@ export async function produceWrite(
       throw new Error(`Claude omitted publisher attribution: ${headline.source}`);
   return {
     written,
-    thinking: thinkingOf(res.content),
     receipt: {
       version: "script-2",
       model,

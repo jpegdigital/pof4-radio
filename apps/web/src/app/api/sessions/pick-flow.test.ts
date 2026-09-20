@@ -22,8 +22,7 @@ const boundary = vi.hoisted(() => ({
   query: vi.fn<(sql: string, values?: unknown[]) => Promise<{ rows: unknown[] }>>(),
   release: vi.fn(),
   pick: vi.fn<(input: PickInput, config: { apiKey: string; model: string }) => Promise<PickReceipt>>(),
-  write:
-    vi.fn<(input: WriteInput) => Promise<{ written: Written; thinking: string; receipt?: WriterReceipt }>>(),
+  write: vi.fn<(input: WriteInput) => Promise<{ written: Written; receipt?: WriterReceipt }>>(),
   plan: vi.fn<
     (input: PlanningInput, config: { apiKey: string; model: string }) => Promise<PlanningReceipt>
   >(),
@@ -188,7 +187,6 @@ beforeEach(() => {
   );
   boundary.write.mockImplementation(({ plan }) =>
     Promise.resolve({
-      thinking: "",
       written: {
         words: plan.fixedWords ?? "A little sunshine to keep this show moving.",
         leadLine: plan.kind === "break" ? "Here is Song." : "",
@@ -224,8 +222,8 @@ beforeEach(() => {
         lead_line: values[13] as string,
         treatment: values[15] as string,
         legal_id: values[14] as string | null,
-        news: values[20] ? (JSON.parse(values[20] as string) as SlotRow["news"]) : null,
-        generation: JSON.parse(values[22] as string) as SlotGeneration,
+        news: values[19] ? (JSON.parse(values[19] as string) as SlotRow["news"]) : null,
+        generation: JSON.parse(values[21] as string) as SlotGeneration,
       };
       return Promise.resolve({ rows: [row] });
     }
@@ -262,7 +260,7 @@ describe("slot selection has one path", () => {
     expect(boundary.write.mock.calls[0][0]).not.toHaveProperty("hits");
     const update = boundary.query.mock.calls.find(([sql]) => String(sql).includes("qobuz_id = $2, clock_ms"));
     expect(update?.[1]?.[1]).toBe("chosen");
-    expect(JSON.parse(update?.[1]?.[21] as string)).toEqual({ ...receipt(), planning: planningReceipt() });
+    expect(JSON.parse(update?.[1]?.[20] as string)).toEqual({ ...receipt(), planning: planningReceipt() });
   });
 
   it.each(["Jev HTTP 500", "Jev timed out", "Invalid Jev response"])(
@@ -299,7 +297,7 @@ describe("slot selection has one path", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
   it("invalid copy does not change Jev's action", async () => {
-    boundary.write.mockResolvedValue({ thinking: "", written: { words: "", leadLine: "" } });
+    boundary.write.mockResolvedValue({ written: { words: "", leadLine: "" } });
     expect((await call()).status).toBe(502);
     expect(row.qobuz_id).toBeNull();
     expect(boundary.plan).toHaveBeenCalledTimes(1);
@@ -320,7 +318,7 @@ describe("slot selection has one path", () => {
     expect(boundary.put).not.toHaveBeenCalled();
     expect(boundary.query).toHaveBeenCalledWith("rollback to savepoint generation_ready");
     expect(row.generation?.selection.pick).toBe("chosen");
-    boundary.write.mockResolvedValue({ thinking: "", written: { words: "Radio.", leadLine: "" } });
+    boundary.write.mockResolvedValue({ written: { words: "Radio.", leadLine: "" } });
     expect((await call()).status).toBe(200);
     expect(boundary.pick).toHaveBeenCalledTimes(1);
     expect(boundary.plan).toHaveBeenCalledTimes(1);
@@ -521,7 +519,7 @@ describe("prepared news/weather has one production path", () => {
       usage: {},
       elapsedMs: 1,
     };
-    boundary.write.mockResolvedValueOnce({ written: bad, thinking: "", receipt });
+    boundary.write.mockResolvedValueOnce({ written: bad, receipt });
     expect((await call()).status).toBe(502);
     expect(row.qobuz_id).toBeNull();
     expect(row.generation?.attempts?.[0].writer).toEqual(receipt);

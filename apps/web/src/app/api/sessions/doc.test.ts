@@ -4,7 +4,7 @@ import { type Hit, type SlotRow, slotDoc, statusOf } from "./doc";
 /**
  * The slot on the wire: status from presence, the pick's tags from the slot's own hits, `held`
  * from the set the caller read, and nothing the browser has no use for — the hits once picked,
- * the writer's thinking, the clock the write was made at.
+ * the clock the write was made at.
  */
 
 const hits: Hit[] = [
@@ -136,10 +136,9 @@ describe("slotDoc — written and after", () => {
     expect(slotDoc(written, new Set(["a"])).held).toBe(false);
   });
 
-  it("never carries the hits, the thinking or the clock", () => {
+  it("never carries the hits or the clock", () => {
     const d = slotDoc(voiced, new Set()) as unknown as Record<string, unknown>;
     expect(d).not.toHaveProperty("hits");
-    expect(d).not.toHaveProperty("thinking");
     expect(d).not.toHaveProperty("clock_ms");
     expect(d).not.toHaveProperty("clockMs");
   });

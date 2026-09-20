@@ -149,7 +149,6 @@ track   ─ one row per record held in the bucket, keyed by Qobuz id; a slot poi
   fallback      jsonb,                     -- {from, to, reason} when a house rule stepped the kind down
   record_under_ms integer,                 -- timing, breaks: how far before the voice ends the record starts under it
   voice_in_ms   integer,                   -- timing, talkups: how far into the record the voice comes in
-  thinking      text,                      -- the writer's reasoning, a receipt; never on the wire
 
   -- the clip
   clip_key      text,                      -- bucket key; written only after the PUT succeeded

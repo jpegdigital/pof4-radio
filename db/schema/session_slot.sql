@@ -40,7 +40,6 @@ create table session_slot (
   fallback        jsonb,                               -- {from, to, reason} when a rule stepped the kind down
   record_under_ms integer,                             -- timing, breaks: how far before the voice ends the song starts under it
   voice_in_ms     integer,                             -- timing, talk-ups: how far into the song the voice comes in
-  thinking        text,                                -- receipt; never on the wire
   news            jsonb,                               -- selected evidence, expiry, fixed news words and previous takes
 
   -- the clip

@@ -6,7 +6,7 @@ import type { NewsReceipt } from "@/lib/news";
  * The slot on the wire, shared by the snapshot and the rungs: status derived from presence
  * (never stored), the pick's tags read from the slot's own hits (never a join to `track`),
  * `held` from the set of track ids the caller read, and absent columns as absent keys. Never
- * on the wire: the hits (the browser has no use for them), the writer's thinking, the clock
+ * on the wire: the hits (the browser has no use for them), the clock
  * the write was made at, audio.
  */
 
