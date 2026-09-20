@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseVoices, ttsBody, VOICE_DEFAULTS, VoiceSchema, VoicesSchema } from "./voices";
+import { parseVoices, VOICE_DEFAULTS, VoiceSchema, VoicesSchema } from "./voices";
 
 const wolfe = { id: "mR1", name: "David Wolfe", gender: "male", ...VOICE_DEFAULTS, speed: 1.15 } as const;
 
@@ -32,21 +32,5 @@ describe("VoicesSchema / parseVoices", () => {
   it("throws on a malformed row", () => {
     expect(() => parseVoices("[{}]")).toThrow();
     expect(() => parseVoices("nope")).toThrow();
-  });
-});
-
-describe("ttsBody", () => {
-  it("assembles the ElevenLabs body from the voice", () => {
-    expect(ttsBody(wolfe, "Hello, night owls.")).toEqual({
-      text: "Hello, night owls.",
-      model_id: "eleven_v3",
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-        style: 0,
-        speed: 1.15,
-        use_speaker_boost: true,
-      },
-    });
   });
 });

@@ -34,6 +34,51 @@ describe("headline evidence", () => {
     const google = NEWS_SOURCES.find((s) => s.id === "google-local")!;
     expect(parseFeed(feed(), google, now)[0].evidence).toBe("");
   });
+  describe("an Atom feed", () => {
+    const entry = (links: string, rest = "<title>A show moves indoors</title>") =>
+      `<entry>${rest}${links}<id>tag:kxt.org,2026:show</id><updated>2026-09-06T17:00:00Z</updated><summary>The venue says the show moves indoors.</summary></entry>`;
+    const atom = (entries: string) =>
+      `<feed xmlns="http://www.w3.org/2005/Atom"><title>KXT</title>${entries}</feed>`;
+
+    it.each([
+      [
+        "the-alternate-among-rels",
+        '<link rel="self" href="https://kxt.org/feed/"/><link rel="alternate" href="https://kxt.org/a?utm_source=rss"/>',
+        "https://kxt.org/a",
+      ],
+      ["a-link-with-no-rel", '<link href="https://kxt.org/b"/>', "https://kxt.org/b"],
+      ["only-a-self-link", '<link rel="self" href="https://kxt.org/feed/"/>', ""],
+      ["no-link", "", ""],
+    ])("the article link: %s", (_, give, want) => {
+      expect(parseFeed(atom(entry(give)), source, now)[0].url).toBe(want);
+    });
+
+    it("reads the time from updated, the evidence from the summary, the publisher from the roster", () => {
+      const [a] = parseFeed(atom(entry('<link href="https://kxt.org/b"/>')), source, now);
+      expect(a).toMatchObject({
+        title: "A show moves indoors",
+        source: "KXT",
+        at: "2026-09-06T17:00:00.000Z",
+        evidence: "The venue says the show moves indoors.",
+      });
+    });
+
+    it("an entry with no link is still told apart by its id", () => {
+      const other = entry("").replace("2026:show", "2026:other");
+      const [a, b] = parseFeed(atom(entry("") + other), source, now);
+      expect(a.id).not.toBe(b.id);
+    });
+  });
+
+  it("an entity in an RSS link is decoded before the URL is read", () => {
+    const xml = feed(item().replace("?utm_source=rss", "?id=7&amp;page=2"));
+    expect(parseFeed(xml, source, now)[0].url).toBe("https://kxt.org/2026/09/show/?id=7&page=2");
+  });
+  it("an item with no title is skipped", () => {
+    const xml = feed(item().replace(/<title>.*?<\/title>/, "<title></title>") + item("Kept"));
+    expect(parseFeed(xml, source, now).map((a) => a.title)).toEqual(["Kept"]);
+  });
+
   it.each([
     ["unknown", "", 0],
     ["old", "2026-08-01T00:00:00Z", 0],

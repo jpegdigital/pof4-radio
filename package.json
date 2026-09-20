@@ -19,6 +19,7 @@
     "format:check": "biome format .",
     "prep:news": "op run --env-file=.env.op -- pnpm --filter web prep:news",
     "prep:weather": "op run --env-file=.env.op -- pnpm --filter web prep:weather",
+    "complexity": "biome lint --only=complexity/noExcessiveCognitiveComplexity --max-diagnostics=200 . && eslint --rule \"complexity: [1, 10]\" .",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",

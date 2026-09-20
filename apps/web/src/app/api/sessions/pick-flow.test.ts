@@ -10,6 +10,7 @@ import {
   PLANNING_VERSION,
 } from "./planning";
 import { NEWS_DEFAULTS } from "../../../lib/news";
+import { ElevenLabsError, type speak, ttsBody } from "../../../lib/elevenlabs";
 import type { PreparedEntry, PreparedHeadline, PreparedWeather } from "../../../lib/prepared";
 import type { SlotGeneration } from "./generation";
 import type { SlotRow } from "./doc";
@@ -27,6 +28,7 @@ const boundary = vi.hoisted(() => ({
     (input: PlanningInput, config: { apiKey: string; model: string }) => Promise<PlanningReceipt>
   >(),
   put: vi.fn(),
+  speak: vi.fn<typeof speak>(),
   news: vi.fn<() => Promise<PreparedEntry<PreparedHeadline[]> | null>>(),
   weather: vi.fn<() => Promise<PreparedEntry<PreparedWeather> | null>>(),
 }));
@@ -42,6 +44,10 @@ vi.mock("@/lib/prepared", async (importOriginal) => ({
   readPreparedWeather: boundary.weather,
 }));
 vi.mock("@/lib/bucket", () => ({ bucket: () => ({ put: boundary.put }) }));
+vi.mock("@/lib/elevenlabs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/elevenlabs")>()),
+  speak: boundary.speak,
+}));
 vi.mock("@/lib/env", () => ({
   env: () => ({ ELEVENLABS_KEY: "test", TYPESAFE_API_KEY: "test", TYPESAFE_MODEL: "jev-1.13.0" }),
 }));
@@ -181,9 +187,12 @@ beforeEach(() => {
   };
   boundary.pick.mockResolvedValue(receipt());
   boundary.plan.mockResolvedValue(planningReceipt());
+  boundary.speak.mockImplementation((voice, text) =>
+    Promise.resolve({ request: ttsBody(voice, text), bytes: new Uint8Array([1, 2, 3]), elapsedMs: 1 }),
+  );
   vi.stubGlobal(
     "fetch",
-    vi.fn(() => Promise.resolve(new Response(new Uint8Array([1, 2, 3])))),
+    vi.fn(() => Promise.reject(new Error("no network in this test"))),
   );
   boundary.write.mockImplementation(({ plan }) =>
     Promise.resolve({
@@ -294,14 +303,14 @@ describe("slot selection has one path", () => {
     boundary.plan.mockResolvedValue(planningReceipt("segue"));
     expect((await call()).status).toBe(200);
     expect(boundary.write).not.toHaveBeenCalled();
-    expect(fetch).not.toHaveBeenCalled();
+    expect(boundary.speak).not.toHaveBeenCalled();
   });
   it("invalid copy does not change Jev's action", async () => {
     boundary.write.mockResolvedValue({ written: { words: "", leadLine: "" } });
     expect((await call()).status).toBe(502);
     expect(row.qobuz_id).toBeNull();
     expect(boundary.plan).toHaveBeenCalledTimes(1);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(boundary.speak).not.toHaveBeenCalled();
   });
 
   it("none fails; it does not use the first hit", async () => {
@@ -430,7 +439,7 @@ const prepareBreak = (count = "1") => {
         }),
       );
     }
-    return Promise.resolve(new Response(new Uint8Array([1, 2, 3])));
+    return Promise.reject(new Error("only Jev is on the network in this test"));
   });
 };
 describe("saved post timing reaches playback", () => {
@@ -474,20 +483,12 @@ describe("prepared news/weather has one production path", () => {
     expect(boundary.write).toHaveBeenCalledTimes(1);
     expect(boundary.write.mock.calls[0][0].headlines).toHaveLength(1);
     expect(boundary.write.mock.calls[0][0].weather).toEqual(weather);
-    expect(
-      vi
-        .mocked(fetch)
-        .mock.calls.filter(([url]) =>
-          (typeof url === "string" ? url : url instanceof URL ? url.href : url.url).includes("elevenlabs.io"),
-        ),
-    ).toHaveLength(1);
+    expect(boundary.speak).toHaveBeenCalledTimes(1);
     expect(
       vi
         .mocked(fetch)
         .mock.calls.every(([url]) =>
-          /typesafe.ai|elevenlabs.io/.test(
-            typeof url === "string" ? url : url instanceof URL ? url.href : url.url,
-          ),
+          (typeof url === "string" ? url : url instanceof URL ? url.href : url.url).includes("typesafe.ai"),
         ),
     ).toBe(true);
     expect(row.generation?.news.selected).toHaveLength(1);
@@ -536,10 +537,11 @@ describe("prepared news/weather has one production path", () => {
     boundary.plan.mockResolvedValue(planningReceipt("break_dry"));
     expect((await call()).status).toBe(200);
     expect(boundary.write.mock.calls[0][0]).toMatchObject({ headlines: [], weather: null });
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(boundary.speak).toHaveBeenCalledTimes(1);
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("a voice failure keeps the script and retry only voices it", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(new Response("failed", { status: 500 }));
+    boundary.speak.mockRejectedValueOnce(new ElevenLabsError("ElevenLabs failed (HTTP 500): failed", 500));
     expect((await call()).status).toBe(502);
     expect(row.qobuz_id).toBe("chosen");
     const kept = row.words;
@@ -553,7 +555,7 @@ describe("prepared news/weather has one production path", () => {
     await call();
     Object.assign(row.news!, { expiresAt: new Date(0).toISOString() });
     const kept = structuredClone(row);
-    vi.mocked(fetch).mockClear();
+    boundary.speak.mockClear();
     boundary.write.mockClear();
     const response = await call({ live: true });
     expect(await response.json()).toMatchObject({
@@ -562,7 +564,7 @@ describe("prepared news/weather has one production path", () => {
       legalId: kept.legal_id,
     });
     expect(row).toEqual(kept);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(boundary.speak).not.toHaveBeenCalled();
     expect(boundary.write).not.toHaveBeenCalled();
   });
   it("explicit voice retries preserve all earlier takes without reselecting or rewriting", async () => {

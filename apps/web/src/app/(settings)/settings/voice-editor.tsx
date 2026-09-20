@@ -417,7 +417,6 @@ function Preview({ voice }: { voice: Voice }) {
         >
           {status.kind === "loading" ? "Voicing…" : "▶ Hear it"}
         </button>
-        {/* biome-ignore lint/a11y/useMediaCaption: a generated voice clip, no captions to give */}
         <audio ref={audio} controls className="h-8 max-w-xs flex-1" />
         {status.kind === "error" && <span className="text-sm text-red-400">{status.message}</span>}
         {voice.modelId === "eleven_v3" && (

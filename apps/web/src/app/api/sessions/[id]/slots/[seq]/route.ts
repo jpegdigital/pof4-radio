@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { bucket } from "@/lib/bucket";
 import { pool } from "@/lib/db";
+import { speak } from "@/lib/elevenlabs";
 import { env } from "@/lib/env";
 import { loadClock, loadIdentity, loadNews, loadVoices } from "@/lib/settings";
 import type { NewsReceipt } from "@/lib/news";
 import { readPreparedNews, readPreparedWeather } from "@/lib/prepared";
-import { ttsBody } from "@/lib/voices";
 import { SLOT_COLUMNS, type SlotRow, slotDoc } from "../../../doc";
 import { chooseHeadlines, type HeadlineHistory } from "../../../headline-choice";
 import type { SlotGeneration } from "../../../generation";
@@ -128,8 +128,6 @@ export async function POST(req: Request, ctx: Route) {
     }
 
     const store = bucket();
-
-    const key = env().ELEVENLABS_KEY;
 
     if (slot.qobuz_id === null) {
       let generation = slot.generation;
@@ -447,23 +445,9 @@ export async function POST(req: Request, ctx: Route) {
 
         if (!voice) throw new Error("no voice on the roster (settings.voices)");
 
-        const voiceRequest = ttsBody(voice, said);
-
-        const res = await fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice.id)}?output_format=mp3_44100_128`,
-          {
-            method: "POST",
-            headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
-
-            body: JSON.stringify(voiceRequest),
-            signal: AbortSignal.timeout(30_000),
-          },
-        );
-
-        if (!res.ok)
-          throw new Error(`elevenlabs ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
-
-        const bytes = new Uint8Array(await res.arrayBuffer());
+        const { request: voiceRequest, bytes } = await speak(voice, said, {
+          apiKey: env().ELEVENLABS_KEY,
+        });
 
         const clipKey = clipKeyOf(id, seq, slot.voiced_at ? crypto.randomUUID() : null);
 

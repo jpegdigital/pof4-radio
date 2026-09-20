@@ -81,6 +81,35 @@ export function canonicalUrl(raw: string): string {
   }
 }
 
+/**
+ * An item's title and who published it: the item's own source, else the roster's name. A discovery feed
+ * writes `Headline - Publisher`, so there the named publisher's suffix comes off, else the last dash splits.
+ */
+function titleAndPublisher(
+  raw: string,
+  named: string,
+  source: NewsSource,
+): { title: string; publisher: string } {
+  const publisher = named || source.name;
+  if (!source.discoveryOnly) return { title: raw, publisher };
+  if (raw.endsWith(` - ${publisher}`)) return { title: raw.slice(0, -(publisher.length + 3)), publisher };
+  const dash = named ? -1 : raw.lastIndexOf(" - ");
+  if (dash > 0) return { title: raw.slice(0, dash), publisher: raw.slice(dash + 3) };
+  return { title: raw, publisher };
+}
+
+/** The item's article link as written: RSS's text, or Atom's href — the alternate when rels are given. */
+function linkOf(link: unknown): string {
+  const links: unknown[] = Array.isArray(link) ? link : [link];
+  const found = links.find(
+    (l: unknown) =>
+      typeof l === "string" ||
+      (l && typeof l === "object" && (!("@_rel" in l) || l["@_rel"] === "alternate")),
+  );
+  if (typeof found === "string") return decode(found);
+  return found && typeof found === "object" && "@_href" in found ? valueOf(found["@_href"]) : "";
+}
+
 /** XML entities/DTDs are disabled in the parser. Only bounded plain text crosses into a prompt. */
 export function parseFeed(xml: string, source: NewsSource, now: number): Article[] {
   if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error("DTD/entities are not accepted in news feeds");
@@ -97,31 +126,8 @@ export function parseFeed(xml: string, source: NewsSource, now: number): Article
   return (Array.isArray(items) ? items : [items]).slice(0, HEADLINES_PER_FEED).flatMap((item): Article[] => {
     const raw = plain(item.title);
     if (!raw) return [];
-    let publisher = plain(item.source) || source.name;
-    let title = raw;
-    if (source.discoveryOnly) {
-      if (raw.endsWith(` - ${publisher}`)) title = raw.slice(0, -(publisher.length + 3));
-      else if (!plain(item.source)) {
-        const dash = raw.lastIndexOf(" - ");
-        if (dash > 0) {
-          title = raw.slice(0, dash);
-          publisher = raw.slice(dash + 3);
-        }
-      }
-    }
-    const links: unknown[] = Array.isArray(item.link) ? item.link : [item.link];
-    const link = links.find(
-      (l: unknown) =>
-        typeof l === "string" ||
-        (l && typeof l === "object" && (!("@_rel" in l) || l["@_rel"] === "alternate")),
-    );
-    const url = canonicalUrl(
-      typeof link === "string"
-        ? decode(link)
-        : link && typeof link === "object" && "@_href" in link
-          ? valueOf(link["@_href"])
-          : "",
-    );
+    const { title, publisher } = titleAndPublisher(raw, plain(item.source), source);
+    const url = canonicalUrl(linkOf(item.link));
     const evidence = source.discoveryOnly
       ? ""
       : plain(item["content:encoded"] || item.content || item.description || item.summary).slice(
@@ -161,6 +167,69 @@ export function eligibleArticles(articles: Article[], now: number): Article[] {
   });
 }
 
+/** Where a redirect may go: https on the publisher's own host (www alias allowed), nothing else. */
+function redirectTarget(location: string | null, from: string, feedUrl: string): string {
+  const next = location ? new URL(location, from) : null;
+  if (
+    !next ||
+    next.protocol !== "https:" ||
+    next.port ||
+    next.username ||
+    next.password ||
+    next.hostname.replace(/^www./, "") !== new URL(feedUrl).hostname.replace(/^www./, "")
+  )
+    throw new Error("news redirect outside publisher");
+  return next.href;
+}
+
+/** The body as text, refused past the cap; the reader is always let go. */
+async function readBody(res: Response): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("empty news response body");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_BODY_BYTES) throw new Error("news response too large");
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** One feed's XML. All destinations are code-owned; redirects are followed by hand and stay with the publisher. */
+async function fetchFeed(
+  sourceId: string,
+  url: string,
+  { signal, fetchFn }: { signal: AbortSignal; fetchFn: typeof fetch },
+): Promise<string> {
+  const headers = {
+    "User-Agent": USER_AGENT,
+    Accept: "application/rss+xml, application/atom+xml, application/xml",
+  };
+  let target = url;
+  let res: Response | undefined;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    res = await fetchFn(target, { headers, signal, redirect: "manual", cache: "no-store" });
+    if (!REDIRECT_STATUSES.includes(res.status)) break;
+    const next = redirectTarget(res.headers.get("location"), target, url);
+    await res.body?.cancel();
+    target = next;
+  }
+  if (!res) throw new Error("no news response");
+  if (!res.ok) {
+    await res.body?.cancel();
+    throw new Error(`${sourceId} HTTP ${res.status}`);
+  }
+  return readBody(res);
+}
+
 /** One read of the configured sources, for the news worker. Nothing is kept between reads. */
 export async function readHeadlines(
   config: NewsConfig,
@@ -196,53 +265,8 @@ export async function readHeadlines(
             ? `${source.url}${encodeURIComponent(`${config.city},${config.region}`)}?hl=en-US&gl=US&ceid=US:en`
             : source.url;
         try {
-          const headers = {
-            "User-Agent": USER_AGENT,
-            Accept: "application/rss+xml, application/atom+xml, application/xml",
-          };
-          // All destinations are code-owned. Redirects stay on the same publisher host (www alias allowed).
-          let target = url;
-          let res: Response | undefined;
           const signal = AbortSignal.any([deadline, AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS)]);
-          for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-            res = await fetchFn(target, { headers, signal, redirect: "manual", cache: "no-store" });
-            if (!REDIRECT_STATUSES.includes(res.status)) break;
-            const location = res.headers.get("location");
-            const next = location ? new URL(location, target) : null;
-            if (
-              !next ||
-              next.protocol !== "https:" ||
-              next.port ||
-              next.username ||
-              next.password ||
-              next.hostname.replace(/^www./, "") !== new URL(url).hostname.replace(/^www./, "")
-            )
-              throw new Error("news redirect outside publisher");
-            await res.body?.cancel();
-            target = next.href;
-          }
-          if (!res) throw new Error("no news response");
-          if (!res.ok) {
-            await res.body?.cancel();
-            throw new Error(`${source.id} HTTP ${res.status}`);
-          }
-          const reader = res.body?.getReader();
-          if (!reader) throw new Error("empty news response body");
-          const chunks: Uint8Array[] = [];
-          let size = 0;
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              size += value.byteLength;
-              if (size > MAX_BODY_BYTES) throw new Error("news response too large");
-              chunks.push(value);
-            }
-          } finally {
-            await reader.cancel().catch(() => {});
-            reader.releaseLock();
-          }
-          const found = parseFeed(Buffer.concat(chunks).toString("utf8"), source, clock());
+          const found = parseFeed(await fetchFeed(source.id, url, { signal, fetchFn }), source, clock());
           articles.push(...found);
           statuses.push({
             id: source.id,

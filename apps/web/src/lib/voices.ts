@@ -5,8 +5,8 @@ import { z } from "zod";
  * /settings and read per request (settings.ts) by the home (names for the picker), the audio
  * rung (the tuning for ElevenLabs) and the voice preview. Each voice is an ElevenLabs voice id
  * plus the tuned settings for one model. This is the one shape every side shares: what a voice
- * is, which models exist and which knobs each takes, and how a voice plus a line of talk becomes
- * the ElevenLabs request body. Pure, so the control room's form can import it.
+ * is, which models exist and which knobs each takes. How a voice plus a line of talk becomes
+ * audio is `elevenlabs.ts`. Pure, so the control room's form can import it.
  */
 
 export const VOICES_KEY = "voices";
@@ -75,19 +75,4 @@ export const VOICE_DEFAULTS: Omit<Voice, "id" | "name" | "gender"> = {
 /** Parse the `settings.voices` row. Throws on a malformed row — a fault, not a fallback. */
 export function parseVoices(json: string): Voice[] {
   return VoicesSchema.parse(JSON.parse(json));
-}
-
-/** The ElevenLabs text-to-speech request body for one line of talk in this voice. */
-export function ttsBody(voice: Voice, text: string) {
-  return {
-    text,
-    model_id: voice.modelId,
-    voice_settings: {
-      stability: voice.stability,
-      similarity_boost: voice.similarityBoost,
-      style: voice.style,
-      speed: voice.speed,
-      use_speaker_boost: voice.speakerBoost,
-    },
-  };
 }

@@ -74,7 +74,7 @@ export function Player({
       <div className="flex flex-col items-center gap-4 text-center">
         <div className="player-art">
           {pick.image ? (
-            // biome-ignore lint/performance/noImgElement: album art is a remote Qobuz CDN url
+            // eslint-disable-next-line @next/next/no-img-element -- album art is a remote Qobuz CDN url
             <img
               src={pick.image}
               alt={`${pick.album} album cover`}

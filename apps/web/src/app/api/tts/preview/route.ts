@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { ElevenLabsError, speakStream } from "@/lib/elevenlabs";
 import { env } from "@/lib/env";
-import { ttsBody, VoiceSchema } from "@/lib/voices";
+import { VoiceSchema } from "@/lib/voices";
 
 /**
  * The voice form's "hear it": a line of talk in a voice as it stands in the form, saved or not,
@@ -15,26 +16,13 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.issues[0]?.message ?? "invalid body" }, { status: 400 });
   }
   const { voice, text } = parsed.data;
-  const upstream = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice.id)}/stream?output_format=mp3_44100_128`,
-    {
-      method: "POST",
-      headers: {
-        "xi-api-key": env().ELEVENLABS_KEY,
-        "Content-Type": "application/json",
-        Accept: "audio/mpeg",
-      },
-      body: JSON.stringify(ttsBody(voice, text)),
-    },
-  );
-  if (!upstream.ok || !upstream.body) {
-    const detail = await upstream.text().catch(() => "");
-    return Response.json(
-      { error: `elevenlabs ${upstream.status}: ${detail.slice(0, 300)}` },
-      { status: 502 },
-    );
+  try {
+    const audio = await speakStream(voice, text, { apiKey: env().ELEVENLABS_KEY });
+    return new Response(audio, {
+      headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
+    });
+  } catch (err) {
+    if (!(err instanceof ElevenLabsError)) throw err;
+    return Response.json({ error: err.message }, { status: 502 });
   }
-  return new Response(upstream.body, {
-    headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
-  });
 }

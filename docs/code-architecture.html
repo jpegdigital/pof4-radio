@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radio — code architecture, graded</title>
+<style>
+  :root { color-scheme: light dark;
+    --bg:#fbfaf7; --fg:#1f1d1a; --muted:#6b665e; --line:#e4e0d8; --code:#f2efe8; --accent:#b4531a; --nav:#f5f2ec;
+    --amber:#b45309; --amberbg:#fdf3e2; --good:#166534; --goodbg:#e8f3e8; --bad:#b91c1c; --badbg:#fde8e8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161513; --fg:#e8e4dc; --muted:#a09a90; --line:#2c2a26; --code:#211f1c; --accent:#f0a06a; --nav:#1c1a17;
+    --amber:#fbbf24; --amberbg:#3a2a10; --good:#86efac; --goodbg:#122a17; --bad:#fca5a5; --badbg:#3a1414; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 16px/1.6 Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  .wrap { display:grid; grid-template-columns: 260px minmax(0,1fr); min-height:100vh; }
+  nav { position:sticky; top:0; height:100vh; overflow:auto; padding:28px 20px; background:var(--nav); border-right:1px solid var(--line);
+        font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  nav .t { font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:12px; font-size:11px; }
+  nav a { display:block; color:var(--fg); text-decoration:none; padding:3px 0; }
+  nav a.l3 { padding-left:14px; color:var(--muted); }
+  nav a:hover { color:var(--accent); }
+  main { padding: 48px 56px 96px; max-width: 1400px; }
+  h1 { font-size:2.2rem; line-height:1.15; margin:0 0 .3em; letter-spacing:-.01em; }
+  h2 { font-size:1.5rem; margin:2.4em 0 .6em; padding-top:.6em; border-top:1px solid var(--line); }
+  h3 { font-size:1.15rem; margin:1.8em 0 .5em; }
+  h1+p { color:var(--muted); font-style:italic; }
+  p, li { max-width: 80ch; }
+  a { color:var(--accent); }
+  code { font: 0.86em/1.5 ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; background:var(--code); padding:.1em .35em; border-radius:4px; }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:14px 16px; overflow-x:auto; font-size:.8rem; line-height:1.45; }
+  pre.mermaid { background:transparent; border:1px solid var(--line); text-align:center; overflow-x:auto; }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; font-size:.86rem; margin:1em 0; font-family: ui-sans-serif, system-ui, sans-serif; line-height:1.45; }
+  th, td { text-align:left; vertical-align:top; padding:7px 10px; border-bottom:1px solid var(--line); }
+  th { font: 600 .74rem ui-sans-serif, system-ui; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); white-space:nowrap; }
+  td.c { text-align:center; font-weight:700; white-space:nowrap; }
+  .note { border-left:3px solid var(--accent); padding:.4em 1em; margin:1.2em 0; background:var(--code); border-radius:0 8px 8px 0; }
+  .tag { display:inline-block; font: 11px/1.6 ui-sans-serif, system-ui; border-radius:999px; padding:0 .7em; vertical-align:2px; letter-spacing:.04em; white-space:nowrap; }
+  .ok  { color:var(--good);  background:var(--goodbg);  border:1px solid var(--good); }
+  .mid { color:var(--amber); background:var(--amberbg); border:1px solid var(--amber); }
+  .gap { color:var(--bad);   background:var(--badbg);   border:1px solid var(--bad); }
+  .by  { color:var(--muted); border:1px solid var(--muted); }
+  .p { color:var(--good); } .m { color:var(--amber); } .n { color:var(--bad); }
+  .f { border:1px solid var(--line); border-radius:8px; padding:4px 18px 10px; margin:14px 0; }
+  .f h3 { margin:.8em 0 .3em; font-size:1.05rem; }
+  .f .id { font: 600 .78rem ui-monospace, Consolas, monospace; color:var(--muted); margin-right:.5em; }
+  .f ul { margin:.4em 0; padding-left:1.2em; }
+  .f li { font-size:.92rem; }
+  .f .std { font: .8rem ui-sans-serif, system-ui; color:var(--muted); }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } nav { position:static; height:auto; } main { padding:24px 20px 64px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <div class="t">Radio — code architecture</div>
+  <a href="#method">0. Method and rubric</a>
+  <a href="#map">1. The map</a>
+  <a class="l3" href="#map-layers">Layers and imports</a>
+  <a class="l3" href="#map-departures">The edges that do not fit</a>
+  <a class="l3" href="#map-wirings">Two processes, two wirings</a>
+  <a class="l3" href="#map-rung">The slot rung, in time</a>
+  <a href="#domains">2. The domains</a>
+  <a class="l3" href="#touch">Who touches each boundary</a>
+  <a class="l3" href="#score">Scorecard</a>
+  <a class="l3" href="#notes">Per-domain notes</a>
+  <a href="#findings">3. Findings</a>
+  <a class="l3" href="#s1">S1 — structural</a>
+  <a class="l3" href="#s2">S2 — correctness risk</a>
+  <a class="l3" href="#s3">S3 — hygiene</a>
+  <a href="#tension">4. Where the two rulebooks disagree</a>
+  <a href="#keep">5. What already meets the standard</a>
+  <div class="t" style="margin-top:24px">Companion</div>
+  <a href="domain.html">domain.html — the data model</a>
+  <a href="sessions.html">sessions.html — the API dance</a>
+  <a href="../.claude/rules/coding-standards.md">coding-standards.md — the reference</a>
+</nav>
+<main>
+
+<h1>Radio — code architecture, graded</h1>
+<p>A read of the code as it stands at <code>09e56ad</code> (main, 2026-09-20), domain by domain, graded against <code>.claude/rules/coding-standards.md</code>. A survey, not a plan: it names what is there and where it departs from the standard. Nothing here has been changed.</p>
+
+<h2 id="method">0. Method and rubric</h2>
+
+<p><strong>What was read.</strong> Line by line: every file in <code>src/lib/</code> except the prompt adapters' bodies, every route handler, every producer in <code>api/sessions/</code> (<code>pick</code>, <code>planning</code>, <code>headline-choice</code>, <code>write</code>, <code>fill</code>, <code>rules</code>, <code>shapes</code>, <code>generation</code>, <code>doc</code>, <code>params</code>), the Qobuz client, <code>scripts/prep.mts</code>, the settings actions, the browser's <code>types.ts</code>. Outlined and grepped, not line-read: <code>session-view.tsx</code>, <code>use-deck.ts</code>, <code>player.tsx</code>, <code>rundown.tsx</code>, <code>plan.ts</code>, <code>transport.ts</code>, <code>headlines.ts</code>, <code>weather.ts</code>, <code>prep-news.mts</code>, <code>prep-weather.mts</code>, the editors, the tests. Grades on those are marked provisional. The import graph, the boundary touchpoints and the idiom counts are from grep over the tracked tree, tests excluded.</p>
+
+<p><strong>The rubric.</strong> Six criteria, each a clause of the coding standard. A cell is <span class="p"><b>+</b></span> meets it, <span class="m"><b>~</b></span> partly, <span class="n"><b>−</b></span> departs from it.</p>
+
+<div class="scroll">
+<table>
+<tr><th>Key</th><th>Criterion</th><th>Clause</th><th>The question asked of each domain</th></tr>
+<tr><td><b>K1</b></td><td>Containment</td><td>V — colocation, single responsibility</td><td>How many files speak to this boundary directly? One wire, or sprinkled?</td></tr>
+<tr><td><b>K2</b></td><td>Inversion</td><td>Acronyms — DI, IoC; V — explicit over implicit</td><td>Is the collaborator handed in (config, client, <code>fetchFn</code>), or reached for inside the function (<code>env()</code>, <code>pool()</code>, <code>claude()</code>)?</td></tr>
+<tr><td><b>K3</b></td><td>Failure</td><td>III; Error Handling Standards</td><td>A specific error type? A timeout on every external call? Anything swallowed or silently nulled?</td></tr>
+<tr><td><b>K4</b></td><td>Config as data</td><td>IV; VI — magic numbers</td><td>Are the knobs named constants with one source, or literals in the logic?</td></tr>
+<tr><td><b>K5</b></td><td>Types at the edge</td><td>V — type safety</td><td>Is data crossing the boundary parsed (zod), or asserted (<code>as T</code>, <code>query&lt;T&gt;</code>)?</td></tr>
+<tr><td><b>K6</b></td><td>Testability</td><td>II — mock the boundary, not the internals</td><td>Is the pure part table-tested? Can the boundary be replaced without <code>vi.mock</code> of modules?</td></tr>
+</table>
+</div>
+
+<p><strong>Tags on findings.</strong> <span class="tag gap">S1</span> structural: shapes how the code can change. <span class="tag mid">S2</span> correctness risk: can produce a wrong or lost result. <span class="tag ok">S3</span> hygiene. <span class="tag by">by design</span> marks a departure that <code>CLAUDE.md</code> chooses on purpose; those are listed because the brief was to grade against the coding standard, and collected in <a href="#tension">§4</a> so they can be decided once rather than per finding.</p>
+
+<h2 id="map">1. The map</h2>
+
+<h3 id="map-layers">Layers and imports</h3>
+<p>The intended direction, top to bottom: browser → routes → session domain → lib → the outside. One node per group of files; every arrow here is an import (or a call) that runs the right way. <code>lib/env</code> is left out: eleven files read it. Green is a boundary that meets the standard, red is where a finding in §3 lives.</p>
+
+<pre class="mermaid">
+flowchart TB
+  subgraph BR["BROWSER  app/(app)"]
+    B1["session-view.tsx 552 lines, use-deck.ts 565 lines<br/>the loop and the deck, 7 fetch sites"]
+    B2["loop, plan, transport, preparation<br/>pure, table-tested"]
+  end
+  subgraph RT["ROUTES  app/api"]
+    R1["slots/:seq POST<br/>the rung, 545 lines"]
+    R2["fill POST"]
+    R3["track, clip, snapshot,<br/>news, create"]
+  end
+  subgraph DM["SESSION DOMAIN  app/api/sessions/*.ts"]
+    D1["pick, planning, headline-choice<br/>Jev producers"]
+    D2["write, fill<br/>Claude producers"]
+    D3["qobuz.ts<br/>factory, QobuzError"]
+    D4["rules, doc, shapes, generation<br/>pure law and shapes"]
+  end
+  subgraph LB["LIB  src/lib"]
+    L1["jev<br/>askJev, readJev"]
+    L5["prompts/*<br/>typed registry"]
+    L2["claude<br/>client only"]
+    L3["bucket + sigv4"]
+    L4["db, settings, prepared"]
+  end
+  subgraph EX["OUTSIDE"]
+    TS["TypeSafe"]
+    AN["Anthropic"]
+    QB["Qobuz"]
+    S3[("Bucket")]
+    PG[("Postgres")]
+  end
+  B1 --> B2
+  B1 --> R1
+  B1 --> R2
+  B1 --> R3
+  R1 --> D1
+  R1 --> D2
+  R1 --> D4
+  R2 --> D2
+  R2 --> D3
+  R3 --> D3
+  R3 --> D4
+  D1 --> L1
+  D1 --> L5
+  D2 --> L5
+  D2 --> L2
+  R1 --> L3
+  R3 --> L3
+  R1 --> L4
+  R2 --> L4
+  R3 --> L4
+  L1 --> TS
+  L2 --> AN
+  D3 --> QB
+  L3 --> S3
+  L4 --> PG
+  classDef bad fill:#fde8e8,stroke:#b91c1c,color:#1f1d1a
+  classDef good fill:#e8f3e8,stroke:#166534,color:#1f1d1a
+  class R1,D2,B1 bad
+  class L1,L3,B2,D1 good
+</pre>
+
+<h3 id="map-departures">The edges that do not fit</h3>
+<p>Everything the map above leaves out: imports that run upward, calls that skip the layer built for them, and second copies of a wiring. Each is a finding in §3.</p>
+
+<pre class="mermaid">
+flowchart LR
+  LP["lib/prompts/*"] -. "F4  imports Hit, MixPlan, Article, Qobuz types,<br/>and the zod shapes Written, Proposal" .-> DS["app/api/sessions/*"]
+  DC["write.ts, fill.ts"] -. "F5  reach for claude() and env()<br/>inside the producer" .-> LC["lib/claude, lib/env"]
+  RS["slots/:seq route"] -. "F1  inline fetch, 30 s" .-> EL["ElevenLabs"]
+  RP["tts/preview route"] -. "F1 F3  inline fetch, no timeout" .-> EL
+  RS -. "F2  17 SQL statements at the call site" .-> PG[("Postgres")]
+  RS -. "F6  holds one connection,<br/>draws more from the same pool of 5" .-> PG
+  WP["scripts/prep*.mts"] -. "own pg.Pool, own process.env" .-> PG
+  WP -. "F5  own Anthropic client" .-> AN["Anthropic"]
+  WP -- "F14  the only importer of" --> DO["api/sessions/headlines.ts, weather.ts"]
+  BT["browser types.ts"] -. "F11  hand copy of SlotDoc, Chart, SlotKind" .-> DD["api/sessions/doc.ts, rules.ts"]
+</pre>
+
+<h3 id="map-wirings">Two processes, two wirings</h3>
+<p>The web process and the cron workers reach the same three boundaries through different code. The web side has the singletons and the zod'd env; the worker side builds its own. The plain-Node constraint (no <code>@/</code> alias, no <code>next</code>) is why; the cost is that the better-defended pool is the worker's.</p>
+
+<div class="scroll">
+<table>
+<tr><th>Concern</th><th>Web process</th><th>Worker (<code>scripts/prep.mts</code>)</th></tr>
+<tr><td>Env</td><td><code>lib/env.ts</code>: zod, one place, boot check in <code>instrumentation-node.ts</code></td><td><code>process.env.X</code> with <code>!</code> at :17–20, :68–69</td></tr>
+<tr><td>Postgres</td><td><code>lib/db.ts:11</code> — <code>max: 5</code>, no connection, statement or query timeout</td><td><code>prep.mts:31–37</code> — <code>max: 1</code>, <code>connectionTimeoutMillis</code>, <code>statement_timeout</code>, <code>query_timeout</code>, advisory lock, watchdog</td></tr>
+<tr><td>Claude</td><td><code>lib/claude.ts</code> singleton, <code>maxRetries: 0</code></td><td><code>prep-news.mts:75</code> <code>new Anthropic(...)</code>, key handed in as an argument</td></tr>
+<tr><td>News settings row</td><td><code>lib/settings.ts:46</code> <code>loadNews()</code></td><td>same select and parse, inline, <code>prep.mts:54–57</code></td></tr>
+<tr><td>The Dallas rule</td><td><code>lib/prepared.ts:119–125</code> → returns <code>null</code></td><td><code>prep.mts:58–63</code> → throws; and a third copy at <code>headlines.ts:187</code></td></tr>
+</table>
+</div>
+
+<h3 id="map-rung">The slot rung, in time</h3>
+<p><code>POST /api/sessions/:id/slots/:seq</code> is where every domain meets. One pooled connection and one row lock are held from the first line to the last; everything inside the shaded band happens while they are held.</p>
+
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant B as Browser
+  participant R as slots/:seq route
+  participant PG as Postgres (client, in tx)
+  participant P2 as Postgres (pool, 2nd conn)
+  participant J as TypeSafe (Jev)
+  participant C as Anthropic
+  participant E as ElevenLabs
+  participant S as Bucket
+
+  B->>R: POST { clockMs, again? }
+  R->>PG: begin, select session FOR UPDATE NOWAIT
+  Note over R,PG: 55P03 is a 409. Lock and connection held from here.
+  rect rgba(180, 83, 26, 0.10)
+    R->>PG: slot row
+    R->>P2: loadClock, loadIdentity, loadVoices, loadNews
+    Note over R,P2: more connections from the same pool of 5 (F6)
+    R->>PG: last break, recent 3, played, previous generations
+    R->>PG: readPreparedNews, readPreparedWeather
+    par recording
+      R->>J: producePick
+    and headlines
+      R->>J: chooseHeadlines
+    end
+    R->>J: producePlan: chart (5 questions), then mix (1 question)
+    R->>PG: update generation, SAVEPOINT generation_ready
+    R->>C: produceWrite (skipped on segue or fixedWords)
+    Note over R,C: attribution check throws before the receipt returns (F9)
+    R->>R: checkSlot, build NewsReceipt inline
+    R->>PG: update 22 columns, SAVEPOINT script_ready
+    R->>P2: loadVoices (again)
+    R->>E: inline fetch, 30 s timeout
+    R->>S: put clip
+    R->>PG: update clip_key, voiced_at, generation.takes
+  end
+  R->>PG: commit
+  R-->>B: SlotDoc, or 502 for any failure at all
+</pre>
+
+<h2 id="domains">2. The domains</h2>
+
+<h3 id="touch">Who touches each boundary</h3>
+<p>The answer to "is it sprinkled". Files that speak to the boundary directly, tests and smoke scripts excluded unless noted.</p>
+
+<div class="scroll">
+<table>
+<tr><th>Boundary</th><th>The wire</th><th>Direct callers</th><th>Reading</th></tr>
+<tr><td>TypeSafe / Jev</td><td><code>lib/jev.ts</code> — 1 <code>fetch</code></td><td><code>pick.ts</code>, <code>planning.ts</code>, <code>headline-choice.ts</code></td><td><span class="tag ok">contained</span> one wire, three producers, all in one folder</td></tr>
+<tr><td>Bucket</td><td><code>lib/bucket.ts</code> + <code>sigv4.ts</code> — 3 <code>fetch</code></td><td>slot, track, clip routes</td><td><span class="tag ok">contained</span> behind an interface</td></tr>
+<tr><td>Qobuz</td><td><code>api/sessions/qobuz.ts</code> — 4 <code>fetch</code></td><td><code>fill.ts</code> (handed in), fill route and track route (construct it)</td><td><span class="tag ok">contained</span> constructed in 2 places from the same 3 env vars</td></tr>
+<tr><td>Anthropic</td><td><code>lib/claude.ts</code> (client only)</td><td><code>write.ts</code>, <code>fill.ts</code>, <code>scripts/prep-news.mts</code> (own client)</td><td><span class="tag mid">split</span> three call sites, three sets of call options, two clients</td></tr>
+<tr><td>ElevenLabs</td><td>none</td><td><code>slots/[seq]/route.ts:452</code>, <code>tts/preview/route.ts:18</code></td><td><span class="tag gap">no home</span> the only service without a module</td></tr>
+<tr><td>Postgres</td><td><code>lib/db.ts</code> (pool only)</td><td>14 files in <code>src</code>: 9 routes, 2 pages, <code>settings/actions.ts</code>, <code>lib/settings.ts</code>, <code>lib/prepared.ts</code>. About 45 statements; 17 in the slot route. Plus <code>prep.mts</code> (7).</td><td><span class="tag mid">sprinkled</span> <span class="tag by">by design</span></td></tr>
+<tr><td><code>process.env</code></td><td><code>lib/env.ts</code></td><td><code>env()</code> is called from 11 files. Raw <code>process.env</code>: <code>guard.ts:15</code>, <code>prompts/template.ts:69,95</code> (NODE_ENV), workers, smokes, <code>db/*.mts</code></td><td><span class="tag ok">contained</span> in the web process; a second path in the workers</td></tr>
+<tr><td>The app's own API (from the browser)</td><td>none</td><td><code>session-view.tsx</code> :67 :99 :196 :213 :293, <code>use-deck.ts</code> :271 :377, <code>home-desk.tsx:57</code>, <code>news-editor.tsx:41</code></td><td><span class="tag mid">sprinkled</span> the track POST is fired from two files</td></tr>
+<tr><td>NWS, RSS</td><td><code>scripts/prep-weather.mts:105</code>, <code>headlines.ts:208</code> (<code>fetchFn</code> handed in)</td><td>workers only</td><td><span class="tag ok">contained</span> but filed under <code>api/sessions/</code></td></tr>
+</table>
+</div>
+
+<h3 id="score">Scorecard</h3>
+
+<div class="scroll">
+<table>
+<tr><th>#</th><th>Domain</th><th>Lives in</th><th>K1</th><th>K2</th><th>K3</th><th>K4</th><th>K5</th><th>K6</th><th>Grade</th><th>Findings</th></tr>
+<tr><td>1</td><td>Jev judgments</td><td><code>lib/jev.ts</code>, <code>pick</code>, <code>planning</code>, <code>headline-choice</code></td><td class="c p">+</td><td class="c p">+</td><td class="c p">+</td><td class="c m">~</td><td class="c p">+</td><td class="c p">+</td><td class="c"><span class="tag ok">A</span></td><td>F12</td></tr>
+<tr><td>2</td><td>Bucket, SigV4</td><td><code>lib/bucket.ts</code>, <code>lib/sigv4.ts</code></td><td class="c p">+</td><td class="c p">+</td><td class="c n">−</td><td class="c p">+</td><td class="c p">+</td><td class="c p">+</td><td class="c"><span class="tag ok">A−</span></td><td>F3</td></tr>
+<tr><td>3</td><td>Env</td><td><code>lib/env.ts</code>, <code>instrumentation*.ts</code></td><td class="c p">+</td><td class="c m">~</td><td class="c p">+</td><td class="c m">~</td><td class="c p">+</td><td class="c p">+</td><td class="c"><span class="tag ok">A−</span></td><td>F5, F12</td></tr>
+<tr><td>4</td><td>Pure law and shapes</td><td><code>rules</code>, <code>doc</code>, <code>shapes</code>, <code>lib/clock</code>, browser <code>loop</code>, <code>plan</code>, <code>transport</code></td><td class="c p">+</td><td class="c p">+</td><td class="c p">+</td><td class="c m">~</td><td class="c m">~</td><td class="c p">+</td><td class="c"><span class="tag ok">A−</span></td><td>F8, F14, F16</td></tr>
+<tr><td>5</td><td>Guard</td><td><code>proxy.ts</code>, <code>lib/guard*.ts</code></td><td class="c p">+</td><td class="c p">+</td><td class="c p">+</td><td class="c n">−</td><td class="c p">+</td><td class="c p">+</td><td class="c"><span class="tag ok">A−</span></td><td>F12</td></tr>
+<tr><td>6</td><td>Prompts</td><td><code>lib/prompts/*</code>, <code>prompts/*.prompt</code></td><td class="c p">+</td><td class="c n">−</td><td class="c p">+</td><td class="c p">+</td><td class="c p">+</td><td class="c p">+</td><td class="c"><span class="tag ok">B+</span></td><td>F4</td></tr>
+<tr><td>7</td><td>Qobuz</td><td><code>api/sessions/qobuz.ts</code></td><td class="c p">+</td><td class="c p">+</td><td class="c n">−</td><td class="c p">+</td><td class="c n">−</td><td class="c p">+</td><td class="c"><span class="tag mid">B</span></td><td>F3, F8, F13</td></tr>
+<tr><td>8</td><td>Browser deck and audio <i>(provisional)</i></td><td><code>use-deck</code>, <code>plan</code>, <code>transport</code>, <code>media-session</code></td><td class="c p">+</td><td class="c m">~</td><td class="c p">+</td><td class="c p">+</td><td class="c m">~</td><td class="c p">+</td><td class="c"><span class="tag mid">B</span></td><td>F11</td></tr>
+<tr><td>9</td><td>Prepared content, workers</td><td><code>lib/prepared.ts</code>, <code>lib/news.ts</code>, <code>scripts/prep*</code>, <code>headlines</code>, <code>weather</code></td><td class="c m">~</td><td class="c p">+</td><td class="c m">~</td><td class="c n">−</td><td class="c p">+</td><td class="c p">+</td><td class="c"><span class="tag mid">B−</span></td><td>F10, F14</td></tr>
+<tr><td>10</td><td>Settings</td><td><code>lib/settings.ts</code>, <code>settings/actions.ts</code>, <code>settings/page.tsx</code></td><td class="c m">~</td><td class="c n">−</td><td class="c p">+</td><td class="c p">+</td><td class="c p">+</td><td class="c m">~</td><td class="c"><span class="tag mid">B−</span></td><td>F13</td></tr>
+<tr><td>11</td><td>Claude calls</td><td><code>lib/claude.ts</code>, <code>write.ts</code>, <code>fill.ts</code>, <code>prep-news.mts</code></td><td class="c m">~</td><td class="c n">−</td><td class="c n">−</td><td class="c n">−</td><td class="c p">+</td><td class="c m">~</td><td class="c"><span class="tag mid">C+</span></td><td>F3, F5, F9, F12</td></tr>
+<tr><td>12</td><td>Postgres access</td><td><code>lib/db.ts</code> + 14 call-site files</td><td class="c n">−</td><td class="c n">−</td><td class="c n">−</td><td class="c m">~</td><td class="c n">−</td><td class="c m">~</td><td class="c"><span class="tag mid">C</span></td><td>F3, F6, F8</td></tr>
+<tr><td>13</td><td>HTTP edge</td><td>the 9 <code>route.ts</code></td><td class="c n">−</td><td class="c m">~</td><td class="c n">−</td><td class="c m">~</td><td class="c p">+</td><td class="c n">−</td><td class="c"><span class="tag mid">C</span></td><td>F7, F13</td></tr>
+<tr><td>14</td><td>Browser API client</td><td>inline in <code>session-view</code>, <code>use-deck</code>, <code>home-desk</code></td><td class="c n">−</td><td class="c n">−</td><td class="c m">~</td><td class="c m">~</td><td class="c n">−</td><td class="c m">~</td><td class="c"><span class="tag mid">C</span></td><td>F11</td></tr>
+<tr><td>15</td><td>Slot production (the rung)</td><td><code>slots/[seq]/route.ts</code></td><td class="c n">−</td><td class="c n">−</td><td class="c m">~</td><td class="c n">−</td><td class="c m">~</td><td class="c n">−</td><td class="c"><span class="tag gap">C−</span></td><td>F2, F6, F9</td></tr>
+<tr><td>16</td><td>ElevenLabs</td><td>inline in two routes</td><td class="c n">−</td><td class="c n">−</td><td class="c m">~</td><td class="c n">−</td><td class="c m">~</td><td class="c n">−</td><td class="c"><span class="tag gap">D</span></td><td>F1, F3</td></tr>
+</table>
+</div>
+
+<h3 id="notes">Per-domain notes</h3>
+
+<p><strong>1. Jev.</strong> The reference shape in this repo. <code>lib/jev.ts</code> owns the wire (<code>askJev</code>: key, <code>timeoutMs</code>, <code>fetchFn</code> all handed in) and the law (<code>readJev</code>), with <code>JevError</code> carrying status. Each producer is three pure steps around one call: <code>xRequest</code> → <code>askJev</code> → <code>readX</code>, and the first and last are table-tested. The marks against it are small: <code>PICK_MODEL = "jev-1.13.0"</code> (<code>pick.ts:6</code>) duplicates the env default (<code>env.ts:28</code>); <code>{ apiKey, model }</code> is assembled from env in two routes; <code>planning.ts</code> carries unnamed numbers (:33 <code>5000</code>, :81 <code>8</code>, :136 <code>3000</code>, :144 <code>3</code>); <code>readChart</code> narrows Jev's strings with <code>as</code> (:29, :40, :45) where the menu already constrains them.</p>
+
+<p><strong>2. Bucket.</strong> <code>Bucket</code> interface, <code>createBucket(config)</code>, a singleton accessor on top; SigV4 is pure and tested against the AWS vectors. No timeout on any of the three verbs; failures are plain <code>Error</code> with the status in the message, so a caller cannot tell a 403 from a 500 without parsing text.</p>
+
+<p><strong>3. Env.</strong> One schema, required means required, the boot fails rather than the show. <code>env()</code> is a global accessor, and eleven files call it; where it is called from a route to build a config for something else (Jev, Qobuz) that is composition at the edge and fine, where it is called from inside a producer (<code>write.ts:47</code>, <code>fill.ts:124</code>) it is a hidden dependency (F5).</p>
+
+<p><strong>4. Pure law and shapes.</strong> <code>isBreak</code>, <code>legalIdDue</code>, <code>checkSlot</code>, <code>statusOf</code>, <code>slotDoc</code>, <code>nextMove</code>, the plan, the transport: pure, give/want tested, no I/O. Three definitions of the slot kind (<code>rules.ts:5</code>, <code>shapes.ts:21</code> unused, browser <code>types.ts:22</code>); <code>Hit</code>, <code>Chart</code>, <code>SlotKind</code>, <code>MixPlan</code> are spread over <code>doc</code>, <code>rules</code>, <code>planning</code> so that those three import each other's types in a ring (F16). <code>slotDoc</code> is pure but trusts unparsed JSONB (F8).</p>
+
+<p><strong>5. Guard.</strong> One gate in <code>proxy.ts</code>, verification pure and tested. <code>GUARD_OPEN = true</code> (<code>proxy.ts:17</code>) is a feature flag as a code constant — standard IV says data; <code>CLAUDE.md</code> already says flip it back.</p>
+
+<p><strong>6. Prompts.</strong> Strict Handlebars, declared variables checked against the zod schema at compile, blank output rejected, preview CLI on the same path. The mark is direction: nine imports run from <code>lib/prompts/</code> up into <code>app/api/sessions/</code>, and the input types of the two Claude producers are <em>defined</em> in the prompt adapters (F4).</p>
+
+<p><strong>7. Qobuz.</strong> A factory over a config, <code>QobuzError</code> with status and body, the bundle parser, the signature and the mappers pure and tested. No timeout on any of the four <code>fetch</code> calls (:299, :348, :352, :432 — the last one downloads a whole MP3). Responses are <code>JSON.parse(body) as T</code> (:304) against hand-written <code>Raw*</code> interfaces — the one un-owned API in the system is the one not parsed. The resolved app pair is cached on <code>globalThis</code> regardless of which <code>cfg</code> asked.</p>
+
+<p><strong>9. Prepared content.</strong> <code>lib/prepared.ts</code> is the best database boundary in the repo: the connection is handed in (<code>Pool | PoolClient</code>), rows are zod-parsed on read. Against it: the Dallas rule in three places with two different failure behaviours (F10); <code>headlines.ts</code> and <code>weather.ts</code> sit in <code>api/sessions/</code> though no route imports them; dead surface (F14).</p>
+
+<p><strong>10. Settings.</strong> Shapes are pure and client-safe, loaders are server-only — the split is right and documented. Four loaders repeat one select (<code>lib/settings.ts</code>), a fifth copy is in <code>prep.mts:54</code>, the page reads the table a sixth way (<code>settings/page.tsx:36</code>), and the write lives in <code>actions.ts:36</code>. <code>loadNews</code> does not name its key on a malformed row; the other two do. Roster edits are read-modify-write with no lock (single operator; noted, not graded).</p>
+
+<p><strong>11. Claude calls.</strong> Three call sites, each with its own options: <code>write.ts</code> (<code>messages.parse</code>, <code>max_tokens: 2048</code>, 60 s), <code>fill.ts</code> (<code>toolRunner</code>, <code>max_tokens: 16000</code>, no timeout given), <code>prep-news.mts</code> (own client, 6500 and 3500). No error type: a Claude failure reaches the route as whatever the SDK threw. Output is zod-held on all three, which is the strong part.</p>
+
+<p><strong>12. Postgres.</strong> The pool is one file; the SQL is everywhere, which is the house rule. Graded on what the standard asks regardless: no timeouts on the web pool, rows typed by generic assertion, connection discipline left to each route (F6), and the rung's tests have to intercept SQL strings by text (<code>pick-flow.test.ts:196</code>).</p>
+
+<p><strong>13–16.</strong> See F7, F11, F2, F1.</p>
+
+<h2 id="findings">3. Findings</h2>
+
+<h3 id="s1">S1 — structural</h3>
+
+<div class="f">
+<h3><span class="id">F1</span>ElevenLabs is the one external service with no module <span class="tag gap">S1</span></h3>
+<ul>
+<li><code>slots/[seq]/route.ts:452–466</code> and <code>tts/preview/route.ts:18–29</code> each spell out the URL, <code>output_format=mp3_44100_128</code>, the three headers and the error string. Only <code>ttsBody</code> is shared (<code>lib/voices.ts</code>).</li>
+<li>The rung's call has a 30 s timeout; the preview's has none.</li>
+<li>Failure is <code>new Error(`elevenlabs ${status}: …`)</code> — no type, truncated at 200 in one and 300 in the other.</li>
+<li>The voicing cannot be replaced in a test except by stubbing global <code>fetch</code> and matching on URL (<code>pick-flow.test.ts:405</code>).</li>
+</ul>
+<p class="std">Standard: V single responsibility; III specific error types; Error Handling — external calls MUST have timeouts. Two instances is under the WET threshold; the grade is for the missing timeout and the untyped error, and for being the odd one out next to <code>lib/jev.ts</code>.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F2</span>The slot rung is one 545-line function at four levels of abstraction <span class="tag gap">S1</span> <span class="tag by">by design</span></h3>
+<ul>
+<li>In one <code>POST</code>: HTTP parsing, the lock, 17 SQL statements, savepoint choreography, Jev orchestration, the writer, the TTS wire, the bucket put, stage timing, and four blocks of pure assembly.</li>
+<li>The pure blocks have no test of their own: headline history from previous generations (:171–180), the <code>SlotGeneration</code> record (:270–294), the <code>NewsReceipt</code> (:343–383, 40 lines), the take record (:470–488). Standard I says extract "pure judgment worth table-testing"; these qualify.</li>
+<li>Evidence of the cost: <code>pick-flow.test.ts</code> is 578 lines and needs eight <code>vi.mock</code> calls (<code>db</code>, <code>prepared</code>, <code>bucket</code>, <code>env</code>, <code>settings</code>, <code>pick</code>, <code>planning</code>, <code>write</code>), a global <code>fetch</code> stub, and a fake <code>query</code> that dispatches on SQL text. That is mocking internals, which II forbids, because there is no seam to mock at.</li>
+<li><code>loadVoices()</code> runs twice (:141, :444); <code>env().ELEVENLABS_KEY</code> is read at :132, 300 lines before its use; <code>let w;</code> at :326 is untyped.</li>
+</ul>
+<p class="std">Standard: SLAP; II mock the boundary; V one file, one sentence. <code>CLAUDE.md</code> asks for "a hot path stays one readable file" — see §4.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F3</span>External calls without a timeout <span class="tag gap">S1</span></h3>
+<div class="scroll">
+<table>
+<tr><th>Boundary</th><th>Has one</th><th>Has none</th></tr>
+<tr><td>Jev</td><td><code>jev.ts:111</code> 15 s, overridable</td><td></td></tr>
+<tr><td>Claude</td><td><code>write.ts:57</code> 60 s</td><td><code>fill.ts:122</code> tool runner, up to 7 model calls, SDK default</td></tr>
+<tr><td>ElevenLabs</td><td>rung :459 30 s</td><td><code>tts/preview/route.ts:18</code></td></tr>
+<tr><td>Qobuz</td><td></td><td><code>qobuz.ts:299</code> API, <code>:348</code> <code>:352</code> bundle scrape, <code>:432</code> CDN download</td></tr>
+<tr><td>Bucket</td><td></td><td><code>bucket.ts:63</code> <code>:70</code> <code>:86</code></td></tr>
+<tr><td>Postgres (web)</td><td></td><td><code>db.ts:11</code> — no <code>connectionTimeoutMillis</code>, <code>statement_timeout</code>, <code>query_timeout</code>; the worker pool has all three (<code>prep.mts:31–37</code>)</td></tr>
+<tr><td>RSS, NWS</td><td><code>headlines.ts:177,206</code>, <code>prep-weather.mts:110</code></td><td></td></tr>
+</table>
+</div>
+<p class="std">Standard: Error Handling — "External API calls MUST have timeouts". The browser's own 120 s and 90 s aborts are the only bound on the fill and the track pull today; the server keeps working (and holding the lock) after the browser gives up.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F4</span><code>lib/prompts</code> imports upward, and owns the producers' input types <span class="tag gap">S1</span></h3>
+<ul>
+<li>Nine imports from <code>lib/prompts/*</code> into <code>app/api/sessions/*</code>: <code>chart.ts:3</code>, <code>selection.ts:3</code>, <code>write.ts:5</code> (<code>Hit</code> from <code>doc</code>); <code>mix.ts:3</code>, <code>write.ts:6</code> (<code>MixPlan</code> from <code>planning</code>); <code>fill.ts:4</code> (Qobuz types); <code>news.ts:3</code> (<code>Article</code>). Two are runtime values, not types: <code>fill.ts:5</code> (<code>numbered</code>, <code>Proposal</code>) and <code>write.ts:7</code> (<code>Written</code>) from <code>shapes</code>.</li>
+<li>And back down: <code>shapes.ts:1</code> imports <code>lib/prompts/descriptions</code>; <code>planning.ts</code>, <code>pick.ts</code>, <code>write.ts</code>, <code>fill.ts</code> import the registry. No runtime cycle today, by one leaf file.</li>
+<li><code>WriteInput</code> and <code>FillInput</code> are declared in <code>lib/prompts/write.ts</code> and <code>lib/prompts/fill.ts</code> and re-exported by the producers (<code>write.ts:8</code>, <code>fill.ts:10</code>). <code>WriteInput</code> is also what <code>session_slot.generation.input</code> stores forever (<code>generation.ts:16</code>). So a persisted record's shape is owned by a prompt-formatting module.</li>
+</ul>
+<p class="std">Standard: dependency inversion — the general layer (<code>lib</code>) depends on the specific one (<code>app</code>). <code>CLAUDE.md</code> describes <code>lib/</code> as "app-level process concerns"; the prompt adapters are session-domain code that happens to live there.</p>
+</div>
+
+<h3 id="s2">S2 — correctness risk</h3>
+
+<div class="f">
+<h3><span class="id">F5</span>Inversion is applied to Jev and Qobuz but not to Claude <span class="tag mid">S2</span></h3>
+<ul>
+<li><code>producePick(input, { apiKey, model })</code>, <code>producePlan(…, config)</code>, <code>chooseHeadlines(…, config)</code>, <code>produceFill(q, input)</code> with Qobuz handed in, <code>readPreparedNews(db, …)</code> with the connection handed in.</li>
+<li><code>produceWrite(input)</code> reaches for <code>claude()</code> and <code>env().CLAUDE_MODEL</code> (<code>write.ts:47–48</code>); <code>produceFill</code> takes Qobuz as an argument and then reaches for Claude the same way (<code>fill.ts:122–124</code>). Two styles inside one function signature.</li>
+<li>Consequence: the Jev producers run under plain <code>node</code> in the eval scripts; the Claude producers cannot, which is why <code>prep-news.mts</code> builds its own client.</li>
+</ul>
+<p class="std">Standard: DI, IoC; V explicit over implicit.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F6</span>The rung holds one connection and draws more from the same pool of five <span class="tag mid">S2</span></h3>
+<ul>
+<li><code>route.ts:71</code> takes a client and keeps it to :543, across Jev, Claude and ElevenLabs (20–90 s). Inside that span <code>loadClock/Identity/Voices/News</code> (:138–143) and <code>loadVoices</code> (:444) go through <code>pool()</code>, i.e. other connections. The fill route does the same (:55–59).</li>
+<li><code>max: 5</code> and no acquire timeout (<code>db.ts:11</code>): five producers in flight each hold one and wait for a second that never frees. The lock-free track route and the snapshot share the pool. Latent at one listener; <code>GUARD_OPEN</code> and "friends can test" is the scenario that reaches it.</li>
+<li>The long transaction itself is the design (the row lock is the mutex) and is not the finding; the second draw is.</li>
+</ul>
+<p class="std">Standard: III fail fast — this fails by hanging.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F7</span>No error taxonomy at the HTTP edge <span class="tag mid">S2</span></h3>
+<ul>
+<li>24 sites of <code>err instanceof Error ? err.message : String(err)</code> in the tree, 8 of them in the routes. Three error types exist (<code>JevError</code>, <code>QobuzError</code>, <code>FillError</code>); routes read <code>FillError.dropped</code> and <code>QobuzError.body</code> and nothing else. <code>JevError.status</code> is never read outside its test.</li>
+<li>Status is by route, not by cause: a failed <code>insert</code> is 502 (<code>sessions/route.ts:26</code>); a missing <code>settings.clock</code> row is 500 from the snapshot and 502 from the rung and the fill; a zod failure on a stored roster is 502. 502 means "upstream failed"; the browser cannot tell "retry" from "fix /settings".</li>
+<li>Three handlers have no <code>try</code> at all — <code>clip/route.ts</code>, <code>news/route.ts</code>, <code>track</code> GET — so a bucket or SQL failure there is Next's bare 500. In the snapshot the first query sits outside the <code>try</code> (:25).</li>
+<li>Every catch is a catch-all (VI bans them by name); raw internal messages, SQL errors included, go to the client.</li>
+</ul>
+<p class="std">Standard: III specific types, catch only what you can handle; VI catch-all handlers.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F8</span>Rows and JSONB are typed by assertion; old rows are read under new types <span class="tag mid">S2</span></h3>
+<ul>
+<li><code>client.query&lt;SlotRow&gt;(…)</code> is a cast. <code>hits</code>, <code>generation</code>, <code>news</code>, <code>selection</code> are JSONB and never parsed on read. <code>doc.ts</code> then casts again: <code>:133</code> <code>as Chart["outro"]</code>, <code>:136</code>, <code>:142</code> <code>as SlotKind</code>, <code>:147</code>.</li>
+<li>Everything is kept forever and the shapes are versioned in place (<code>"prepared-1"</code>, <code>"mix-5"</code>, <code>"headlines-2"</code>, <code>"script-2"</code>, <code>"recording-1"</code>), so the table holds several generations of shape under one TypeScript type. No reader branches on <code>version</code>.</li>
+<li>Concrete exposure: <code>doc.ts:138</code> and <code>:150</code> read <code>r.generation?.input.plan…</code> — optional only at the first hop. A retained row whose <code>generation</code> predates <code>input</code> makes <code>slotDoc</code> throw, and <code>slotDoc</code> runs for every slot of every snapshot.</li>
+<li>Contrast: <code>lib/prepared.ts:134,152</code> parses on read; <code>lib/settings.ts</code> parses on read. Qobuz responses are the same pattern on the HTTP side (<code>qobuz.ts:304</code>).</li>
+</ul>
+<p class="std">Standard: V type safety — "strongest type system available" stops at the driver.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F9</span>Copy validation is split, and one half loses the receipt <span class="tag mid">S2</span></h3>
+<ul>
+<li>Word budgets, fixed words, empty copy: <code>checkSlot</code> (<code>rules.ts:39</code>). Publisher attribution: inside <code>produceWrite</code> (<code>write.ts:62–64</code>).</li>
+<li>When <code>checkSlot</code> rejects, the route records the attempt and the rejected copy before rethrowing (<code>route.ts:329–339</code> — "Preserve returned-but-rejected copy"). When the attribution check rejects, it throws before <code>produceWrite</code> returns, so there is no receipt to record: the billed call, its brief and its output are not retained. The stated invariant ("everything produced is kept") has a hole exactly where the writer misbehaves.</li>
+</ul>
+<p class="std">Standard: V single responsibility (one law, two homes); Audit Trail.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F10</span>One rule, three copies, two behaviours <span class="tag mid">S2</span></h3>
+<ul>
+<li>"Scheduled news supports Dallas, TX, America/Chicago only": <code>headlines.ts:187</code> (filters local sources), <code>lib/prepared.ts:119–125</code> (returns <code>null</code> — the break airs with no news and no log line), <code>scripts/prep.mts:58–63</code> (throws with a message).</li>
+<li>Third instance, so standard I says extract. The <code>null</code> is a silent failure by III: a control-room edit of the city turns the news off with nothing said anywhere.</li>
+<li>Same file: <code>usableNews</code> (<code>prepared.ts:97–102</code>) requires <code>revision</code> and <code>expiresAt</code> in its types and reads neither.</li>
+</ul>
+<p class="std">Standard: I third instance; III silent failures forbidden; VI magic strings.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F11</span>The browser has no API client, and its wire types are a hand copy <span class="tag mid">S2</span></h3>
+<ul>
+<li>Nine <code>fetch</code> sites to the app's own API across four files (table in §2). The track POST is issued from <code>session-view.tsx:99</code> and again from <code>use-deck.ts:377</code>, with different timeouts (90 s and none).</li>
+<li>7 browser sites of <code>(await res.json().catch(() =&gt; null)) as T</code> (<code>home-desk:63</code>, <code>session-view:71, 101, 202, 221, 298</code>, <code>use-deck:378</code>): a swallowed parse error followed by a cast. Four different ad hoc answer types (<code>SlotAnswer</code>, <code>{ added?, error? }</code>, <code>{ held?, error? }</code>, …).</li>
+<li><code>types.ts</code> re-declares <code>Tags</code>, <code>Chart</code>, <code>SlotKind</code>, <code>SlotStatus</code>, <code>Clock</code>, <code>Slot</code> by hand against <code>doc.ts</code> <code>SlotDoc</code>, <code>rules.ts</code>, <code>lib/clock.ts</code>. They already disagree: <code>Slot.fallback</code> is <code>{ from: string; to: string }</code>, the server's is <code>SlotKind</code>. <code>types.ts</code> does import a type from <code>@/lib/news</code>, so type-only imports across the line are already accepted.</li>
+</ul>
+<p class="std">Standard: V colocation, type safety; III no swallowed errors.</p>
+</div>
+
+<h3 id="s3">S3 — hygiene</h3>
+
+<div class="f">
+<h3><span class="id">F12</span>Knobs as literals, and values with two sources <span class="tag ok">S3</span></h3>
+<div class="scroll">
+<table>
+<tr><th>Where</th><th>Literal</th><th>What it is</th></tr>
+<tr><td><code>route.ts:240</code></td><td><code>* 25 + (… ? 25 : 0)</code></td><td>words budgeted per headline and for weather — a writer's rule living in the route</td></tr>
+<tr><td><code>planning.ts:33, 81, 136, 144</code></td><td><code>5000</code>, <code>8</code>, <code>3000</code>, <code>3</code></td><td>beyond-5 ramp, lead-line cap, minimum post for a talk-up, minimum words — beside three that <em>are</em> named (:7–9)</td></tr>
+<tr><td><code>headline-choice.ts:37, 44</code></td><td><code>12</code>, <code>60</code></td><td>menu length, history window</td></tr>
+<tr><td><code>write.ts:51, 57</code>; <code>fill.ts:125</code>; <code>prep-news.mts:86, 102</code></td><td><code>2048</code>, <code>60_000</code>; <code>16000</code>; <code>6500</code>, <code>3500</code></td><td>model call options</td></tr>
+<tr><td><code>route.ts:453, 459, 464</code></td><td><code>mp3_44100_128</code>, <code>30_000</code>, <code>200</code></td><td>TTS format, timeout, error truncation (the last also at <code>bucket.ts:42</code>, <code>track/route.ts:87</code>, and named in <code>jev.ts:18</code>)</td></tr>
+<tr><td><code>pick.ts:6</code> vs <code>env.ts:28</code></td><td><code>"jev-1.13.0"</code> twice</td><td>two sources for the pinned model</td></tr>
+<tr><td><code>route.ts:271, 345</code>, <code>generation.ts:9</code>, <code>news.ts:95</code></td><td><code>"prepared-1"</code> ×4</td><td>the other four version strings are named constants; this one and <code>"script-2"</code> (×3 in <code>write.ts</code>) are not</td></tr>
+<tr><td><code>proxy.ts:17</code></td><td><code>GUARD_OPEN = true</code></td><td>feature flag in code</td></tr>
+<tr><td><code>lib/prepared.ts:6–7</code>, <code>weather.ts:13–22</code>, <code>news.ts:82–83</code></td><td>Dallas, the grid, the zone</td><td>the station's place has three homes besides <code>settings.identity.city</code></td></tr>
+</table>
+</div>
+<p class="std">Standard: IV no magic constants; VI magic strings and numbers.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F13</span>Route boilerplate past the third instance <span class="tag ok">S3</span></h3>
+<ul>
+<li>uuid + integer-seq validation ×4: <code>slots/[seq]/route.ts:47</code>, <code>track/route.ts:27–31</code>, <code>clip/route.ts:15</code>, <code>news/route.ts:9</code>. The rule's own threshold.</li>
+<li><code>select value from settings where key = $1</code> ×5 (four loaders, one worker).</li>
+<li>At two, so within WET: the lock preamble and <code>LOCK_NOT_AVAILABLE</code> (rung, fill); <code>qobuz({ token, appId, secret })</code> from env (fill, track); the immutable audio stream headers (track GET, clip GET).</li>
+</ul>
+<p class="std">Standard: I — extract on the third.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F14</span>Dead and misfiled <span class="tag ok">S3</span></h3>
+<ul>
+<li><code>db/schema/headline_story.sql</code>: no reference in any <code>.ts</code> or <code>.mts</code>.</li>
+<li><code>weatherText</code> (<code>weather.ts:123</code>): called only by its test. <code>SLOT_KINDS</code> (<code>shapes.ts:21</code>): no consumer.</li>
+<li><code>fallback</code>: written as <code>null</code> always (<code>route.ts:416</code>, <code>rules.ts:68</code>), still carried through <code>SlotRow</code>, <code>SlotDoc</code>, the browser type and <code>rundown.tsx:303</code> for historical rows. Deliberate retention; it is the only reason <code>SlotFallback</code> exists.</li>
+<li><code>scripts/headlines-slot-smoke.mts</code>: a two-line alias to another smoke. <code>headline-reader.test.ts</code> and <code>headlines.test.ts</code> both test <code>headlines.ts</code>; there is no <code>headline-reader.ts</code>.</li>
+<li><code>headlines.ts</code>, <code>weather.ts</code> live in <code>api/sessions/</code> "beside the route that reads it" — no route does; their consumers are <code>scripts/prep-*.mts</code> and <code>lib/prompts/news.ts</code>.</li>
+<li><code>settings</code> rows <code>prompt.*</code>: unread, per <code>CLAUDE.md</code>. <code>CLAUDE.md</code>'s list of <code>db/schema</code> files omits <code>news_entries</code> and <code>weather_entries</code>, and it says Jev's five chart questions run "in parallel" — they are one request.</li>
+</ul>
+<p class="std">Standard: I "delete dead code immediately".</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F15</span>"Plain-Node safe" is a property no tool checks <span class="tag ok">S3</span></h3>
+<ul>
+<li>Files a script imports must avoid <code>@/</code> and use <code>.ts</code> extensions. The result is two import dialects, sometimes in one file: <code>fill.ts:3–4</code> uses <code>@/lib/claude</code>, <code>:8–9</code> uses <code>../../../lib/prompts/index.ts</code>; same in <code>write.ts:2–6</code>.</li>
+<li>Which modules are inside the plain-Node set is visible only from the import style. One <code>@/</code> added to <code>planning.ts</code> breaks <code>plan-eval.mts</code> and nothing in <code>pnpm check</code> says so.</li>
+</ul>
+<p class="std">Standard: V explicit over implicit.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F16</span>A ring of type imports in the session domain <span class="tag ok">S3</span></h3>
+<pre class="mermaid">
+flowchart LR
+  doc["doc.ts<br/>Hit, Chart, SlotRow, SlotDoc"] -- "SlotKind, SlotFallback" --> rules["rules.ts<br/>SlotKind, WrittenSlot"]
+  rules -- "MixPlan" --> planning["planning.ts<br/>MixPlan, PlanningInput"]
+  planning -- "Hit, Chart" --> doc
+  planning -- "SlotKind" --> rules
+  doc -- "SlotGeneration" --> gen["generation.ts"]
+  gen -- "PlanningReceipt" --> planning
+  gen -- "WriteInput" --> write["write.ts"]
+  write -- "re-exports from" --> lp["lib/prompts/write.ts<br/>owns WriteInput"]
+  lp -- "Hit, MixPlan" --> doc
+</pre>
+<p>All <code>import type</code>, so erased and harmless at runtime. It is a symptom rather than a fault: the nouns of the domain (<code>Hit</code>, <code>Chart</code>, <code>SlotKind</code>, <code>MixPlan</code>, <code>WriteInput</code>) have no single home, so every file that needs two of them imports two neighbours.</p>
+<p class="std">Standard: V one clear job per file.</p>
+</div>
+
+<div class="f">
+<h3><span class="id">F17</span>Logging is <code>console.*</code> with hand-made tags <span class="tag ok">S3</span></h3>
+<ul>
+<li>18 server sites; tags vary (<code>[session 1a2b3c4d] slot 3</code>, <code>[sessions]</code>, <code>[qobuz]</code>, <code>[prep:news]</code>). The stage timer (<code>route.ts:64–69</code>) is local to one route; the fill, equally slow, has none.</li>
+<li>Jev calls log nothing on success. The durable audit trail (<code>session_slot.generation</code>: exact requests, responses, probabilities, usage, elapsed) is stronger than the standard asks; the live log is weaker.</li>
+</ul>
+<p class="std">Standard: Audit Trail — external calls SHOULD be logged with context.</p>
+</div>
+
+<h2 id="tension">4. Where the two rulebooks disagree</h2>
+<p><code>CLAUDE.md</code> and <code>coding-standards.md</code> are both binding here and they pull apart in four places. The grades above follow the coding standard, as asked; these are the decisions that would move them.</p>
+
+<div class="scroll">
+<table>
+<tr><th>Topic</th><th><code>CLAUDE.md</code> says</th><th>The standard says</th><th>What it costs today</th></tr>
+<tr><td>SQL</td><td>"plain <code>pg</code> + SQL at the call site (no ORM, no query layer)"</td><td>DI, IoC; mock the boundary</td><td>F2's SQL-text-matching test double; F8's unparsed rows; no place to put a timeout or a parse except every call site. <code>lib/prepared.ts</code> shows a middle form that keeps the SQL visible: a function beside its one reader, connection handed in, row parsed.</td></tr>
+<tr><td>The hot path</td><td>"A hot path stays one readable file — no small functions that obfuscate straight-line code."</td><td>SLAP; one file, one sentence; "extract only pure judgment worth table-testing" (which <code>CLAUDE.md</code> also says)</td><td>F2. The two rules agree on the pure blocks (:171–180, :270–294, :343–383, :470–488); they disagree only on the I/O spine.</td></tr>
+<tr><td>Third instance</td><td>"promoted one level up only when a <em>third</em> consumer appears"</td><td>same</td><td>No disagreement — but several things are already past three and not promoted: F13's param check (×4), the settings select (×5), F10's Dallas rule (×3), the error-message idiom (×24).</td></tr>
+<tr><td>Where shared code lives</td><td>"lib at the level that uses it"</td><td>dependency direction</td><td>F4: <code>lib/prompts</code> is used only by the session domain and the news worker, and imports the session domain's types. By the house rule's own wording its level is <code>api/sessions/</code>, not <code>lib/</code>.</td></tr>
+</table>
+</div>
+
+<h2 id="keep">5. What already meets the standard</h2>
+<ul>
+<li><code>lib/jev.ts</code> and its three producers: the pattern the rest can be measured against (request builder → one injected call → reader, typed error, timeout, receipts).</li>
+<li><code>lib/bucket.ts</code> + <code>sigv4.ts</code>: interface, factory over config, signer tested against the AWS vectors.</li>
+<li><code>lib/env.ts</code> + <code>instrumentation-node.ts</code>: III to the letter — missing variables fail the boot, by name.</li>
+<li><code>lib/prepared.ts</code>: connection handed in, zod on read.</li>
+<li>The pure cores on both sides of the wire — <code>rules</code>, <code>doc</code>, <code>loop</code>, <code>plan</code>, <code>transport</code>, <code>preparation</code>, <code>fill</code>'s <code>dedupe</code> and <code>searchQuery</code> — with give/want tables. 30 test files; zero <code>TODO</code>/<code>FIXME</code> in the tree.</li>
+<li>Structured output everywhere Claude is called; the <code>numbered</code> trick in <code>shapes.ts</code> for fixed-length answers.</li>
+<li>Ten runtime dependencies. No ORM, no AWS SDK, no state library — IV and the minimise-dependencies rule hold.</li>
+<li>The retained generation record: every judgment replayable from the row.</li>
+</ul>
+
+</main>
+</div>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: dark ? "dark" : "neutral",
+    securityLevel: "strict",
+    flowchart: { useMaxWidth: false, htmlLabels: true, nodeSpacing: 28, rankSpacing: 44 },
+    sequence: { useMaxWidth: false, showSequenceNumbers: true, actorMargin: 24, messageMargin: 28, wrap: true },
+  });
+</script>
+</body>
+</html>

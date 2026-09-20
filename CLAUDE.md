@@ -18,9 +18,8 @@ philosophy).
   that directory**. Secrets stay `preserve()`d, set via `railway variables`.
 - One database, on purpose: `pnpm dev` talks to the same Railway Postgres (and bucket) as prod over its
   public proxy.
-- Fewest moving parts: route handlers, plain `pg` + SQL at the call site (no ORM, no query layer),
-  declarative schema diffed and applied from the dev machine (`pnpm db:plan` / `db:apply`, no
-  migration files — `db/schema/*.sql`).
+- Fewest moving parts: plain `pg` + SQL (no ORM), declarative schema diffed and applied from the dev
+  machine (`pnpm db:plan` / `db:apply`, no migration files — `db/schema/*.sql`).
 - **Always minimize dependencies.** Before adding a package, ask whether `fetch`, Web Crypto, the
   platform, or thirty lines of our own would do: Qobuz is plain `fetch` against its web player's own
   API (`api/sessions/qobuz.ts`, the app id + secret read out of the player's bundle), the bucket
@@ -53,7 +52,9 @@ Three places, each owning what it alone needs:
   included, so no route checks for them; read lazily for `next build`, and once at boot by
   `src/instrumentation.ts`, which exits the process naming what is missing), `db` (one `pg.Pool`, `pool()`), `claude` (one client, no
   SDK retries), `bucket` (`put`, `open`, `head`) + `sigv4`, `guard`, `voices` (the roster's shape:
-  schema, models, `ttsBody` — pure, client-safe), `identity` (call letters, city, on-air name — pure),
+  schema, models — pure, client-safe), `elevenlabs` (the one ElevenLabs call: `speak` for the whole
+  take, `speakStream` for the preview, `ttsBody`, `ElevenLabsError`; key, `timeoutMs` and `fetchFn`
+  handed in, 30 s default; plain-Node safe), `identity` (call letters, city, on-air name — pure),
   `clock` (break every, fill, low water — pure), `jev` (the one TypeSafe call and the reading every
   answer is held to; plain-Node safe), `news` (source roster, configuration and receipt),
   `settings` (`loadVoices` / `loadIdentity` / `loadClock` / `loadNews`, server only: a client component that imports a module touching the

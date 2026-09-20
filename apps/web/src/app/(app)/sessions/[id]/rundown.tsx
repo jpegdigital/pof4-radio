@@ -145,7 +145,7 @@ function Row({
           className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg py-3 text-left transition enabled:hover:bg-zinc-800/50 disabled:cursor-default ${focusRing}`}
         >
           {pick.image ? (
-            // biome-ignore lint/performance/noImgElement: album art is a remote Qobuz CDN url
+            // eslint-disable-next-line @next/next/no-img-element -- album art is a remote Qobuz CDN url
             <img
               src={pick.image}
               alt=""

@@ -12,7 +12,10 @@
     "lineEnding": "lf"
   },
   "linter": {
-    "enabled": false
+    "enabled": true,
+    "rules": {
+      "preset": "none"
+    }
   },
   "assist": {
     "enabled": false
