@@ -1,11 +1,10 @@
+import { askJev, readJev } from "../../../lib/jev.ts";
 import { prompts } from "../../../lib/prompts/index.ts";
 import { z } from "zod";
 
 /** One recording decision. No retries, substitute recording, or second decision maker. */
 export const PICK_MODEL = "jev-1.13.0";
 export const PICK_VERSION = "recording-1";
-const PICK_URL = "https://api.typesafe.ai/v1/systemone";
-const PICK_TIMEOUT_MS = 15_000;
 const NONE = "none";
 
 export const PickInput = z.object({
@@ -43,48 +42,13 @@ export function pickRequest(input: PickInput, model: string) {
 }
 export type PickRequest = ReturnType<typeof pickRequest>;
 
-const probability = z.number().min(0).max(1);
-const PickResponse = z.object({
-  model: z.string().min(1),
-  answers: z.object({
-    pick: z.object({
-      type: z.literal("choice"),
-      choice: z.string(),
-      confidence: probability,
-      probabilities: z.record(z.string(), probability),
-    }),
-  }),
-  usage: z.object({
-    input_tokens: z.number().int().nonnegative(),
-    output_tokens: z.number().int().nonnegative(),
-  }),
-});
-
-/** Validate the distribution against the actual menu; confidence is recorded, never a gate. */
+/** Jev's explicit choice is the pick; the distribution is retained for evaluation. */
 export function readPick(request: PickRequest, raw: unknown, elapsedMs: number) {
-  const parsed = PickResponse.safeParse(raw);
-  if (!parsed.success) throw new Error(`Invalid Jev selection response: ${parsed.error.message}`);
-  const response = parsed.data;
-  const answer = response.answers.pick;
-  const options = Object.keys(request.questions.pick.criteria);
-  const entries = Object.entries(answer.probabilities);
-  if (
-    !options.includes(answer.choice) ||
-    entries.length !== options.length ||
-    entries.some(([id]) => !options.includes(id))
-  )
-    throw new Error("Invalid Jev selection: choice or probabilities outside the supplied hits");
-  // Jev's explicit choice is authoritative; reported probabilities are audit data.
-  const sum = entries.reduce((n, [, p]) => n + p, 0);
-  if (
-    // TypeSafe rounds each probability to two decimal places.
-    sum <= 0 ||
-    Math.abs(sum - 1) > entries.length * 0.005 + 0.000001
-  )
-    throw new Error("Invalid Jev selection probability distribution");
+  const response = readJev(request, raw);
+  const choice = response.answers.pick.choice;
   return {
     version: PICK_VERSION,
-    pick: answer.choice === NONE ? null : answer.choice,
+    pick: choice === NONE ? null : choice,
     request,
     response,
     elapsedMs,
@@ -97,16 +61,7 @@ export async function producePick(
   input: PickInput,
   config: { apiKey: string; model: string },
 ): Promise<PickReceipt> {
-  if (!config.apiKey) throw new Error("TYPESAFE_API_KEY is required for recording selection");
   const request = pickRequest(input, config.model);
-  const started = Date.now();
-  const res = await fetch(PICK_URL, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-    signal: AbortSignal.timeout(PICK_TIMEOUT_MS),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`Jev recording selection failed (HTTP ${res.status})`);
-  return readPick(request, await res.json(), Date.now() - started);
+  const { raw, elapsedMs } = await askJev(request, { apiKey: config.apiKey, what: "recording selection" });
+  return readPick(request, raw, elapsedMs);
 }
