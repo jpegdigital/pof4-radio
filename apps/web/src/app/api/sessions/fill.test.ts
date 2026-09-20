@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { albumText, dedupe, fillBrief, foundText, searchQuery } from "./fill";
+import { dedupe, searchQuery } from "./fill";
+import { albumText, fillBrief, foundText } from "../../../lib/prompts/fill.ts";
 
 /** The pure half of the fill: what Qobuz is asked, and which proposals never become slots. */
 

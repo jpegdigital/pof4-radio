@@ -1,0 +1,68 @@
+# Prompt templates
+
+Edit the prose in `apps/web/prompts/*.prompt`. The directory is flat; names identify the job:
+
+| Files | Purpose |
+| --- | --- |
+| `write-system`, `write-brief`, `write-weather` | DJ identity, slot instructions, and weather delivery |
+| `fill-system`, `fill-brief` | Music programming and the current rundown |
+| `recording`, `headline` | Recording and story selection instructions |
+| `chart`, `mix` | Track judgments and mixer decisions |
+| `news-prepare`, `news-review` | Evidence preparation and checking |
+
+Each file is plain text with Handlebars variables (`{{name}}`) and `if`/`unless`
+conditionals. No YAML frontmatter or model settings are needed. This is ordinary
+Handlebars, not the Dotprompt/Genkit execution format.
+
+## Authoring contract
+
+- Variables are flat and explicitly declared with Zod beside each adapter in
+  `apps/web/src/lib/prompts/`. Add a variable there when the prose needs new context.
+- Missing, misspelled and undeclared variables fail with the template filename.
+  References in inactive branches are checked when the template compiles.
+- Input types and unexpected fields are validated before rendering. Output schemas
+  continue to validate model results independently.
+- Templates support plain variables and `if`/`unless`; formatting, calculations and
+  selection decisions stay in code. Context adapters serialize history and evidence.
+- Values are inserted once, as plain text: no HTML escaping and no recursive template
+  evaluation. Braces inside a song title or listener direction remain literal data.
+- Keep illustrative artists, songs, genres and sample DJ lines out of templates.
+  Concrete content comes from the current show.
+
+Short schema-field descriptions, choice-option labels and executable action labels
+remain in the typed modules. The long-form instructions and conditional writing
+briefs live in the `.prompt` files.
+
+## Preview
+
+From the repository root:
+
+```sh
+pnpm prompt:preview --list
+pnpm prompt:preview write-system variables.json
+pnpm prompt:preview mix
+```
+
+`variables.json` contains the named template variables, not the raw database row.
+Paths are relative to the working directory. The command uses the actual renderer
+and Zod contract, prints the rendered text, and makes no model or database calls.
+A template with no variables can be previewed without a JSON file.
+
+## Runtime and deployment
+
+`src/lib/prompts/index.ts` remains the typed registry. Callers supply context and
+own API execution, timeouts and persistence. The renderer loads from `apps/web/prompts`
+when run from the repo root, or `prompts` when run from the app root.
+Templates are compiled and validated when their modules load. Development renders
+reload changed template files; production caches them for the process lifetime.
+Restart or redeploy production after editing a template.
+
+`next.config.ts` explicitly includes the flat template files in API route traces.
+Plain-Node workers must deploy the `prompts` directory beside the app package too.
+Git versions templates and contracts together. Existing generation receipts still
+retain the exact rendered instructions and context. Legacy `settings.prompt.*` rows
+are unused; session direction, settings and prepared facts remain database context.
+
+Run `pnpm test`, `pnpm typecheck`, and `pnpm --filter web build` after changes to loading
+or rendering. Template tests cover strictness, literal substitution and malformed
+input; existing domain tests cover the assembled prompts and decisions.

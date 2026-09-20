@@ -1,11 +1,11 @@
 "use client";
 
-import { ArrowRight, Radio, Settings2 } from "lucide-react";
+import { ArrowRight, ChevronRight, Disc3, Headphones, Radio, Settings2, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { DjPicker } from "./lib/dj-picker";
-import { Card, focusRing, Label } from "./lib/ui";
+import { focusRing } from "./lib/ui";
 import { type Dj, findDj, loadDj, saveDj } from "./lib/voice-store";
 
 /**
@@ -91,164 +91,174 @@ export function HomeDesk({ djs, sessions }: { djs: Dj[]; sessions: SessionSummar
   const canStart = prompt.trim().length > 0 && dj.id !== "" && !working;
 
   return (
-    <main className="station-shell">
+    <main className="station-shell home-screen">
       <header className="station-header">
         <span className="station-wordmark">
-          <Radio className="size-5 text-lamp" aria-hidden="true" /> Claude Radio
+          <Radio aria-hidden="true" /> Claude<span>Radio</span>
         </span>
-        <Link
-          href="/settings"
-          className={`flex min-h-11 items-center gap-2 text-sm text-zinc-400 hover:text-white ${focusRing}`}
-        >
-          <Settings2 className="size-4" aria-hidden="true" /> Control room
+        <Link href="/settings" aria-label="Control room" className={"station-icon " + focusRing}>
+          <Settings2 className="size-5" aria-hidden="true" />
         </Link>
       </header>
-      <div className="grid items-start gap-12 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:gap-16">
-        <div>
-          <p className="mb-5 flex items-center gap-3 font-display text-xs uppercase tracking-[0.22em] text-zinc-400">
-            <span className="h-px w-8 bg-lamp" /> Selected for you. Hosted by AI.
-          </p>
-          <h1 className="max-w-lg text-5xl leading-[1.08] font-medium tracking-tight sm:text-6xl">
-            Your mood.
-            <br />
-            Your music.
-            <br />
-            <span className="text-lamp">Your kind of radio.</span>
-          </h1>
-          <p className="mt-5 mb-8 max-w-md text-base leading-relaxed text-zinc-400">
-            Give your DJ a direction. Get a show with records worth hearing and a voice to connect them.
-          </p>
-
-          <Card className="flex flex-col gap-4 !rounded-2xl !bg-zinc-900/40 !p-5 sm:!p-6">
-            <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-3">
-              <label htmlFor="show-request" className="text-sm font-medium text-zinc-200">
-                What should your show sound like?
-              </label>
-              <textarea
-                id="show-request"
-                disabled={working}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="A late-night drive. Warm jazz, a little soul, nothing in a hurry."
-                rows={3}
-                required
-                maxLength={500}
-                className={`w-full resize-none rounded-xl border border-zinc-800 bg-zinc-950/70 p-4 text-base leading-relaxed text-zinc-200 transition placeholder:text-zinc-500 hover:border-zinc-700 ${focusRing}`}
-              />
-              <div className="mb-2 flex flex-wrap gap-2" aria-label="Request ideas">
-                {[
-                  ["After hours", "A late-night drive. Warm jazz, a little soul, nothing in a hurry."],
-                  [
-                    "Sunday morning",
-                    "An easy Sunday morning with acoustic folk, soft soul, and a few lovely surprises.",
-                  ],
-                  ["Deep cuts", "Take me beyond the hits: overlooked records and deep cuts from 1970s rock."],
-                ].map(([label, ask]) => (
-                  <button
-                    key={label}
-                    type="button"
-                    disabled={working}
-                    onClick={() => setPrompt(ask)}
-                    className={`min-h-9 rounded-full border border-zinc-700/70 px-3 text-xs text-zinc-400 transition hover:border-lamp/50 hover:text-lamp disabled:opacity-50 ${focusRing}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-                <DjPicker
-                  disabled={working}
-                  djs={djs}
-                  value={dj}
-                  onChange={(d) => {
-                    setPicked(d);
-                    saveDj(d);
-                  }}
-                />
-                <button
-                  type="submit"
-                  disabled={!canStart}
-                  className={`flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-lamp px-4 py-2.5 text-sm font-semibold text-zinc-950 transition hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 ${focusRing}`}
-                >
-                  {state.phase === "opening" ? "Opening show…" : working ? "Creating show…" : "Create a show"}
-                  {!working && <ArrowRight className="size-4" strokeWidth={2} aria-hidden="true" />}
-                </button>
-              </div>
-            </form>
-            {working && (
-              <p role="status" className="text-sm text-zinc-400">
-                {state.phase === "opening" ? (
-                  <>
-                    Your show is saved.{" "}
-                    <a
-                      href={`/sessions/${state.sessionId}`}
-                      className={`inline-flex min-h-11 items-center text-lamp underline ${focusRing}`}
-                    >
-                      Open show
-                    </a>
-                  </>
-                ) : (
-                  "Saving your request and DJ…"
-                )}
-              </p>
-            )}
-            {djs.length === 0 && (
-              <p className="text-xs text-amber-300/90">
-                Your station needs a DJ.{" "}
-                <Link href="/settings?voice=new" className={`underline ${focusRing}`}>
-                  Add a voice in the control room.
-                </Link>
-              </p>
-            )}
-            {state.phase === "error" && (
-              <p role="alert" className="station-error">
-                {state.message}
-              </p>
-            )}
-          </Card>
-          <p className="mt-4 text-xs leading-relaxed text-zinc-500">
-            Choose your host, then press play when the opening track is ready.
-          </p>
+      <section className="frequency-hero" aria-labelledby="home-title">
+        <div className="retro-landscape" aria-hidden="true">
+          <div className="retro-sun" />
+          <div className="retro-mountains" />
+          <div className="retro-grid" />
         </div>
-
-        <aside className="flex min-w-0 flex-col gap-5 lg:pt-2">
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
-            <Label>Your shows</Label>
-            <span className="font-mono text-xs text-zinc-500">
-              {String(sessions.length).padStart(2, "0")}
-            </span>
+        <p className="station-eyebrow">
+          <span className="signal-dot" /> A frequency of your own
+        </p>
+        <h1 id="home-title">
+          Good music.
+          <br />
+          <em>Your wavelength.</em>
+        </h1>
+        <p>Your mood. Your DJ. Your kind of radio.</p>
+        <div className="frequency-scale" aria-hidden="true">
+          <span>88</span>
+          <span>92</span>
+          <span>96</span>
+          <span>100</span>
+          <span>104</span>
+          <span>108</span>
+        </div>
+      </section>
+      <section id="tune-in" className="request-card" aria-labelledby="request-title">
+        <div className="section-heading">
+          <h2 id="request-title">Set the mood</h2>
+          <Sparkles className="size-4 text-lamp" aria-hidden="true" />
+        </div>
+        <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-3">
+          <label htmlFor="show-request" className="sr-only">
+            What should your show sound like?
+          </label>
+          <textarea
+            id="show-request"
+            disabled={working}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Late-night drives, neon lights, and a little 80s nostalgia…"
+            rows={3}
+            required
+            maxLength={500}
+            className={"request-input " + focusRing}
+          />
+          <div className="mood-presets" aria-label="Request ideas">
+            {[
+              [
+                "Neon nights",
+                "An 80s night drive with shimmering synths, new wave, and a few forgotten gems. The convertible top is down.",
+              ],
+              [
+                "Slow Sunday",
+                "An easy Sunday morning with acoustic folk, soft soul, and a few lovely surprises.",
+              ],
+              ["Deep cuts", "Take me beyond the hits: overlooked records and deep cuts from 1970s rock."],
+            ].map(([label, ask]) => (
+              <button
+                key={label}
+                type="button"
+                disabled={working}
+                aria-pressed={prompt === ask}
+                onClick={() => setPrompt(ask)}
+                className={"mood-chip " + focusRing}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-          {sessions.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-zinc-800 p-6">
-              <Radio className="mb-4 size-7 text-zinc-600" strokeWidth={1.25} aria-hidden="true" />
-              <p className="text-sm text-zinc-300">Your first show starts here.</p>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                Past shows stay on the dial. Come back for a favorite whenever the mood returns.
-              </p>
-            </div>
-          )}
-          <ol className="flex flex-col">
-            {sessions.map((s) => (
-              <li key={s.sessionId} className="rail-row">
-                <Link
-                  href={`/sessions/${s.sessionId}`}
-                  className={`flex flex-col gap-1 rounded-r-lg py-2.5 pr-3 pl-4 transition hover:bg-zinc-800/50 ${focusRing}`}
+          <div className="host-field">
+            <span>On the mic</span>
+            <DjPicker
+              disabled={working}
+              djs={djs}
+              value={dj}
+              onChange={(d) => {
+                setPicked(d);
+                saveDj(d);
+              }}
+            />
+          </div>
+          <button type="submit" disabled={!canStart} className={"tune-button " + focusRing}>
+            <Radio className="size-5" aria-hidden="true" />
+            {state.phase === "opening" ? "Opening show…" : working ? "Creating show…" : "Create my show"}
+            {!working && <ArrowRight className="ml-auto size-5" aria-hidden="true" />}
+          </button>
+        </form>
+        {working && (
+          <p role="status" className="mt-3 text-sm text-zinc-400">
+            {state.phase === "opening" ? (
+              <>
+                Your show is saved.{" "}
+                <a
+                  href={"/sessions/" + state.sessionId}
+                  className={"inline-flex min-h-11 items-center text-lamp underline " + focusRing}
                 >
-                  <span className="flex items-baseline justify-between gap-3 font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    <time dateTime={s.createdAt} suppressHydrationWarning>
+                  Open show
+                </a>
+              </>
+            ) : (
+              "Saving your request and DJ…"
+            )}
+          </p>
+        )}
+        {djs.length === 0 && (
+          <p className="mt-3 text-sm text-amber-200">
+            Your station needs a DJ.{" "}
+            <Link
+              href="/settings?voice=new"
+              className={"inline-flex min-h-11 items-center underline " + focusRing}
+            >
+              Add a voice in the control room.
+            </Link>
+          </p>
+        )}
+        {state.phase === "error" && (
+          <p role="alert" className="station-error mt-3">
+            {state.message}
+          </p>
+        )}
+      </section>
+      <p className="composer-note">A show made for you. Press play when it’s ready.</p>
+      <section id="your-shows" className="show-library" aria-labelledby="shows-title">
+        <div className="section-heading">
+          <h2 id="shows-title">Your shows</h2>
+          <span className="station-count">{String(sessions.length).padStart(2, "0")}</span>
+        </div>
+        {sessions.length === 0 ? (
+          <div className="empty-library">
+            <Headphones className="size-7 text-lamp" aria-hidden="true" />
+            <p>Your first great find is waiting.</p>
+            <span>Create a show. It’ll always be here to come back to.</span>
+          </div>
+        ) : (
+          <ol className="show-list">
+            {sessions.map((s, index) => (
+              <li key={s.sessionId}>
+                <Link href={"/sessions/" + s.sessionId} className={"show-link " + focusRing}>
+                  <span className={"show-art show-art-" + (index % 3)} aria-hidden="true">
+                    <Disc3 className="size-7" strokeWidth={1.2} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="show-title">{s.prompt}</span>
+                    <span className="show-meta">
+                      {s.dj} · {s.slots === 0 ? "New show" : s.slots + " tracks"}
+                    </span>
+                    <time dateTime={s.createdAt} suppressHydrationWarning className="show-date">
                       {when(s.createdAt)}
                     </time>
-                    <span className="min-w-0 truncate">
-                      {s.dj} · {s.slots === 0 ? "new show" : `${s.slots} track${s.slots === 1 ? "" : "s"}`}
-                    </span>
                   </span>
-                  <span className="line-clamp-2 text-base leading-relaxed text-zinc-300">{s.prompt}</span>
+                  <ChevronRight className="size-4 shrink-0 text-zinc-400" aria-hidden="true" />
                 </Link>
               </li>
             ))}
           </ol>
-        </aside>
-      </div>
+        )}
+      </section>
+      <footer className="station-signoff">
+        <span /> Stay on your wavelength <span />
+      </footer>
     </main>
   );
 }

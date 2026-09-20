@@ -146,11 +146,14 @@ news-free generation exists. See `docs/prepared-content.md` for the complete con
 included story after a complete live read of the matching clip; generated does not imply heard.
 Playback always uses the saved script and audio. Explicit revoice appends another take.
 
-**The prompts are inline** at each call site (`fill.ts`, `write.ts`, `headline-choice.ts`, `scripts/prep-news.mts`) — structured outputs via
-`messages.parse` + `zodOutputFormat` for the writer, `beta.messages.toolRunner` +
-`betaZodOutputFormat` for the proposer (tools and a shape on one call; the last message's text is
-parsed by hand), one zod shape per call in `shapes.ts`; the fill's count is enforced with
-`numbered(key, n, item)` (song1…songN) because the grammar does not bound arrays.
+**Prompt prose lives in flat `apps/web/prompts/*.prompt` Handlebars templates.**
+`apps/web/src/lib/prompts/index.ts` is the typed registry; its adapters validate template
+variables with Zod and own context formatting. Strict rendering rejects undeclared variables
+(including inactive branches), missing inputs and blank output. Values are inserted once without
+HTML escaping. Short field/choice/action labels and output schemas remain typed in code.
+Call sites supply context and own API execution. `pnpm prompt:preview --list` lists templates;
+`pnpm prompt:preview <name> [variables.json]` renders one without a model call. Next traces the
+files for deployment; plain-Node workers ship the same directory. See `docs/prompts.md`.
 
 **The loop lives in the browser, one slot ahead.** The session page fetches the snapshot and asks
 `nextMove` (`loop.ts`, pure) for the one call: a fill when there are no slots or the proposed ones

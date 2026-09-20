@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Radio, Settings2 } from "lucide-react";
+import { ArrowLeft, Headphones, ListMusic, MessageSquareText, Radio, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { focusRing, Label } from "../../lib/ui";
 import { nextMove } from "./loop";
@@ -373,30 +373,20 @@ export function SessionView({ id }: { id: string }) {
   })();
 
   return (
-    <main className="station-shell">
+    <main className="station-shell session-screen">
       <header className="station-header">
-        <Link href="/" className={`station-wordmark ${focusRing}`}>
-          <Radio className="size-5 text-lamp" aria-hidden="true" /> Claude Radio
+        <Link href="/" aria-label="All shows" className={"station-icon " + focusRing}>
+          <ArrowLeft className="size-5" aria-hidden="true" />
         </Link>
-        <nav aria-label="Station" className="flex items-center gap-2 text-sm text-zinc-400 sm:gap-4">
-          <Link href="/" className={`flex min-h-11 items-center gap-2 hover:text-white ${focusRing}`}>
-            <ArrowLeft className="hidden size-4 sm:block" aria-hidden="true" /> All shows
-          </Link>
-          <Link
-            href="/settings"
-            aria-label="Control room"
-            className={`flex size-11 items-center justify-center rounded-full border border-zinc-800 hover:text-white ${focusRing}`}
-          >
-            <Settings2 className="size-4" />
-          </Link>
-        </nav>
+        <Link href="/" className={"station-wordmark " + focusRing}>
+          <Radio aria-hidden="true" /> Claude<span>Radio</span>
+        </Link>
+        <Link href="/settings" aria-label="Control room" className={"station-icon " + focusRing}>
+          <Settings2 className="size-5" aria-hidden="true" />
+        </Link>
       </header>
-
-      <div className="mb-7 flex items-center gap-3 font-display text-xs uppercase tracking-[0.22em] text-zinc-400">
-        <span className="h-px w-8 bg-lamp" /> A show of your own
-      </div>
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-12">
-        <div className="min-w-0 lg:sticky lg:top-6">
+      <div className="session-content">
+        <div className="min-w-0">
           {state.phase === "error" && (
             <div role="alert" className="station-error">
               <p>Couldn’t open this show. {state.message}</p>
@@ -438,8 +428,8 @@ export function SessionView({ id }: { id: string }) {
           )}
 
           {/* the player: mounted from the first written slot on, never unmounts */}
-          <section aria-label="Player" className="listening-player min-h-[680px]">
-            <div className="mb-6 flex items-center justify-between gap-3">
+          <section id="player" aria-label="Player" className="listening-player">
+            <div className="mb-4 flex items-center justify-between gap-3">
               <span className="font-display text-xs uppercase tracking-[0.2em] text-zinc-400">
                 {running ? "Now playing" : "Your station"}
               </span>
@@ -515,12 +505,16 @@ export function SessionView({ id }: { id: string }) {
           </section>
         </div>
 
-        <aside className="min-w-0">
+        <aside className="session-details">
           {state.phase === "ready" && (
-            <div className="mb-8 border-b border-zinc-800 pb-7">
-              <Label>Your request</Label>
-              <p className="mt-3 text-xl leading-relaxed text-zinc-200 sm:text-2xl">{state.session.prompt}</p>
-            </div>
+            <section id="request" className="request-summary" aria-label="Your request">
+              <Label className="mb-3 !text-[#d2b8ce]">The inspiration</Label>
+              <p>{state.session.prompt}</p>
+              <div className="request-facts">
+                <span>{slots.length} tracks in your show</span>
+                <span>DJ break every {state.session.clock.breakEvery} tracks</span>
+              </div>
+            </section>
           )}
 
           {state.phase === "ready" && (
@@ -539,6 +533,20 @@ export function SessionView({ id }: { id: string }) {
           )}
         </aside>
       </div>
+      <nav className="session-nav" aria-label="In this show">
+        <a href="#player" className={focusRing}>
+          <Headphones aria-hidden="true" />
+          Player & mix
+        </a>
+        <a href="#rundown" className={focusRing}>
+          <ListMusic aria-hidden="true" />
+          Program
+        </a>
+        <a href="#request" className={focusRing}>
+          <MessageSquareText aria-hidden="true" />
+          Request
+        </a>
+      </nav>
     </main>
   );
 }

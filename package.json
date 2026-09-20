@@ -21,7 +21,8 @@
     "prep:weather": "op run --env-file=.env.op -- pnpm --filter web prep:weather",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test"
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
+    "prompt:preview": "node apps/web/scripts/preview-prompt.mts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.9",

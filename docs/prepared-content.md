@@ -38,7 +38,7 @@ an article-page crawler; short or missing evidence is omitted.
 
 Weather uses [NWS observations, forecasts](https://www.weather.gov/documentation/services-web-api)
 and [point alerts](https://www.weather.gov/documentation/services-web-alerts) for northwest Dallas
-(75229, Love Field station KDAL, FWD/87,109). Temperatures are °F, observed wind is mph, precipitation
+(75229, Love Field station KDAL, FWD/87,109). The DJ uses the city name (Dallas) on air; the observation station, airport name and grid are retained as source metadata, not spoken location labels. Temperatures are °F, observed wind is mph, precipitation
 is percent. Observation and forecast times remain separate; forecast periods have absolute start/end
 times. Alert failure fails the whole edition instead of publishing a misleading empty alert list.
 This first implementation explicitly supports Dallas; changing cities requires configuring both jobs.

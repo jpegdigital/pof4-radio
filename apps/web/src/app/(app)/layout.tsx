@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 
-/** The new home shell. Deliberately bare — it grows only as the new app needs it. */
+/** The listening app stays phone-sized, including on a desktop. */
 export default function AppLayout({ children }: { children: ReactNode }) {
-  return <div className="min-h-dvh">{children}</div>;
+  return (
+    <div className="radio-world">
+      <div className="radio-phone">{children}</div>
+    </div>
+  );
 }

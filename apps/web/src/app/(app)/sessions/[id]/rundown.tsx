@@ -42,9 +42,11 @@ export function Rundown({
 }) {
   const at = cursor === null ? -1 : slots.findIndex((s) => String(s.seq) === cursor);
   return (
-    <div className="flex flex-col gap-3">
+    <section id="rundown" aria-label="Program" className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between gap-3">
-        <Label>The rundown</Label>
+        <Label className="!font-sans !text-lg !normal-case !tracking-tight !text-zinc-100">
+          Your program
+        </Label>
         <span className="font-mono text-xs text-zinc-500">{slots.length} tracks</span>
       </div>
       {producing?.seq === null && <p className="text-sm text-zinc-400">{producing.label}</p>}
@@ -84,7 +86,7 @@ export function Rundown({
           );
         })}
       </ol>
-    </div>
+    </section>
   );
 }
 
@@ -221,17 +223,11 @@ function Detail({ cue }: { cue: Cue }) {
   ];
   const chart = cue.chart;
   return (
-    <div className="mb-2 ml-4 flex flex-col gap-2 rounded-lg border border-zinc-800/70 bg-zinc-950/60 px-3 py-2.5 text-xs text-zinc-400">
+    <div className="studio-detail flex flex-col gap-3 text-zinc-400">
       <Label>{KIND_LABEL[cue.kind]} · Studio notes</Label>
       {cue.legalId && <p className="font-mono text-[12px] italic text-zinc-500">{cue.legalId}</p>}
-      {cue.words && (
-        <p className="whitespace-pre-line font-mono text-[12px] leading-relaxed text-zinc-300">{cue.words}</p>
-      )}
-      {cue.leadLine && (
-        <p className="whitespace-pre-line font-mono text-[12px] italic leading-relaxed text-zinc-300">
-          {cue.leadLine}
-        </p>
-      )}
+      {cue.words && <p className="dj-script whitespace-pre-line text-zinc-300">{cue.words}</p>}
+      {cue.leadLine && <p className="dj-script whitespace-pre-line italic text-zinc-300">{cue.leadLine}</p>}
       {cue.kind === "segue" && !cue.words && (
         <p className="text-zinc-500">Music continues without DJ voice</p>
       )}
@@ -299,7 +295,10 @@ function Detail({ cue }: { cue: Cue }) {
             ))}
         </div>
       )}
-      <p className="text-zinc-600">{cue.why}</p>
+      <div className="decision-note">
+        <Label className="mb-1 !text-[#c9b4e1]">Why this track</Label>
+        <p>{cue.why}</p>
+      </div>
       {cue.fallback && (
         <p className="text-amber-300/90">
           {cue.fallback.from} → {cue.fallback.to}: {cue.fallback.reason}

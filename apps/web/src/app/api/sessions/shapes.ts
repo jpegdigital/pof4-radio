@@ -1,3 +1,4 @@
+import { descriptions } from "../../../lib/prompts/descriptions.ts";
 import { z } from "zod";
 
 /**
@@ -11,9 +12,9 @@ import { z } from "zod";
 
 /** One song as the proposer names it: leads for a catalogue search, not gospel. */
 export const Proposal = z.object({
-  artist: z.string().describe("the artist"),
-  title: z.string().describe("the song — a title as you know it"),
-  why: z.string().describe("one line: why this song, here"),
+  artist: z.string().describe(descriptions.artist),
+  title: z.string().describe(descriptions.title),
+  why: z.string().describe(descriptions.why),
 });
 export type Proposal = z.infer<typeof Proposal>;
 
@@ -21,16 +22,8 @@ export const SLOT_KINDS = ["break", "talkup", "sweeper", "segue"] as const;
 
 /** Claude writes only the spoken copy for Jev's fixed plan. */
 export const Written = z.strictObject({
-  words: z
-    .string()
-    .describe(
-      "Spoken copy within the supplied word budget. No legal ID, lyrics or stage directions. Empty only for a segue.",
-    ),
-  leadLine: z
-    .string()
-    .describe(
-      "The break's final sentence introducing the recording, within its separate word budget. Empty for all other kinds.",
-    ),
+  words: z.string().describe(descriptions.words),
+  leadLine: z.string().describe(descriptions.leadLine),
 });
 export type Written = z.infer<typeof Written>;
 

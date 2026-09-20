@@ -10,11 +10,13 @@
     "typecheck": "next typegen && tsc --noEmit",
     "typegen": "next typegen",
     "prep:news": "node scripts/prep.mts news",
-    "prep:weather": "node scripts/prep.mts weather"
+    "prep:weather": "node scripts/prep.mts weather",
+    "prompt:preview": "node scripts/preview-prompt.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
     "fast-xml-parser": "5.7.1",
+    "handlebars": "^4.7.9",
     "jose": "6.2.10",
     "lucide-react": "^1.34.0",
     "next": "16.3.1",

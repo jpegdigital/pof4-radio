@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { clockOf, legalIdOf, produceWrite, type WriteInput, writeBrief } from "./write";
+import { clockOf, legalIdOf, produceWrite } from "./write";
+import { type WriteInput, writeBrief } from "../../../lib/prompts/write.ts";
 
 /** The brief the writer gets for one slot: what it carries, and what it leaves out. */
 
@@ -61,7 +62,7 @@ const input = (over: Partial<WriteInput> = {}): WriteInput => ({
 describe("writeBrief — the slot", () => {
   it("carries only the fixed recording and explicitly forbids changing it", () => {
     const brief = writeBrief(input());
-    expect(brief).toContain("The listener's request: rainy morning soul");
+    expect(brief).toContain("Your direction for this show: rainy morning soul");
     expect(brief).toContain("The clock: 7:25 am");
     expect(brief).toContain("Artist C — Song C");
     expect(brief).toContain("follows the mood");
@@ -147,6 +148,51 @@ describe("writeBrief — what came before", () => {
 });
 
 describe("writeBrief — the legal ID, the weather, the headlines", () => {
+  it("uses the city on air while retaining the observation station as evidence", () => {
+    const weather: NonNullable<WriteInput["weather"]> = {
+      location: {
+        city: "Dallas",
+        zip: "75229",
+        timeZone: "America/Chicago",
+        station: "KDAL",
+        grid: "FWD/87,109",
+      },
+      sources: {
+        observation: "https://api.weather.gov/stations/KDAL/observations/latest",
+        forecast: "https://api.weather.gov/gridpoints/FWD/87,109/forecast",
+        alerts: "https://api.weather.gov/alerts/active?point=32.90,-96.86",
+      },
+      units: { temperature: "F", wind: "mph", precipitation: "percent" },
+      observedAt: "2026-09-19T14:45:00Z",
+      forecastUpdatedAt: "2026-09-19T14:00:00Z",
+      now: { text: "Clear", tempF: 86, feelsLikeF: null, humidity: 50, windMph: 10 },
+      periods: [
+        {
+          name: "Today",
+          isDaytime: true,
+          startTime: "2026-09-19T12:00:00Z",
+          endTime: "2026-09-20T00:00:00Z",
+          tempF: 92,
+          short: "Sunny",
+          detailed: "Sunny. High near 92.",
+          precipitationPercent: 10,
+          windSpeed: "5 to 10 mph",
+          windDirection: "S",
+        },
+      ],
+      alerts: [],
+    };
+    const brief = writeBrief(input({ clockSaysBreak: true, weather }));
+    expect(brief).toContain('Use "Dallas" as the on-air location');
+    expect(brief).toContain(
+      "Keep the observation station, airport name, station code and grid reference off air",
+    );
+    expect(brief).not.toContain("Attribute it to the supplied observation station/location");
+    expect(brief).toContain(JSON.stringify(weather));
+    expect(brief).toContain("not a live measurement");
+    expect(brief).toContain("Preserve forecast uncertainty");
+  });
+
   it("names the legal ID when due and says it is added, not written", () => {
     const brief = writeBrief(input({ clockSaysBreak: true, legalId: "WFAI, Dallas. 56.6, Claude Radio." }));
     expect(brief).toContain('"WFAI, Dallas. 56.6, Claude Radio."');
@@ -185,7 +231,7 @@ describe("writeBrief — the legal ID, the weather, the headlines", () => {
     );
     expect(brief).toContain("The Dallas concert is free.");
     expect(brief).toContain("KXT");
-    expect(brief).toContain("Jev selected");
+    expect(brief).toContain("The stories you are covering this break");
     expect(brief).not.toContain("news editor");
     expect(brief).not.toContain("inserted before your words");
   });

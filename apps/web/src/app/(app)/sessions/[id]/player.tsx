@@ -1,4 +1,4 @@
-import { Disc3, Mic, Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import { Disc3, Mic, Pause, Play, SkipBack, SkipForward, SlidersHorizontal } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useState } from "react";
 import type { Preparation } from "./preparation";
 import { focusRing } from "../../lib/ui";
@@ -17,6 +17,16 @@ import { type Cue, clock, type DeckPhase, secs, type TrackClock } from "./types"
 
 /** A keyboard nudge on either scrubber. */
 const NUDGE_MS = 1000;
+
+const MIXER_STATUS: Record<DeckPhase, string> = {
+  idle: "STANDBY",
+  loading: "LOADING",
+  playing: "ON AIR",
+  paused: "PAUSED",
+  held: "INTERRUPTED",
+  waiting: "UP NEXT",
+  error: "STOPPED",
+};
 
 export function Player({
   cue,
@@ -59,10 +69,10 @@ export function Player({
   const rec = track ?? { positionMs: 0, durationMs: pick.durationMs, playing: false };
 
   return (
-    <div className="flex flex-col gap-6">
-      {startup}
-      <div className="flex flex-col items-center gap-6 text-center">
-        <div className={`relative w-full ${startup ? "max-w-64" : "max-w-80"}`}>
+    <div className="flex flex-col gap-4">
+      {making && startup}
+      <div className="flex flex-col items-center gap-4 text-center">
+        <div className="player-art">
           {pick.image ? (
             // biome-ignore lint/performance/noImgElement: album art is a remote Qobuz CDN url
             <img
@@ -82,13 +92,13 @@ export function Player({
           )}
         </div>
         <div className="w-full min-w-0">
-          <h1 className="text-2xl font-medium tracking-tight text-zinc-100 sm:text-3xl">{pick.title}</h1>
-          <p className="mt-2 text-base text-zinc-300">{pick.artists.join(", ")}</p>
-          <p className="mt-1 text-sm text-zinc-500">{pick.album}</p>
+          <h1 className="player-title">{pick.title}</h1>
+          <p className="mt-1.5 text-sm text-zinc-300">{pick.artists.join(", ")}</p>
+          <p className="player-album mt-1">{pick.album}</p>
         </div>
       </div>
 
-      {!startup &&
+      {(!startup || !making) &&
         (making ? (
           phase === "loading" || preparation.busy ? (
             <Loading label={phase === "loading" ? "Loading audio…" : preparation.label} />
@@ -108,38 +118,48 @@ export function Player({
           onClick={onToggle}
           disabled={making}
           aria-label={phase === "idle" ? "Play show" : paused ? "Play" : "Pause"}
-          className={`flex h-16 min-w-16 items-center justify-center gap-2 rounded-full bg-lamp px-5 text-zinc-950 shadow-[0_0_28px_#f2b54420] transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 ${focusRing}`}
+          className={`player-play flex items-center justify-center gap-2 rounded-full px-5 text-zinc-950 transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 ${focusRing}`}
         >
           {paused ? (
             <Play className="ml-0.5 size-6" fill="currentColor" strokeWidth={0} />
           ) : (
             <Pause className="size-6" fill="currentColor" strokeWidth={0} />
           )}
-          {phase === "idle" && <span className="text-sm font-semibold">Play show</span>}
         </button>
         <button type="button" onClick={onNext} disabled={!canNext} aria-label="Next" className={iconBtn}>
           <SkipForward className="size-6" fill="currentColor" strokeWidth={0} />
         </button>
       </div>
-      {plan && (
-        <details className="group border-t border-zinc-800 pt-2">
-          <summary
-            className={`cursor-pointer py-3 text-sm text-zinc-400 transition hover:text-zinc-100 ${focusRing}`}
-          >
-            Studio <span className="ml-2 text-xs text-zinc-500">The mix behind the music</span>
-          </summary>
-          <div className="pt-3 pb-2">
-            {plan && (
-              <Lanes
-                plan={plan}
-                headMs={running ? headMs : null}
-                track={pick}
-                onScrub={running ? onScrub : null}
-              />
-            )}
+      <section className="mixer-panel" aria-label="Live mixer">
+        <div className="mixer-heading">
+          <h2>
+            <SlidersHorizontal className="size-4 text-lamp" aria-hidden="true" /> Live mixer
+          </h2>
+          <span>{MIXER_STATUS[phase]}</span>
+        </div>
+        {plan ? (
+          <Lanes
+            plan={plan}
+            headMs={running ? headMs : null}
+            track={pick}
+            onScrub={running ? onScrub : null}
+          />
+        ) : (
+          <div className="mixer-empty">
+            <span>Voice</span>
+            <i />
+            <span>Bed</span>
+            <i />
+            <span>Music</span>
+            <i />
           </div>
-        </details>
-      )}
+        )}
+        <p className="mixer-caption">
+          {plan
+            ? "Voice, bed & music · Drag the timeline to hear the mix."
+            : "Your voice, bed & music timeline appears when you press play."}
+        </p>
+      </section>
     </div>
   );
 }
@@ -196,23 +216,25 @@ function Lanes({
 }) {
   const pct = (ms: number) => `${Math.min(100, Math.max(0, (ms / plan.lengthMs) * 100))}%`;
   const ticks: number[] = [];
-  for (let t = 0; t <= plan.lengthMs; t += 5000) ticks.push(t);
-  const lane = "relative h-5 overflow-hidden rounded bg-zinc-800/60";
+  for (let t = 0; t <= plan.lengthMs; t += Math.max(5000, Math.ceil(plan.lengthMs / 5 / 5000) * 5000))
+    ticks.push(t);
+  const lane = "mixer-lane";
   const bed = plan.bed;
   const bedSpan = bed ? bed.outMs - bed.atMs : 0;
   const { drag, handlers } = useScrub(plan.lengthMs, onScrub);
-  const head = drag ?? headMs;
+  const head = drag ?? (headMs === null ? null : Math.min(plan.lengthMs, headMs));
   return (
     <div>
       <div className="flex gap-2 font-display text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-        <div className="flex w-9 shrink-0 flex-col gap-1">
-          <span className="h-5 leading-5">mic</span>
-          <span className="h-5 leading-5">bed</span>
-          <span className="h-5 leading-5">rec</span>
+        <div className="mixer-labels flex shrink-0 flex-col gap-1">
+          <span className="text-[#ffb29e]">Voice</span>
+          <span className="text-[#b9a0e6]">Bed</span>
+          <span className="text-[#8cdcd9]">Music</span>
         </div>
         <div
           role="slider"
-          aria-label="The cue"
+          aria-label="Mix timeline"
+          aria-disabled={!onScrub}
           aria-valuemin={0}
           aria-valuemax={Math.round(plan.lengthMs / 1000)}
           aria-valuenow={Math.round((head ?? 0) / 1000)}
@@ -241,11 +263,11 @@ function Lanes({
                 style={{
                   left: pct(bed.atMs),
                   width: pct(bedSpan),
-                  background: `linear-gradient(to right, transparent, rgb(113 113 122) ${(
+                  background: `linear-gradient(to right, transparent, rgb(165 139 209) ${(
                     ((bed.fullMs - bed.atMs) / bedSpan) * 100
                   ).toFixed(
                     1,
-                  )}%, rgb(113 113 122) ${(((bed.downMs - bed.atMs) / bedSpan) * 100).toFixed(1)}%, transparent)`,
+                  )}%, rgb(165 139 209) ${(((bed.downMs - bed.atMs) / bedSpan) * 100).toFixed(1)}%, transparent)`,
                 }}
                 title={`bed in ${secs(bed.atMs)}, full ${secs(bed.fullMs)}, down ${secs(bed.downMs)}, out ${secs(bed.outMs)}`}
               />
@@ -262,19 +284,19 @@ function Lanes({
             {plan.vocalMs !== undefined ? (
               <>
                 <div
-                  className="absolute inset-y-0 rounded-l bg-zinc-500"
+                  className="absolute inset-y-0 rounded-l bg-[#62abae]"
                   style={{ left: pct(plan.music.atMs), width: pct(plan.vocalMs - plan.music.atMs) }}
                   title={`${track.title} at ${secs(plan.music.atMs)}, ramp to ${secs(plan.vocalMs)}`}
                 />
                 <div
-                  className="absolute inset-y-0 right-0 rounded-r bg-zinc-300"
+                  className="absolute inset-y-0 right-0 rounded-r bg-[#8cdcd9]"
                   style={{ left: pct(plan.vocalMs) }}
                   title={`vocal at ${secs(plan.vocalMs)}`}
                 />
               </>
             ) : (
               <div
-                className="absolute inset-y-0 right-0 rounded bg-zinc-300"
+                className="absolute inset-y-0 right-0 rounded bg-[#8cdcd9]"
                 style={{ left: pct(plan.music.atMs) }}
                 title={`${track.title} at ${secs(plan.music.atMs)}`}
               />
@@ -313,10 +335,11 @@ function Progress({ clock: c, onSeek }: { clock: TrackClock; onSeek: ((ms: numbe
   const shown = drag ?? c.positionMs;
   const pct = c.durationMs > 0 ? Math.min(100, (shown / c.durationMs) * 100) : 0;
   return (
-    <div>
+    <div className="player-progress">
       <div
         role="slider"
-        aria-label="The track"
+        aria-label="Track progress"
+        aria-disabled={!onSeek}
         aria-valuemin={0}
         aria-valuemax={Math.round(c.durationMs / 1000)}
         aria-valuenow={Math.round(shown / 1000)}
@@ -333,7 +356,7 @@ function Progress({ clock: c, onSeek }: { clock: TrackClock; onSeek: ((ms: numbe
           <div className="h-full bg-zinc-200" style={{ width: `${pct}%` }} />
         </div>
       </div>
-      <div className="flex justify-between font-mono text-[11px] tabular-nums text-zinc-500">
+      <div className="time-labels flex justify-between font-mono text-[11px] tabular-nums text-zinc-500">
         <span>{clock(shown)}</span>
         <span>{clock(c.durationMs)}</span>
       </div>
