@@ -134,7 +134,7 @@ describe("writeBrief — what came before", () => {
     });
     expect(brief).toContain("approximately 8 seconds");
     expect(brief).toContain("at least 6 words");
-    expect(brief).toContain("complete thought");
+    expect(brief).toContain("one useful thought");
     expect(brief).not.toContain("A one-word tag");
   });
   it("returns the complete fixed introduction without a Claude request", async () => {
@@ -148,7 +148,7 @@ describe("writeBrief — what came before", () => {
 });
 
 describe("writeBrief — the legal ID, the weather, the headlines", () => {
-  it("uses the city on air while retaining the observation station as evidence", () => {
+  it("gives the weather section current facts without timestamps or source metadata", () => {
     const weather: NonNullable<WriteInput["weather"]> = {
       location: {
         city: "Dallas",
@@ -180,17 +180,49 @@ describe("writeBrief — the legal ID, the weather, the headlines", () => {
           windDirection: "S",
         },
       ],
-      alerts: [],
+      alerts: [
+        {
+          id: "alert-123",
+          event: "Heat Advisory",
+          headline: "Heat Advisory for Dallas",
+          severity: "Moderate",
+          effective: "2026-09-19T12:00:00Z",
+          expires: "2026-09-20T00:00:00Z",
+          description: "Heat index up to 105 degrees.",
+          instruction: "Drink plenty of fluids.",
+        },
+      ],
     };
+    weather.periods.push({
+      ...weather.periods[0],
+      name: "Tomorrow",
+      startTime: "2026-09-20T12:00:00Z",
+      endTime: "2026-09-21T00:00:00Z",
+    });
     const brief = writeBrief(input({ clockSaysBreak: true, weather }));
-    expect(brief).toContain('Use "Dallas" as the on-air location');
-    expect(brief).toContain(
-      "Keep the observation station, airport name, station code and grid reference off air",
-    );
-    expect(brief).not.toContain("Attribute it to the supplied observation station/location");
-    expect(brief).toContain(JSON.stringify(weather));
-    expect(brief).toContain("not a live measurement");
-    expect(brief).toContain("Preserve forecast uncertainty");
+    expect(brief).toContain("Weather\nGive a brief weather update.");
+    const facts = JSON.parse(brief.split("Give a brief weather update.\n")[1].split("\n")[0]);
+    expect(facts).toEqual({
+      city: "Dallas",
+      current: { text: "Clear", tempF: 86, feelsLikeF: null, windMph: 10 },
+      forecast: { name: "Today", tempF: 92, short: "Sunny", precipitationPercent: 10 },
+      alerts: [
+        {
+          event: "Heat Advisory",
+          headline: "Heat Advisory for Dallas",
+          severity: "Moderate",
+          description: "Heat index up to 105 degrees.",
+          instruction: "Drink plenty of fluids.",
+        },
+      ],
+    });
+    expect(brief).not.toContain("KDAL");
+    expect(brief).not.toContain("2026-09-");
+    expect(brief).not.toContain("Tomorrow");
+    expect(writeBrief(input({ weather }))).not.toContain("Give a brief weather update.");
+    weather.periods[0].name = "Tonight";
+    weather.periods[0].isDaytime = false;
+    expect(writeBrief(input({ clockSaysBreak: true, weather }))).toContain('"name":"Tonight"');
   });
 
   it("names the legal ID when due and says it is added, not written", () => {

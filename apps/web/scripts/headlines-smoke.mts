@@ -1,4 +1,4 @@
-/** Live source desk, no secrets: --refresh, --save <json>, --replay <json>, --html <html>. */
+/** Live source desk, no secrets: --save <json>, --replay <json>, --html <html>. */
 import { readFile, writeFile } from "node:fs/promises";
 import { NEWS_DEFAULTS, NewsConfig } from "../src/lib/news.ts";
 import { eligibleArticles, readHeadlines, type HeadlineSnapshot } from "../src/app/api/sessions/headlines.ts";
@@ -12,7 +12,7 @@ const started = Date.now();
 const replay = option("--replay");
 const snapshot: HeadlineSnapshot = replay
   ? (JSON.parse(await readFile(replay, "utf8")) as HeadlineSnapshot)
-  : await readHeadlines(NEWS_DEFAULTS, { refresh: args.includes("--refresh") });
+  : await readHeadlines(NEWS_DEFAULTS);
 NewsConfig.parse(snapshot.config);
 const eligible = eligibleArticles(snapshot.articles, replay ? Date.parse(snapshot.at) : Date.now());
 console.log(

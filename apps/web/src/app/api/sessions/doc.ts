@@ -63,6 +63,7 @@ export const SLOT_COLUMNS =
   "seq, title, artist, why, hits, qobuz_id, clock_ms, ramp_ms, sure, post, outro, outro_ms, energy, tempo, mood, kind, words, lead_line, legal_id, treatment, fallback, record_under_ms, voice_in_ms, clip_key, voiced_at, news, generation";
 
 export interface Chart {
+  postTiming?: "0" | "1" | "2" | "3" | "4" | "5" | "beyond_5";
   rampMs: number;
   sure: boolean;
   post: string;
@@ -74,6 +75,7 @@ export interface Chart {
 }
 
 export interface SlotDoc {
+  finishAtMs?: number;
   takes?: { clipKey: string; at: string; words: string; legalId?: string; leadLine?: string }[];
   news?: NewsReceipt;
   seq: number;
@@ -133,6 +135,9 @@ export function slotDoc(r: SlotRow, held: ReadonlySet<string>): SlotDoc {
       energy: r.energy,
       tempo: r.tempo as Chart["tempo"],
       mood: r.mood ?? "",
+      ...(r.generation?.input.plan.chart.postTiming !== undefined
+        ? { postTiming: r.generation.input.plan.chart.postTiming }
+        : {}),
     };
   if (r.kind !== null) d.kind = r.kind as SlotKind;
   if (r.words !== null) d.words = r.words;
@@ -142,6 +147,7 @@ export function slotDoc(r: SlotRow, held: ReadonlySet<string>): SlotDoc {
   if (r.fallback !== null && r.fallback !== undefined) d.fallback = r.fallback as SlotFallback;
   if (r.record_under_ms !== null) d.recordUnderMs = r.record_under_ms;
   if (r.voice_in_ms !== null) d.voiceInMs = r.voice_in_ms;
+  if (r.generation?.input.plan.finishAtMs !== undefined) d.finishAtMs = r.generation.input.plan.finishAtMs;
   if (r.clip_key !== null) {
     d.clipKey = r.clip_key;
     d.takes = r.generation?.takes?.map((take) => ({

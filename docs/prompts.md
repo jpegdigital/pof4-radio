@@ -1,16 +1,18 @@
 # Prompt templates
 
-Edit the prose in `apps/web/prompts/*.prompt`. The directory is flat; names identify the job:
+Edit prompts in `apps/web/prompts/`. The directory is flat; names identify the job:
 
 | Files | Purpose |
 | --- | --- |
-| `write-system`, `write-brief`, `write-weather` | DJ identity, slot instructions, and weather delivery |
+| `write-system`, `write-brief` | DJ identity and slot instructions, including the weather section |
 | `fill-system`, `fill-brief` | Music programming and the current rundown |
-| `recording`, `headline` | Recording and story selection instructions |
-| `chart`, `mix` | Track judgments and mixer decisions |
+| `recording.prompt` | Recording selection instructions |
+| `headlines.jev.json` | Both headline Choice questions, including count option descriptions |
+| `chart.jev.json` | Five track questions and all their choice descriptions |
+| `mix.jev.json` | Delivery question and all transition descriptions |
 | `news-prepare`, `news-review` | Evidence preparation and checking |
 
-Each file is plain text with Handlebars variables (`{{name}}`) and `if`/`unless`
+Each `.prompt` file is plain text with Handlebars variables (`{{name}}`) and `if`/`unless`
 conditionals. No YAML frontmatter or model settings are needed. This is ordinary
 Handlebars, not the Dotprompt/Genkit execution format.
 
@@ -29,9 +31,22 @@ Handlebars, not the Dotprompt/Genkit execution format.
 - Keep illustrative artists, songs, genres and sample DJ lines out of templates.
   Concrete content comes from the current show.
 
-Short schema-field descriptions, choice-option labels and executable action labels
-remain in the typed modules. The long-form instructions and conditional writing
-briefs live in the `.prompt` files.
+`headlines.jev.json` contains explicit `ranking` and `count` questions with their
+instructions and fixed choice descriptions together. It is ordinary JSON, with no
+Handlebars interpolation or conditional branches. Code supplies the ranking candidates
+from the feed, omits unavailable count options, and validates the assembled questions
+with Zod. State is supplied separately. Other adapters still keep short choice labels
+in their typed modules; long writing briefs live in `.prompt` files.
+
+`chart.jev.json` holds the DJ finish-point question (0–5 seconds or beyond 5), plus
+ending, energy, tempo, and mood. The finish point is relative to song start, not a delay
+before speaking. Code removes options outside the recording's duration.
+
+`mix.jev.json` contains the delivery question and every choice description: uninterrupted
+music, dry station sweeper, station tag into the opening, brief talk-up, and scheduled
+break transitions. Code filters choices by the clock, post and recent station tags;
+it handles word budgets and aligns the measured voice clip in playback. All editorial
+instructions remain in the JSON. Zod validates both files against supported option keys.
 
 ## Preview
 
@@ -41,12 +56,16 @@ From the repository root:
 pnpm prompt:preview --list
 pnpm prompt:preview write-system variables.json
 pnpm prompt:preview mix
+pnpm prompt:preview headlines
+pnpm prompt:preview chart
 ```
 
 `variables.json` contains the named template variables, not the raw database row.
 Paths are relative to the working directory. The command uses the actual renderer
 and Zod contract, prints the rendered text, and makes no model or database calls.
 A template with no variables can be previewed without a JSON file.
+The `headlines` preview prints the validated JSON question definitions; runtime
+headline candidates are attached when a session assembles the request.
 
 ## Runtime and deployment
 

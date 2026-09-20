@@ -62,8 +62,8 @@ export function NewsEditor({ value }: { value: NewsConfig }) {
       <header>
         <h1 className="text-2xl font-semibold">Headlines</h1>
         <p className="mt-2 max-w-prose text-sm text-zinc-400">
-          Jev chooses at most one prepared story that fit your show. Weak matches and stories already selected
-          in the show are omitted.
+          Jev chooses zero, one, or two prepared stories that fit your show. Weak matches and stories already
+          selected in the show are omitted.
         </p>
       </header>
       <form action={action} className="flex flex-col gap-4">

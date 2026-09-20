@@ -47,12 +47,9 @@ Skip greetings and generic show descriptions; the show is already underway.
 {{/if}}
 {{/if}}
 {{#if talkup}}
-You have approximately {{talkSeconds}} seconds over the music.
-Write one complete thought at a natural speaking pace, with the song or artist woven in.
-A bare title, surname or generic exclamation is not an introduction.
-Use one specific connection to your show; do not invent facts or substitute a station tag.
-Do not pad, rush, or truncate names to fit a stopwatch.
-The vocal estimate is guidance; the supplied plan may intentionally cross an opening word.
+Keep this thought brief: approximately {{talkSeconds}} seconds at a natural speaking pace.
+Use the supplied context to add one useful thought to the show. Song titles, artist names, and facts are optional.
+Do not pad or rush; the mixer will align the finished clip with the music.
 {{/if}}
 {{#if hasWordsMin}}
 Use at least {{wordsMin}} words for the complete planned introduction, within the maximum above.
@@ -73,6 +70,8 @@ Do not add or choose other stories.
 No headlines selected: omit news entirely.
 {{/if}}
 {{#if weather}}
+Weather
+Give a brief weather update.
 {{weather}}
 {{else}}
 No prepared weather: omit weather entirely.

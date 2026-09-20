@@ -80,7 +80,27 @@ export function template<S extends z.ZodObject>(name: string, schema: S) {
   return invoke;
 }
 
-/** Uses the same contracts and rendering as the actual model calls. */
+/** Structured question definitions stay JSON; runtime candidates are attached by the adapter. */
+export function jsonPrompt<S extends z.ZodType>(name: string, schema: S) {
+  if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error("Invalid prompt name: " + name);
+  const filename = name + ".jev.json";
+  const read = () => {
+    try {
+      return schema.parse(JSON.parse(readFileSync(resolve(directory, filename), "utf8")));
+    } catch (cause) {
+      throw new Error(filename + ": " + (cause instanceof Error ? cause.message : String(cause)), { cause });
+    }
+  };
+  const cached = read();
+  const load = () => (process.env.NODE_ENV === "production" ? cached : read());
+  previews.set(name, (input) => {
+    z.strictObject({}).parse(input);
+    return JSON.stringify(load(), null, 2);
+  });
+  return load;
+}
+
+/** Uses the same contracts and loading as the actual model calls. */
 export function previewTemplate(name: string, input: unknown): string {
   const render = previews.get(name);
   if (!render) throw new Error("Unknown prompt: " + name + ". Available: " + [...previews.keys()].join(", "));

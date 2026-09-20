@@ -19,7 +19,7 @@ export interface Article extends Headline {
 export interface SourceStatus {
   id: string;
   checkedAt: string | null;
-  status: "fresh" | "stale" | "unavailable";
+  status: "fresh" | "unavailable";
   count: number;
   error: string | null;
 }
@@ -33,9 +33,12 @@ export interface HeadlineSnapshot {
 export const HEADLINES_PER_FEED = 12;
 const MAX_BODY_BYTES = 2_000_000;
 const TIMEOUT_MS = 4_000;
+const BUDGET_MS = 6_000;
+const CONCURRENT_FEEDS = 4;
+const MAX_REDIRECTS = 3;
+const REDIRECT_STATUSES = [301, 302, 303, 307, 308];
 const MAX_ARTICLES = 84;
 const MAX_EVIDENCE = 1800;
-const MAX_CACHE_ENTRIES = 64;
 const USER_AGENT = "pof4-radio (jpegdigital@users.noreply.github.com)";
 export const fingerprint = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 24);
 
@@ -158,207 +161,111 @@ export function eligibleArticles(articles: Article[], now: number): Article[] {
   });
 }
 
-interface CachedFeed {
-  control: string;
-  articles: Article[];
-  checked: number;
-  next: number;
-  retryAt: number;
-  failures: number;
-  etag: string | null;
-  modified: string | null;
-  error: string | null;
-}
-
-/** Per-source cache and single-flight ownership, created once per server process (or per test). */
-export function createHeadlineReader(fetchFn: typeof fetch = fetch) {
-  const cache = new Map<string, CachedFeed>();
-  const inflight = new Map<string, Promise<void>>();
-  return async (
-    config: NewsConfig,
-    opts: {
-      now?: number;
-      refresh?: boolean;
-      budgetMs?: number;
-      timeoutMs?: number;
-      signal?: AbortSignal;
-    } = {},
-  ): Promise<HeadlineSnapshot> => {
-    const clock = () => opts.now ?? Date.now();
-    const deadline = AbortSignal.any([
-      AbortSignal.timeout(opts.budgetMs ?? 6_000),
-      ...(opts.signal ? [opts.signal] : []),
-    ]);
-    const articles: Article[] = [];
-    const statuses: SourceStatus[] = [];
-    const sources = config.enabled
-      ? NEWS_SOURCES.filter(
-          (s) =>
-            config.sources.includes(s.id) &&
-            (!s.localOnly ||
-              (config.city.toLowerCase() === "dallas" && config.region.toUpperCase() === "TX")),
-        )
-      : [];
-    // Four independent feeds at a time; a rejected source never discards another source.
-    for (let offset = 0; offset < sources.length; offset += 4) {
-      await Promise.allSettled(
-        sources.slice(offset, offset + 4).map(async (source) => {
-          const url =
-            source.id === "google-local"
-              ? `${source.url}${encodeURIComponent(`${config.city},${config.region}`)}?hl=en-US&gl=US&ceid=US:en`
-              : source.url;
-          const ttl =
-            (source.scope === "culture" ? config.cultureRefreshMinutes : config.refreshMinutes) * 60_000;
-          const key = `${source.id}:${url}:${ttl}`;
-          let c = cache.get(key);
-          if (!c) {
-            if (cache.size >= MAX_CACHE_ENTRIES)
-              for (const old of cache.keys()) {
-                if (!inflight.has(old)) {
-                  cache.delete(old);
-                  break;
-                }
-              }
-            c = {
-              control: "",
-              articles: [],
-              checked: 0,
-              next: 0,
-              retryAt: 0,
-              failures: 0,
-              etag: null,
-              modified: null,
-              error: null,
-            };
-            cache.set(key, c);
+/** One read of the configured sources, for the news worker. Nothing is kept between reads. */
+export async function readHeadlines(
+  config: NewsConfig,
+  opts: {
+    now?: number;
+    budgetMs?: number;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    fetchFn?: typeof fetch;
+  } = {},
+): Promise<HeadlineSnapshot> {
+  const fetchFn = opts.fetchFn ?? fetch;
+  const clock = () => opts.now ?? Date.now();
+  const deadline = AbortSignal.any([
+    AbortSignal.timeout(opts.budgetMs ?? BUDGET_MS),
+    ...(opts.signal ? [opts.signal] : []),
+  ]);
+  const articles: Article[] = [];
+  const statuses: SourceStatus[] = [];
+  const sources = config.enabled
+    ? NEWS_SOURCES.filter(
+        (s) =>
+          config.sources.includes(s.id) &&
+          (!s.localOnly || (config.city.toLowerCase() === "dallas" && config.region.toUpperCase() === "TX")),
+      )
+    : [];
+  // A few independent feeds at a time; a failed source never discards another source.
+  for (let offset = 0; offset < sources.length; offset += CONCURRENT_FEEDS) {
+    await Promise.all(
+      sources.slice(offset, offset + CONCURRENT_FEEDS).map(async (source) => {
+        const url =
+          source.id === "google-local"
+            ? `${source.url}${encodeURIComponent(`${config.city},${config.region}`)}?hl=en-US&gl=US&ceid=US:en`
+            : source.url;
+        try {
+          const headers = {
+            "User-Agent": USER_AGENT,
+            Accept: "application/rss+xml, application/atom+xml, application/xml",
+          };
+          // All destinations are code-owned. Redirects stay on the same publisher host (www alias allowed).
+          let target = url;
+          let res: Response | undefined;
+          const signal = AbortSignal.any([deadline, AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS)]);
+          for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            res = await fetchFn(target, { headers, signal, redirect: "manual", cache: "no-store" });
+            if (!REDIRECT_STATUSES.includes(res.status)) break;
+            const location = res.headers.get("location");
+            const next = location ? new URL(location, target) : null;
+            if (
+              !next ||
+              next.protocol !== "https:" ||
+              next.port ||
+              next.username ||
+              next.password ||
+              next.hostname.replace(/^www./, "") !== new URL(url).hostname.replace(/^www./, "")
+            )
+              throw new Error("news redirect outside publisher");
+            await res.body?.cancel();
+            target = next.href;
           }
-          const entry = c;
-          if (clock() >= entry.retryAt && (opts.refresh || clock() >= entry.next)) {
-            let pending = inflight.get(key);
-            if (!pending) {
-              pending = (async () => {
-                try {
-                  const headers = new Headers({
-                    "User-Agent": USER_AGENT,
-                    Accept: "application/rss+xml, application/atom+xml, application/xml",
-                  });
-                  if (entry.etag) headers.set("If-None-Match", entry.etag);
-                  if (entry.modified) headers.set("If-Modified-Since", entry.modified);
-                  // All destinations are code-owned. Redirects stay on the same publisher host (www alias allowed).
-                  let target = url;
-                  let res: Response | undefined;
-                  const signal = AbortSignal.any([
-                    deadline,
-                    AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS),
-                  ]);
-                  for (let n = 0; n <= 3; n++) {
-                    res = await fetchFn(target, { headers, signal, redirect: "manual", cache: "no-store" });
-                    if (![301, 302, 303, 307, 308].includes(res.status)) break;
-                    const location = res.headers.get("location");
-                    const next = location ? new URL(location, target) : null;
-                    if (
-                      !next ||
-                      next.protocol !== "https:" ||
-                      next.port ||
-                      next.username ||
-                      next.password ||
-                      next.hostname.replace(/^www\./, "") !== new URL(url).hostname.replace(/^www\./, "")
-                    )
-                      throw new Error("news redirect outside publisher");
-                    await res.body?.cancel();
-                    target = next.href;
-                  }
-                  if (!res) throw new Error("no news response");
-                  if (res.status === 429 || res.status === 503) {
-                    const retry = res.headers.get("Retry-After");
-                    if (retry)
-                      entry.retryAt = Math.max(
-                        entry.retryAt,
-                        /^\d+$/.test(retry) ? clock() + Number(retry) * 1000 : Date.parse(retry) || 0,
-                      );
-                  }
-                  if (res.status === 304 && entry.checked) {
-                    /* unchanged evidence; only validation time moves */
-                  } else {
-                    if (!res.ok) {
-                      await res.body?.cancel();
-                      throw new Error(`${source.id} HTTP ${res.status}`);
-                    }
-                    const reader = res.body?.getReader();
-                    if (!reader) throw new Error("empty news response body");
-                    const chunks: Uint8Array[] = [];
-                    let size = 0;
-                    try {
-                      while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-                        size += value.byteLength;
-                        if (size > MAX_BODY_BYTES) throw new Error("news response too large");
-                        chunks.push(value);
-                      }
-                    } finally {
-                      await reader.cancel().catch(() => {});
-                      reader.releaseLock();
-                    }
-                    entry.articles = parseFeed(Buffer.concat(chunks).toString("utf8"), source, clock());
-                    entry.etag = res.headers.get("ETag");
-                    entry.modified = res.headers.get("Last-Modified");
-                  }
-                  entry.control =
-                    res.headers.get("Cache-Control") ?? (res.status === 304 ? entry.control : "");
-                  const maxAge = /(?:^|,)\s*max-age\s*=\s*"?(\d+)/i.exec(entry.control)?.[1];
-                  const originTtl =
-                    maxAge === undefined
-                      ? ttl
-                      : Math.max(0, Number(maxAge) - (Number(res.headers.get("Age")) || 0)) * 1000;
-                  entry.checked = clock();
-                  entry.next = clock() + (/\bno-cache\b/i.test(entry.control) ? 0 : Math.min(ttl, originTtl));
-                  entry.failures = 0;
-                  entry.retryAt = 0;
-                  entry.error = null;
-                } catch (err) {
-                  entry.error = err instanceof Error ? err.message : String(err);
-                  entry.failures++;
-                  entry.retryAt = Math.max(
-                    entry.retryAt,
-                    clock() +
-                      [30_000, 120_000, 600_000][Math.min(2, entry.failures - 1)] * (1 + Math.random() * 0.2),
-                  );
-                  console.warn(`[news] ${source.id}: ${entry.error}`);
-                } finally {
-                  inflight.delete(key);
-                }
-              })();
-              inflight.set(key, pending);
+          if (!res) throw new Error("no news response");
+          if (!res.ok) {
+            await res.body?.cancel();
+            throw new Error(`${source.id} HTTP ${res.status}`);
+          }
+          const reader = res.body?.getReader();
+          if (!reader) throw new Error("empty news response body");
+          const chunks: Uint8Array[] = [];
+          let size = 0;
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              size += value.byteLength;
+              if (size > MAX_BODY_BYTES) throw new Error("news response too large");
+              chunks.push(value);
             }
-            await pending;
+          } finally {
+            await reader.cancel().catch(() => {});
+            reader.releaseLock();
           }
-          const available =
-            entry.checked > 0 &&
-            !(entry.error && /\b(?:must-revalidate|no-cache|no-store)\b/i.test(entry.control)) &&
-            clock() - entry.checked <= (source.scope === "culture" ? 7_200_000 : 1_800_000);
-          if (available) articles.push(...entry.articles);
+          const found = parseFeed(Buffer.concat(chunks).toString("utf8"), source, clock());
+          articles.push(...found);
           statuses.push({
             id: source.id,
-            checkedAt: entry.checked ? new Date(entry.checked).toISOString() : null,
-            status: !available ? "unavailable" : entry.error ? "stale" : "fresh",
-            count: available ? entry.articles.length : 0,
-            error: entry.error,
+            checkedAt: new Date(clock()).toISOString(),
+            status: "fresh",
+            count: found.length,
+            error: null,
           });
-          if (/\bno-store\b/i.test(entry.control)) cache.delete(key);
-        }),
-      );
-    }
-    articles.sort((a, b) => a.sourceId.localeCompare(b.sourceId) || a.id.localeCompare(b.id));
-    statuses.sort((a, b) => a.id.localeCompare(b.id));
-    return {
-      id: crypto.randomUUID(),
-      at: new Date(clock()).toISOString(),
-      config,
-      articles: articles.slice(0, MAX_ARTICLES),
-      sources: statuses,
-    };
+        } catch (err) {
+          const error = err instanceof Error ? err.message : String(err);
+          console.warn(`[news] ${source.id}: ${error}`);
+          statuses.push({ id: source.id, checkedAt: null, status: "unavailable", count: 0, error });
+        }
+      }),
+    );
+  }
+  articles.sort((a, b) => a.sourceId.localeCompare(b.sourceId) || a.id.localeCompare(b.id));
+  statuses.sort((a, b) => a.id.localeCompare(b.id));
+  return {
+    id: crypto.randomUUID(),
+    at: new Date(clock()).toISOString(),
+    config,
+    articles: articles.slice(0, MAX_ARTICLES),
+    sources: statuses,
   };
 }
-
-export const readHeadlines = createHeadlineReader();

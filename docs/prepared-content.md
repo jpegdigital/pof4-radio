@@ -58,10 +58,10 @@ retained as evidence. There are no session-time expiry checks. Already selected 
 across revisions. Missing prepared data never triggers request-time research.
 
 Every full break reads these editions under the session lock. `headline-choice.ts` gives Jev the
-listener request, up to 12 checked options, and the session's reserved story history. Each option
-gets an include/omit/repeat Choice. Code ranks explicit includes by include probability and takes
-at most one; zero is valid. It never fills the quota with rejected stories. Exact article/story
-IDs are excluded across revisions; Jev checks retitled and syndicated event repeats.
+listener request, up to 12 checked options, and the session's reserved story history. One Choice
+compares the headlines; another chooses how many deserve airtime (zero, one, or two). Code sorts
+the headline probabilities and takes that many stories. Exact article/story IDs are deduplicated
+and excluded across revisions; both questions consider previously covered events.
 
 `session_slot.generation` reserves choices before writing, even if Claude fails or playback never
 happens. It retains edition IDs and dates, exact Jev requests, answers and probabilities, the music

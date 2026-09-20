@@ -26,7 +26,7 @@ philosophy).
   API (`api/sessions/qobuz.ts`, the app id + secret read out of the player's bundle), the bucket
   client is AWS SigV4 by hand (`apps/web/src/lib/sigv4.ts`, tested against the AWS vectors), the
   weather is plain fetch; headlines use `fast-xml-parser` for bounded RSS/Atom evidence (DTD/entity
-  declarations rejected), with ordinary fetch for HTTP caching. No AWS SDK, no auth or
+  declarations rejected), read once per worker run with ordinary fetch. No AWS SDK, no auth or
   state-management library. Same rule for services: if the browser can do it (playback, audio
   mixing), the server doesn't.
 - **WET over DRY, lib at the level that uses it.** Code lives beside the route that reads it; a
@@ -60,7 +60,7 @@ Three places, each owning what it alone needs:
   `Proposal`, `Written`), `fill` (the proposer call with its two catalog tools, the search, the
   dedupe), `write` (the writer's
   brief and call), `rules` (the clock's law: `isBreak`, `legalIdDue`, `checkSlot`), `qobuz` (search
-  and the pull, on the listener's token), `weather`, `headlines` (fetch/cache/evidence),
+  and the pull, on the listener's token), `weather`, `headlines` (the news worker's one read: fetch/evidence),
   `headline-choice` (Jev choices over prepared facts), `generation` (retained audit), `doc` (the slot on the wire). Tests
   sit next to the pure parts.
 - **`apps/web/src/app/(app)/`** — the browser: the home (`page.tsx` + `home-desk.tsx`), the session
@@ -108,12 +108,12 @@ the track pull, lock-free:
   legal ID is due (`legalIdDue`: slot 1, or the hour turned since the last break). The brief carries
   the ask, the clock, the identity, the DJ, the proposal and the fixed recording selected by Jev, the last three slots'
   copy, everything played, Jev's fixed mixer plan and word budgets, and for a break the
-  latest prepared NWS weather and at most one prepared story selected by Jev. **One Jev Choice call** selects a recording from the hits (or fails if none fits). Its request,
+  latest prepared NWS weather and up to two prepared stories selected by Jev's headline ranking and count choices. **One Jev Choice call** selects a recording from the hits (or fails if none fits). Its request,
   response, model, usage and elapsed time are retained in `session_slot.selection`. No alternative
-  picker or automatic retry. Jev then answers five chart questions in parallel (coarse intro,
+  picker or automatic retry. Jev then answers five chart questions in parallel (DJ finish point at 0–5 seconds or beyond 5,
   ending, energy, tempo, mood), followed by one action choice over code-built executable mixer
-  plans. All judgments and probabilities are retained under selection.planning. Unknown timing
-  offers dry/no-voice actions; estimates are not audio measurements. **One unified** Claude
+  plans. All judgments and probabilities are retained under selection.planning. A zero finish point
+  offers dry/no-voice actions; playback aligns measured clips using finishAtMs. Estimates are not audio measurements. **One unified** Claude
   call returns only words and leadLine, combining news, weather and music with thinking disabled and fixed word budgets. checkSlot fails on invalid copy or a clock mismatch; it never changes
   Jev's action. A Jev segue skips prose and TTS. One update lands the plan, copy and receipts. Then
   the clip: legal ID + words + lead line through ElevenLabs in the session's voice, `PUT` to
@@ -133,8 +133,8 @@ missing row is a fault naming it. Defaults as seeded: 5, 6, 2.
 
 **News and weather are prepared before sessions.** Railway cron workers append dated editions to
 `news_entries` and `weather_entries`; source evidence and reviews are retained. The web request only
-reads the latest saved editions. Jev marks each headline include/omit/repeat against the prompt and reserved
-session history; code ranks explicit includes by probability and caps them at one. Empty is valid.
+reads the latest saved editions. Jev compares headline options against the prompt and reserved
+session history and chooses a count of zero, one, or two; code takes that many in probability order.
 The session lock serializes reservations; `session_slot.generation` retains choices before writing,
 so later breaks cannot reuse stories even if playback never happens. It retains exact model inputs,
 outputs, probabilities, source edition IDs/dates, Claude's brief, and every voice take's text/settings/key.

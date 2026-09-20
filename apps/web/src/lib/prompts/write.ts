@@ -58,14 +58,32 @@ const renderSystem = template(
     city: z.string().min(1),
   }),
 );
-const renderWeather = template(
-  "write-weather",
-  z.strictObject({
-    city: z.string().min(1),
-    cityQuoted: z.string(),
-    facts: z.string(),
+/** Only the weather facts the DJ needs; freshness belongs to preparation. */
+export const WeatherBrief = z.object({
+  city: z.string().min(1),
+  current: z.object({
+    text: z.string(),
+    tempF: z.number().nullable(),
+    feelsLikeF: z.number().nullable(),
+    windMph: z.number().nullable(),
   }),
-);
+  forecast: z.object({
+    name: z.string(),
+    tempF: z.number(),
+    short: z.string(),
+    precipitationPercent: z.number().min(0).max(100).nullable(),
+  }),
+  alerts: z.array(
+    z.object({
+      event: z.string(),
+      headline: z.string().nullable(),
+      severity: z.string(),
+      description: z.string(),
+      instruction: z.string().nullable(),
+    }),
+  ),
+});
+export type WeatherBrief = z.infer<typeof WeatherBrief>;
 const renderBrief = template(
   "write-brief",
   z.strictObject({
@@ -98,11 +116,13 @@ const renderBrief = template(
 export const system = (dj: string | null, identity: Identity) =>
   renderSystem({ dj, station: identity.onAir, calls: identity.calls, city: identity.city });
 
-export const weatherBlock = (weather: PreparedWeather) =>
-  renderWeather({
+export const weatherBrief = (weather: PreparedWeather): WeatherBrief =>
+  WeatherBrief.parse({
     city: weather.location.city,
-    cityQuoted: JSON.stringify(weather.location.city),
-    facts: JSON.stringify(weather),
+    current: weather.now,
+    // Preparation orders the forecast with the current period first (including overnight).
+    forecast: weather.periods[0],
+    alerts: weather.alerts,
   });
 
 export function writeBrief(input: WriteInput): string {
@@ -141,7 +161,7 @@ export function writeBrief(input: WriteInput): string {
           })),
         )
       : "",
-    weather: input.weather ? weatherBlock(input.weather) : "",
+    weather: input.weather ? JSON.stringify(weatherBrief(input.weather)) : "",
   });
 }
 

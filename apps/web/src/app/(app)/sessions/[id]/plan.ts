@@ -12,10 +12,12 @@ export interface PlanInput {
   kind: SlotKind;
   /** The clip's length, or null when there is none. */
   clipMs: number | null;
-  /** Breaks: how long before the voice ends the track starts under it. */
+  /** Maximum overlap: breaks, or short talk-ups with a post beyond five seconds. */
   recordUnderMs?: number;
   /** Talk-ups: how far into the track the voice comes in. */
   voiceInMs?: number;
+  /** Finish speech just before this estimated song-relative post; absent on legacy plans. */
+  finishAtMs?: number;
   /** Estimated first vocal, shown on the timeline; not a deadline for the DJ. */
   rampMs?: number;
   /** The legal ID's length in characters: said dry, the bed waits for it. */
@@ -30,7 +32,7 @@ export interface Plan {
   bed: { atMs: number; fullMs: number; downMs: number; outMs: number } | null;
   music: { atMs: number };
   /** The track under the voice: down as the voice comes in over it, back up once it is done. */
-  duck: { atMs: number; endMs: number } | null;
+  duck: { atMs: number; endMs: number; riseMs?: number } | null;
   /** Where the vocal comes in, when the chart knows the ramp. */
   vocalMs?: number;
 }
@@ -50,11 +52,15 @@ export const VOCAL_TAIL_MS = 3000;
 /** The track's level on its own (the device's volume, 0–1). */
 export const TRACK_FULL = 0.8;
 /** The track's level under the voice. */
-export const TRACK_DUCK = 0.3;
+export const TRACK_DUCK = 0.4;
 /** The track goes down over this long, landed as the voice comes in. */
-export const DUCK_MS = 600;
+export const DUCK_MS = 800;
 /** The track comes back up over this long, from the moment the voice is done. */
-export const RISE_MS = 1200;
+export const RISE_MS = 1800;
+export const VOICE_IN_MS = 8;
+export const VOICE_OUT_MS = 25;
+export const POST_MARGIN_MS = 150;
+const smooth = (t: number) => t * t * (3 - 2 * t);
 
 /** The track under the voice, when they overlap: from the later start to the voice's end. */
 function duckOf(mic: Plan["mic"], musicAt: number): Plan["duck"] {
@@ -66,10 +72,40 @@ function duckOf(mic: Plan["mic"], musicAt: number): Plan["duck"] {
 export function trackLevelAt(duck: Plan["duck"], ms: number): number {
   if (!duck) return TRACK_FULL;
   const downFrom = duck.atMs - DUCK_MS;
-  if (ms <= downFrom || ms >= duck.endMs + RISE_MS) return TRACK_FULL;
-  if (ms < duck.atMs) return TRACK_FULL - ((TRACK_FULL - TRACK_DUCK) * (ms - downFrom)) / DUCK_MS;
+  const riseMs = duck.riseMs ?? RISE_MS;
+  if (ms <= downFrom || ms >= duck.endMs + riseMs) return TRACK_FULL;
+  if (ms < duck.atMs) return TRACK_FULL - (TRACK_FULL - TRACK_DUCK) * smooth((ms - downFrom) / DUCK_MS);
   if (ms <= duck.endMs) return TRACK_DUCK;
-  return TRACK_DUCK + ((TRACK_FULL - TRACK_DUCK) * (ms - duck.endMs)) / RISE_MS;
+  return TRACK_DUCK + (TRACK_FULL - TRACK_DUCK) * smooth((ms - duck.endMs) / riseMs);
+}
+
+/** Sample the same eased curve used for seeks; schedule its remaining points on the audio clock. */
+export function trackGainPoints(duck: Plan["duck"]): [number, number][] {
+  if (!duck) return [];
+  return [
+    ...Array.from({ length: 17 }, (_, i) => duck.atMs - DUCK_MS + (DUCK_MS * i) / 16),
+    ...Array.from({ length: 17 }, (_, i) => duck.endMs + ((duck.riseMs ?? RISE_MS) * i) / 16),
+  ].map((ms) => [ms, trackLevelAt(duck, ms)]);
+}
+
+export function voiceLevelAt(mic: NonNullable<Plan["mic"]>, ms: number): number {
+  if (ms <= mic.atMs || ms >= mic.endMs) return 0;
+  const half = (mic.endMs - mic.atMs) / 2;
+  return Math.min(
+    1,
+    (ms - mic.atMs) / Math.min(VOICE_IN_MS, half),
+    (mic.endMs - ms) / Math.min(VOICE_OUT_MS, half),
+  );
+}
+
+export function voiceGainPoints(mic: NonNullable<Plan["mic"]>): [number, number][] {
+  const half = (mic.endMs - mic.atMs) / 2;
+  return [
+    [mic.atMs, 0],
+    [mic.atMs + Math.min(VOICE_IN_MS, half), 1],
+    [mic.endMs - Math.min(VOICE_OUT_MS, half), 1],
+    [mic.endMs, 0],
+  ];
 }
 
 /** How long the timeline runs past the track's start, and where its vocal is. */
@@ -109,7 +145,11 @@ export function planSlot(input: PlanInput): Plan {
   if (kind === "break") {
     const bedAt = input.legalIdChars * LEGAL_ID_MS_PER_CHAR;
     // A short take may not have all the requested overlap available after its dry legal ID.
-    const musicAt = Math.max(Math.min(clipMs, bedAt), clipMs - (input.recordUnderMs ?? 0));
+    const overlapMs =
+      input.finishAtMs === undefined
+        ? (input.recordUnderMs ?? 0)
+        : Math.max(0, input.finishAtMs - POST_MARGIN_MS);
+    const musicAt = Math.max(Math.min(clipMs, bedAt), clipMs - overlapMs);
     const fullMs = bedAt + BED_IN_MS;
     const bed =
       musicAt > fullMs
@@ -121,11 +161,28 @@ export function planSlot(input: PlanInput): Plan {
       mic,
       bed,
       music: { atMs: musicAt },
-      duck: duckOf(mic, musicAt),
+      duck: postDuck(mic, musicAt, input.finishAtMs),
     };
   }
 
   if (kind === "talkup") {
+    if (input.finishAtMs !== undefined || input.recordUnderMs !== undefined) {
+      // Start the voice immediately. Bring in the song late enough for a long clip to finish
+      // before the post; short clips finish early without padding or delaying the voice.
+      const overlapMs =
+        input.finishAtMs === undefined
+          ? input.recordUnderMs!
+          : Math.max(0, input.finishAtMs - POST_MARGIN_MS);
+      const musicAt = Math.max(0, clipMs - overlapMs);
+      const mic = { atMs: 0, endMs: clipMs };
+      return {
+        ...past(musicAt, input.rampMs),
+        mic,
+        bed: null,
+        music: { atMs: musicAt },
+        duck: postDuck(mic, musicAt, input.finishAtMs),
+      };
+    }
     const at = input.voiceInMs ?? 0;
     // Jev can deliberately cross an opening word. Play the natural take at its chosen start;
     // the catalog's estimated vocal cue must not veto or move that decision.
@@ -150,4 +207,11 @@ export function planSlot(input: PlanInput): Plan {
     music: { atMs: clipMs },
     duck: null,
   };
+}
+
+function postDuck(mic: NonNullable<Plan["mic"]>, musicAt: number, finishAtMs?: number): Plan["duck"] {
+  const duck = duckOf(mic, musicAt);
+  if (!duck || finishAtMs === undefined) return duck;
+  // Restore the music by the post so the vocal or hit lands at full level.
+  return { ...duck, riseMs: Math.min(RISE_MS, Math.max(POST_MARGIN_MS, musicAt + finishAtMs - mic.endMs)) };
 }

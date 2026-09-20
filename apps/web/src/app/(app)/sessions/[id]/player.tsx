@@ -291,7 +291,7 @@ function Lanes({
                 <div
                   className="absolute inset-y-0 right-0 rounded-r bg-[#8cdcd9]"
                   style={{ left: pct(plan.vocalMs) }}
-                  title={`vocal at ${secs(plan.vocalMs)}`}
+                  title={`estimated cue at ${secs(plan.vocalMs)}`}
                 />
               </>
             ) : (

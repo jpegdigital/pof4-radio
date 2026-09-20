@@ -127,7 +127,7 @@ const planningReceipt = (action = "sweeper") => {
   const req = chartRequest(input, "jev-1.13.0");
   const chart = readChart(
     req,
-    raw(req, { intro: "10", ending: "cold", energy: "3", tempo: "mid", mood: "warm" }),
+    raw(req, { post: "3", ending: "cold", energy: "3", tempo: "mid", mood: "warm" }),
     1,
   );
   const mixReq = mixRequest(input, chart, "jev-1.13.0");
@@ -211,6 +211,14 @@ beforeEach(() => {
       row = {
         ...row,
         qobuz_id: values[1] as string,
+        ramp_ms: values[3] as number,
+        sure: values[4] as boolean,
+        post: values[5] as string,
+        outro: values[6] as string,
+        outro_ms: values[7] as number,
+        energy: values[8] as number,
+        tempo: values[9] as string,
+        mood: values[10] as string,
         kind: values[11] as string,
         words: values[12] as string,
         lead_line: values[13] as string,
@@ -379,7 +387,7 @@ const weather: PreparedWeather = {
     },
   ],
 };
-const prepareBreak = () => {
+const prepareBreak = (count = "1") => {
   row.seq = 1;
   boundary.plan.mockResolvedValue(planningReceipt("break_dry"));
   boundary.news.mockResolvedValue({
@@ -398,19 +406,26 @@ const prepareBreak = () => {
   });
   vi.mocked(fetch).mockImplementation((url, init) => {
     if ((typeof url === "string" ? url : url instanceof URL ? url.href : url.url).includes("typesafe.ai")) {
-      const req = JSON.parse(init?.body as string) as { questions: Record<string, unknown> };
+      const req = JSON.parse(init?.body as string) as {
+        questions: Record<string, { criteria: Record<string, string> }>;
+      };
       return Promise.resolve(
         Response.json({
           model: "jev-1.13.0",
           usage: { input_tokens: 10, output_tokens: 10 },
           answers: Object.fromEntries(
-            Object.keys(req.questions).map((id) => [
+            Object.entries(req.questions).map(([id, question]) => [
               id,
               {
                 type: "choice",
-                choice: "include",
+                choice: id === "count" ? count : Object.keys(question.criteria)[0],
                 confidence: 1,
-                probabilities: { include: 1, omit: 0, repeat: 0 },
+                probabilities: Object.fromEntries(
+                  Object.keys(question.criteria).map((option, index) => [
+                    option,
+                    id === "count" ? Number(option === count) : Number(index === 0),
+                  ]),
+                ),
               },
             ]),
           ),
@@ -420,7 +435,41 @@ const prepareBreak = () => {
     return Promise.resolve(new Response(new Uint8Array([1, 2, 3])));
   });
 };
+describe("saved post timing reaches playback", () => {
+  it("retains alignment in the slot JSON and returns it on production and retry", async () => {
+    boundary.plan.mockResolvedValue(planningReceipt("station"));
+    const first = await call();
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ finishAtMs: 3000, chart: { postTiming: "3" } });
+    expect(row.generation?.input.plan.finishAtMs).toBe(3000);
+    const repeated = await call();
+    expect(await repeated.json()).toMatchObject({ finishAtMs: 3000, chart: { postTiming: "3" } });
+    expect(boundary.plan).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("prepared news/weather has one production path", () => {
+  it("passes two ranked stories to the writer, budgets both, and reserves both against repeats", async () => {
+    prepareBreak("2");
+    expect((await call()).status).toBe(200);
+    expect(boundary.write.mock.calls[0][0].headlines.map((h) => h.articleId)).toEqual(["a", "b"]);
+    expect(boundary.plan.mock.calls[0][0].contentWords).toBe(75);
+    expect(row.generation?.news.selected.map((h) => h.articleId)).toEqual(["a", "b"]);
+    const original = structuredClone(row);
+    prior = [original];
+    row = {
+      ...row,
+      id: "second",
+      seq: 6,
+      qobuz_id: null,
+      voiced_at: null,
+      clip_key: null,
+      generation: null,
+      news: null,
+    };
+    expect((await call()).status).toBe(200);
+    expect(boundary.write.mock.calls[1][0].headlines.map((h) => h.articleId)).toEqual(["c", "d"]);
+  });
   it("uses DB editions, one writer and one TTS, and retains the exact selected evidence", async () => {
     prepareBreak();
     expect((await call()).status).toBe(200);

@@ -22,6 +22,7 @@ export type SlotStatus = "proposed" | "written" | "voiced";
 export type SlotKind = "break" | "talkup" | "sweeper" | "segue";
 
 export interface Chart {
+  postTiming?: "0" | "1" | "2" | "3" | "4" | "5" | "beyond_5";
   rampMs: number;
   sure: boolean;
   post: string;
@@ -33,6 +34,7 @@ export interface Chart {
 }
 
 export interface Slot {
+  finishAtMs?: number;
   news?: NewsReceipt;
   takes?: { clipKey: string; at: string; words: string; legalId?: string; leadLine?: string }[];
   seq: number;

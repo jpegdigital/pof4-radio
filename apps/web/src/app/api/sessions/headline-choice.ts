@@ -2,8 +2,7 @@ import { prompts } from "../../../lib/prompts/index.ts";
 import { z } from "zod";
 import type { PreparedHeadline } from "../../../lib/prepared.ts";
 
-export const HEADLINE_CHOICE_VERSION = "headlines-1";
-export const MAX_SELECTED_HEADLINES = 1;
+export const HEADLINE_CHOICE_VERSION = "headlines-2";
 export interface HeadlineHistory {
   seq: number;
   articleId: string;
@@ -22,14 +21,17 @@ interface Input {
 /** Reuse is forbidden once selected for generation, whether or not the listener heard the clip. */
 export function headlineRequest(input: Input, model: string) {
   const seen = new Set<string>();
+  const seenStories = new Set<string>();
   const headlines = input.headlines
     .filter((h) => {
       if (
         seen.has(h.articleId) ||
+        seenStories.has(h.storyId) ||
         input.history.some((old) => old.articleId === h.articleId || old.storyId === h.storyId)
       )
         return false;
       seen.add(h.articleId);
+      seenStories.add(h.storyId);
       return true;
     })
     .slice(0, 12);
@@ -41,9 +43,7 @@ export function headlineRequest(input: Input, model: string) {
       headlines,
       history: input.history.slice(-60),
     },
-    questions: Object.fromEntries(
-      headlines.map((_, index) => [`headline_${index}`, prompts.headlines.render(index)]),
-    ),
+    questions: prompts.headlines.render(headlines),
   };
 }
 export type HeadlineRequest = ReturnType<typeof headlineRequest>;
@@ -54,9 +54,9 @@ const Response = z.object({
     z.string(),
     z.object({
       type: z.literal("choice"),
-      choice: z.enum(["include", "omit", "repeat"]),
+      choice: z.string(),
       confidence: probability,
-      probabilities: z.strictObject({ include: probability, omit: probability, repeat: probability }),
+      probabilities: z.record(z.string(), probability),
     }),
   ),
   usage: z.object({
@@ -73,17 +73,22 @@ export function readHeadlineChoice(request: HeadlineRequest, raw: unknown, elaps
     ids.some((id) => !response.answers[id])
   )
     throw new Error("Invalid Jev headline answers");
-  for (const answer of Object.values(response.answers)) {
+  for (const [id, answer] of Object.entries(response.answers)) {
+    const options = Object.keys(request.questions[id].criteria);
+    if (
+      !options.includes(answer.choice) ||
+      Object.keys(answer.probabilities).length !== options.length ||
+      options.some((option) => !Object.hasOwn(answer.probabilities, option))
+    )
+      throw new Error("Invalid Jev headline options");
     const sum = Object.values(answer.probabilities).reduce((a, b) => a + b, 0);
     if (Math.abs(sum - 1) > 0.015001) throw new Error("Invalid Jev headline distribution");
   }
-  // The explicit choice gates inclusion. Rank accepted options using the same rubric, without
-  // an arbitrary confidence threshold or filling empty places with rejected stories.
+  // Count decides whether to air news; the competing headline probabilities order the stories.
   const selected = request.state.headlines
-    .map((h, i) => ({ h, answer: response.answers[`headline_${i}`], i }))
-    .filter(({ answer }) => answer.choice === "include")
-    .sort((a, b) => b.answer.probabilities.include - a.answer.probabilities.include || a.i - b.i)
-    .slice(0, MAX_SELECTED_HEADLINES)
+    .map((h, i) => ({ h, probability: response.answers.ranking.probabilities[`headline_${i}`], i }))
+    .sort((a, b) => b.probability - a.probability || a.i - b.i)
+    .slice(0, Number(response.answers.count?.choice ?? 0))
     .map(({ h }) => h);
   return { version: HEADLINE_CHOICE_VERSION, selected, request, response, elapsedMs };
 }

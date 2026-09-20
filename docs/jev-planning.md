@@ -4,39 +4,37 @@ The slot route has one decision path: Claude proposes → Qobuz supplies recordi
 Jev chooses prepared headlines for breaks → Jev charts and plans → fixed identification or unified Claude prose → ElevenLabs voices → the browser schedules playback.
 No substitute model, automatic selection retry, or alternate mixer plan is used on failure.
 
-After the pick, planning.ts asks five independent Choice questions in one TypeSafe request:
-intro lower bound, ending/tail, energy, tempo, mood. Each question identifies the exact recording.
-Intro bins are 0, 1, 5, 10, 20, 30, 45, 60, 90, 120 seconds, plus instrumental and unknown.
-These are knowledge-based estimates from catalog identity, not audio analysis. Confidence is saved,
-not treated as proof of a vocal timestamp. Vocal timing is musical guidance, not overlap eligibility.
+After the pick, planning.ts asks five independent Choice questions from `chart.jev.json`:
+DJ finish point, ending/tail, energy, tempo, and mood. Each identifies the exact recording.
+The finish point is 0, 1, 2, 3, 4, 5 seconds from song start, or beyond 5. It estimates where
+the DJ should finish before the first vocal, spoken word, or defining musical hit. Zero
+protects the opening; beyond 5 allows a brief overlap without claiming an exact timestamp.
+These are musical estimates from catalog identity, not audio analysis.
 
-The second request supplies that chart and its probability distributions, the prompt, the clock's break decision, and recent slots.
-For non-breaks, Jev chooses a complete spoken format and entry at 0/1/2/3 seconds:
+A second request uses `mix.jev.json` to choose the delivery, given the chart, listener
+request, clock and recent songs and spoken copy. Non-break options are music only, a dry
+station sweeper, a station tag into the opening, and a short contextual talk-up. Zero posts
+allow no overlapping speech. Contextual copy gets 3–9 words, capped at a five-second target;
+shorter posts offer fixed station tags. Station tags contain only the configured name and
+bypass Claude. The identical tag is unavailable immediately after its last use.
 
-- Song and artist: the full phrase, such as “Panama, Van Halen.”, assembled from the proposal.
-- Station identification: the complete configured on-air name, as an occasional branding accent.
-  The identical station tag is unavailable if it was the immediately preceding slot's entire copy.
-- Context: one complete, specific thought, 6–14 words with an approximately eight-second target.
-- Segue or a dry station ID when overlap would not fit naturally or add anything.
+The voice starts at the slot's beginning. For an exact estimated post, playback uses the
+measured clip length to start the song under the voice so it ends 150 ms before the post.
+A shorter clip finishes early without padding or a delayed voice entrance. Beyond-five
+plans cap actual overlap at five seconds, even for a longer clip; they display no exact cue.
+Music uses eased gain changes and reaches full level by an exact post; tiny voice-edge fades
+soften clip boundaries. Existing slots without the new alignment field retain their timing.
 
-Fixed IDs are assembled before estimating their natural duration (minimum two seconds), including
-extra allowance for numbers/frequencies and long names. They are never truncated to meet a small
-word cap and bypass Claude entirely. Longer IDs get more time; no ID over the existing 35-word/
-20-second short-copy envelope is offered. The contextual format goes to Claude, and `checkSlot`
-rejects fragments below its minimum. Recent spoken copy is supplied to Jev for variety.
-
-The prompt favors worthwhile DJ voice over music, not the shortest possible utterance. It asks
-Jev to preserve striking opening hits and sustained vocals and choose a segue when no complete
-phrase fits. There is no ten-second intro minimum or hard first-vocal cutoff; a brief intentional
-overlap can still work. A break retains zero or 1–20 seconds of overlap, a 35-word music budget plus 25 words per selected headline and 25 for available weather, and
-an 8-word lead-line cap. `copyStyle`, `fixedWords`, `wordsMin` and `talkOverMs` are retained in the
-planning receipt and writer brief; the treatment describes the format and duration.
-The house still owns break cadence, legal IDs, gains, fades and Web Audio scheduling.
+Greeting/news breaks remain on the clock, with a dry entry or closing overlap at the post.
+Their budget remains 35 music words plus 25 per headline and 25 for weather, with an 8-word
+lead-line cap. The legal ID stays dry. The plan and Jev's exact answers are retained in the
+existing slot JSON; `finishAtMs` and `chart.postTiming` reach the player through the API.
+No database migration or shared track-chart cache is required.
 
 Claude's schema contains only words and leadLine. Its call has thinking disabled and a 2048-token
 output limit. Full breaks use one script containing Jev-selected prepared
-headlines, latest valid structured weather, and music copy. Jev explicitly includes/omits/rejects
-repeats; code orders includes by probability and caps them at three. Fixed IDs require no prose
+headlines, latest valid structured weather, and music copy. Jev compares the headlines and chooses
+a count of zero, one, or two; code takes that many in probability order. Fixed IDs require no prose
 call; a segue requires no prose or voice call. No source fetching or separate news writer runs
 inside a session request. See [the prepared-content contract](prepared-content.md).
 
@@ -61,7 +59,7 @@ op run --env-file=.env.op -- node apps/web/scripts/plan-eval.mts new-report.json
 
 The report preserves the selected catalog recordings and all planning receipts. It does not report
 accuracy: fill observedFirstVocalMs by listening to each exact recording before evaluating whether
-intro lower bounds are conservative. Include immediate vocals, opening speech/ad-libs, long intros,
+estimated DJ finish points land before the vocal or musical hit. Include immediate vocals, opening speech/ad-libs, long intros,
 instrumentals, live takes, edits and unfamiliar tracks in subsequent listening tests.
 
 For an end-to-end test, create a labeled local show, prepare slots 1 and 2, and inspect the logged

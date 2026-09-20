@@ -220,6 +220,7 @@ function Detail({ cue }: { cue: Cue }) {
   const numbers: [string, number | undefined][] = [
     ["Song starts before DJ ends:", cue.recordUnderMs],
     ["DJ starts at", cue.voiceInMs],
+    ["DJ finishes before song cue at", cue.finishAtMs],
   ];
   const chart = cue.chart;
   return (
@@ -324,6 +325,9 @@ const TEMPO_LABEL: Record<Chart["tempo"], string> = {
 };
 
 function vocalEstimate(chart: Chart): string {
+  if (chart.postTiming === "beyond_5") return "DJ finish point beyond 5 seconds";
+  if (chart.postTiming === "0") return "Opening lands immediately";
+  if (chart.postTiming !== undefined) return `DJ finishes by song second ${chart.postTiming}`;
   if (chart.post === "Intro unknown") return "Vocal timing unknown";
   if (chart.post === "Instrumental; no vocal") return "Instrumental · no vocals";
   // Only the current planner's lower bounds imply ranges; older charts store point estimates.

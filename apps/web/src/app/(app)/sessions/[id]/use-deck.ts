@@ -3,14 +3,14 @@ import { getBed, getClip } from "../../lib/voice-cache";
 import {
   BED_GAIN,
   bedGainAt,
-  DUCK_MS,
   offsetsAt,
   type Plan,
   planSlot,
-  TRACK_DUCK,
   TRACK_FULL,
   trackLevelAt,
-  RISE_MS,
+  trackGainPoints,
+  voiceLevelAt,
+  voiceGainPoints,
 } from "./plan";
 import { onContext, realign, resumes, toggleMove } from "./transport";
 import { type Cue, type DeckPhase, type Slot, type TrackClock } from "./types";
@@ -97,6 +97,7 @@ interface Graph {
   mic: HTMLAudioElement;
   rec: HTMLAudioElement;
   bedGain: GainNode;
+  micGain: GainNode;
   recGain: GainNode;
   primed: boolean;
 }
@@ -119,7 +120,10 @@ function ensureGraph(): Graph {
   };
   const mic = new Audio();
   mic.preload = "auto";
-  ctx.createMediaElementSource(mic).connect(ctx.destination);
+  const micGain = ctx.createGain();
+  micGain.gain.value = 0;
+  micGain.connect(ctx.destination);
+  ctx.createMediaElementSource(mic).connect(micGain);
   const bedGain = ctx.createGain();
   bedGain.gain.value = 0;
   bedGain.connect(ctx.destination);
@@ -129,7 +133,7 @@ function ensureGraph(): Graph {
   recGain.gain.value = TRACK_FULL;
   ctx.createMediaElementSource(rec).connect(recGain);
   recGain.connect(ctx.destination);
-  graph = { ctx, mic, rec, bedGain, recGain, primed: false };
+  graph = { ctx, mic, rec, bedGain, micGain, recGain, primed: false };
   return graph;
 }
 
@@ -189,6 +193,8 @@ export function useDeck({
       g.mic.pause();
       g.rec.pause();
       const now = g.ctx.currentTime;
+      g.micGain.gain.cancelScheduledValues(now);
+      g.micGain.gain.setValueAtTime(0, now);
       g.bedGain.gain.cancelScheduledValues(now);
       g.bedGain.gain.setValueAtTime(g.bedGain.gain.value, now);
       g.bedGain.gain.linearRampToValueAtTime(0, now + 0.03);
@@ -239,6 +245,15 @@ export function useDeck({
         else timers.push(window.setTimeout(() => f(performance.now() - startedAt), d));
       };
       let bed: AudioBufferSourceNode | null = null;
+      {
+        const t0 = g.ctx.currentTime;
+        const { gain } = g.micGain;
+        gain.cancelScheduledValues(t0);
+        gain.setValueAtTime(plan.mic ? voiceLevelAt(plan.mic, from) : 0, t0);
+        if (plan.mic)
+          for (const [ms, level] of voiceGainPoints(plan.mic))
+            if (ms > from) gain.linearRampToValueAtTime(level, t0 + (ms - from) / 1000);
+      }
       if (plan.mic && clipUrl && from < plan.mic.endMs) {
         if (g.mic.src !== clipUrl) {
           g.mic.src = clipUrl;
@@ -299,13 +314,7 @@ export function useDeck({
         gain.cancelScheduledValues(t0);
         gain.setValueAtTime(trackLevelAt(plan.duck, from), t0);
         if (plan.duck) {
-          const d = plan.duck;
-          const ramps: [number, number][] = [
-            [d.atMs - DUCK_MS, TRACK_FULL],
-            [d.atMs, TRACK_DUCK],
-            [d.endMs, TRACK_DUCK],
-            [d.endMs + RISE_MS, TRACK_FULL],
-          ];
+          const ramps = trackGainPoints(plan.duck);
           for (const [ms, v] of ramps)
             if (ms > from) gain.linearRampToValueAtTime(v, t0 + (ms - from) / 1000);
         }
@@ -395,8 +404,9 @@ export function useDeck({
           kind: cue.kind,
           clipMs: v.clipMs,
           recordUnderMs: cue.recordUnderMs,
+          finishAtMs: cue.finishAtMs,
           voiceInMs: cue.voiceInMs,
-          rampMs: cue.chart?.rampMs,
+          rampMs: cue.chart?.postTiming === "beyond_5" ? undefined : cue.chart?.rampMs,
           legalIdChars: cue.legalId?.length ?? 0,
         });
         if (plan.bed) await getBed(ensureGraph().ctx, BED_URL);

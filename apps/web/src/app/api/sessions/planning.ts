@@ -4,20 +4,12 @@ import { z } from "zod";
 import type { Chart, Hit } from "./doc";
 import type { SlotKind } from "./rules";
 
-export const PLANNING_VERSION = "mix-3";
+export const PLANNING_VERSION = "mix-5";
 const URL = "https://api.typesafe.ai/v1/systemone";
 const TIMEOUT_MS = 15000;
-const INTRO_SECONDS = [0, 1, 5, 10, 20, 30, 45, 60, 90, 120];
 const WORDS_PER_SECOND = 1.8;
 const WORDS_MAX = 35;
-// Break overlap is independent of copy length: most of the break precedes the track.
-const TALK_SECONDS = Array.from({ length: Math.ceil(WORDS_MAX / WORDS_PER_SECOND) }, (_, i) => i + 1);
-const VOICE_START_SECONDS = [0, 1, 2, 3];
-const TALKUP_MIN_SECONDS = 2;
-const CONTEXT_SECONDS = 8;
-const CONTEXT_WORDS_MIN = 6;
-const SPEECH_CHARS_PER_SECOND = 14;
-const PHRASE_PAUSE_SECONDS = 0.25;
+const TALK_SECONDS = 5;
 export interface PlanningInput {
   prompt: string;
   seq: number;
@@ -79,23 +71,22 @@ function read(request: Request, raw: unknown) {
 
 /** Five independent judgments in one request; none refers to another question's answer. */
 export function chartRequest(input: PlanningInput, model: string) {
-  return { model, state: { hit: input.hit }, questions: prompts.chart.render(input.hit, INTRO_SECONDS) };
+  return { model, state: { hit: input.hit }, questions: prompts.chart.render(input.hit) };
 }
 export function readChart(request: ReturnType<typeof chartRequest>, raw: unknown, elapsedMs: number) {
   const response = read(request, raw);
   const a = response.answers;
-  const intro = a.intro.choice;
+  const postTiming = a.post.choice as NonNullable<Chart["postTiming"]>;
   const ending = a.ending.choice;
   const durationMs = request.state.hit.durationMs;
   const chart: Chart = {
-    rampMs: intro === "unknown" ? 0 : intro === "instrumental" ? durationMs : Number(intro) * 1000,
+    rampMs: postTiming === "beyond_5" ? 5000 : Number(postTiming) * 1000,
+    postTiming,
     sure: false,
     post:
-      intro === "unknown"
-        ? "Intro unknown"
-        : intro === "instrumental"
-          ? "Instrumental; no vocal"
-          : "Estimated first-vocal lower bound; not audio-measured",
+      postTiming === "beyond_5"
+        ? "Talk-up finish point beyond 5 seconds"
+        : "Estimated DJ finish point; not audio-measured",
     outro: ending.startsWith("fade_") ? "fade" : (ending as "cold" | "unknown"),
     outroMs: ending.startsWith("fade_")
       ? Math.max(0, durationMs - Number(ending.slice(5)) * 1000)
@@ -113,6 +104,8 @@ export interface MixPlan {
   voiceInMs: number | null;
   /** Desired overlap duration; actual talk-up length follows the voiced copy. Absent on older plans. */
   talkOverMs?: number;
+  /** Exact estimated post relative to song start. The player aligns using the measured voice clip. */
+  finishAtMs?: number;
   /** Complete spoken format. Short IDs are fixed before duration is estimated. */
   copyStyle?: "station" | "identify" | "context";
   fixedWords?: string;
@@ -121,32 +114,31 @@ export interface MixPlan {
   leadWordsMax: number;
   treatment: string;
 }
-/** Vocal estimates inform taste, not eligibility. Code owns durations and copy budgets. */
+/** Jev chooses a delivery; code aligns its measured clip to the estimated finish point. */
 export function mixRequest(input: PlanningInput, estimate: ReturnType<typeof readChart>, model: string) {
   const chart = estimate.chart;
+  const options = prompts.mix.options();
   const actions: Record<string, Omit<MixPlan, "chart">> = {};
+  const beyond = chart.postTiming === "beyond_5";
+  const postMs = beyond ? TALK_SECONDS * 1000 : chart.rampMs;
+  const alignment = beyond ? {} : { finishAtMs: postMs };
+  const canOverlap = postMs > 0 && postMs < input.hit.durationMs;
   if (input.clockSaysBreak) {
-    actions.break_dry = {
-      kind: "break",
-      recordUnderMs: 0,
+    const base = {
+      kind: "break" as const,
       voiceInMs: null,
-      talkOverMs: 0,
       wordsMax: WORDS_MAX + (input.contentWords ?? 0),
       leadWordsMax: 8,
-      treatment: prompts.mix.copy.breakDry,
     };
-    for (const seconds of TALK_SECONDS) {
-      if (seconds * 1000 < input.hit.durationMs)
-        actions["break_under_" + seconds] = {
-          kind: "break",
-          recordUnderMs: seconds * 1000,
-          voiceInMs: null,
-          talkOverMs: seconds * 1000,
-          wordsMax: WORDS_MAX + (input.contentWords ?? 0),
-          leadWordsMax: 8,
-          treatment: prompts.mix.copy.breakUnder(seconds),
-        };
-    }
+    actions.break_dry = { ...base, recordUnderMs: 0, talkOverMs: 0, treatment: options.break_dry };
+    if (canOverlap)
+      actions.break_post = {
+        ...base,
+        ...alignment,
+        recordUnderMs: postMs,
+        talkOverMs: postMs,
+        treatment: options.break_post,
+      };
   } else {
     actions.segue = {
       kind: "segue",
@@ -155,98 +147,60 @@ export function mixRequest(input: PlanningInput, estimate: ReturnType<typeof rea
       talkOverMs: 0,
       wordsMax: 0,
       leadWordsMax: 0,
-      treatment: prompts.mix.copy.segue,
+      treatment: options.segue,
     };
-    const formats: {
-      copyStyle: NonNullable<MixPlan["copyStyle"]>;
-      fixedWords?: string;
-      wordsMin: number;
-      wordsMax: number;
-      seconds: number;
-      description: string;
-    }[] = [];
     const normalize = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-    const fixed = [
-      { copyStyle: "station" as const, text: input.stationName.trim() },
-      {
-        copyStyle: "identify" as const,
-        text: input.proposal.title.trim() + ", " + input.proposal.artist.trim(),
-      },
-    ];
-    for (const { copyStyle, text } of fixed) {
-      if (!text) continue;
-      if (copyStyle === "station" && normalize(input.recent.at(-1)?.words ?? "") === normalize(text))
-        continue;
-      const words = text.replace(/[.!?]+$/u, "") + ".";
+    const station = input.stationName.trim();
+    if (station && normalize(input.recent.at(-1)?.words ?? "") !== normalize(station)) {
+      const words = station.replace(/[.!?]+$/u, "") + ".";
       const count = words.split(/\s+/u).length;
-      // Frequencies and numbers take multiple spoken words; long names also need breathing room.
-      const spokenUnits = words
-        .replace(/\d+(?:\.\d+)?/gu, (n) =>
-          " number".repeat(n.replace(/\D/gu, "").length + (n.includes(".") ? 1 : 0)),
-        )
-        .trim()
-        .split(/\s+/u).length;
-      const seconds = Math.max(
-        TALKUP_MIN_SECONDS,
-        Math.ceil(
-          Math.max(spokenUnits / WORDS_PER_SECOND, words.length / SPEECH_CHARS_PER_SECOND) +
-            PHRASE_PAUSE_SECONDS,
-        ),
-      );
-      if (count > WORDS_MAX || seconds > TALK_SECONDS.length) continue;
-      formats.push({
-        copyStyle,
-        fixedWords: words,
-        wordsMin: count,
-        wordsMax: count,
-        seconds,
-        description: prompts.mix.copy.identify(copyStyle, words),
-      });
-    }
-    formats.push({
-      copyStyle: "context",
-      wordsMin: CONTEXT_WORDS_MIN,
-      wordsMax: Math.floor(CONTEXT_SECONDS * WORDS_PER_SECOND),
-      seconds: CONTEXT_SECONDS,
-      description: prompts.mix.copy.context,
-    });
-    const station = formats.find((format) => format.copyStyle === "station");
-    if (station)
-      actions.sweeper = {
-        kind: "sweeper",
-        recordUnderMs: null,
-        voiceInMs: null,
-        talkOverMs: 0,
-        copyStyle: "station",
-        fixedWords: station.fixedWords,
-        wordsMin: station.wordsMin,
-        wordsMax: station.wordsMax,
-        leadWordsMax: 0,
-        treatment: prompts.mix.copy.sweeper(station.description),
-      };
-    for (const start of VOICE_START_SECONDS)
-      for (const format of formats) {
-        if ((start + format.seconds) * 1000 >= input.hit.durationMs) continue;
-        actions["talkup_" + format.copyStyle + "_after_" + start] = {
-          kind: "talkup",
-          recordUnderMs: null,
-          voiceInMs: start * 1000,
-          talkOverMs: format.seconds * 1000,
-          copyStyle: format.copyStyle,
-          fixedWords: format.fixedWords,
-          wordsMin: format.wordsMin,
-          wordsMax: format.wordsMax,
+      if (count <= WORDS_MAX) {
+        const fixed = {
+          copyStyle: "station" as const,
+          fixedWords: words,
+          wordsMin: count,
+          wordsMax: count,
           leadWordsMax: 0,
-          treatment: prompts.mix.copy.talkup(format.description, start, format.seconds),
         };
+        actions.sweeper = {
+          ...fixed,
+          kind: "sweeper",
+          recordUnderMs: null,
+          voiceInMs: null,
+          talkOverMs: 0,
+          treatment: options.sweeper,
+        };
+        if (canOverlap)
+          actions.station = {
+            ...fixed,
+            ...alignment,
+            kind: "talkup",
+            recordUnderMs: beyond ? postMs : null,
+            voiceInMs: 0,
+            talkOverMs: postMs,
+            treatment: options.station,
+          };
       }
+    }
+    // A short post can carry a fixed station tag; a complete thought needs a few words.
+    if (canOverlap && postMs >= 3000)
+      actions.talkup = {
+        ...alignment,
+        kind: "talkup",
+        recordUnderMs: beyond ? postMs : null,
+        voiceInMs: 0,
+        talkOverMs: postMs,
+        copyStyle: "context",
+        wordsMin: 3,
+        wordsMax: Math.floor((postMs / 1000) * WORDS_PER_SECOND),
+        leadWordsMax: 0,
+        treatment: options.talkup,
+      };
   }
   return {
     model,
     state: { ...input, chart, chartJudgments: estimate.response.answers, actions },
-    questions: {
-      action: prompts.mix.render(actions),
-    },
+    questions: { action: prompts.mix.render(actions) },
   };
 }
 export function readMix(request: ReturnType<typeof mixRequest>, raw: unknown, elapsedMs: number) {

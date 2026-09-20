@@ -15,6 +15,12 @@ import {
   RISE_MS,
   TAIL_MS,
   VOCAL_TAIL_MS,
+  trackGainPoints,
+  voiceLevelAt,
+  voiceGainPoints,
+  VOICE_IN_MS,
+  VOICE_OUT_MS,
+  POST_MARGIN_MS,
 } from "./plan";
 
 /**
@@ -176,6 +182,63 @@ describe("trackLevelAt", () => {
 
   it("no duck: full throughout", () => {
     expect(trackLevelAt(null, 3000)).toBe(TRACK_FULL);
+  });
+  it("eases into volume changes and keeps scheduled points on the same curve as seeks", () => {
+    const early = trackLevelAt(duck, duck.atMs - DUCK_MS * 0.75);
+    expect(early).toBeGreaterThan(TRACK_FULL - (TRACK_FULL - TRACK_DUCK) * 0.25);
+    const points = trackGainPoints(duck);
+    for (const [ms, level] of points) {
+      expect(level).toBe(trackLevelAt(duck, ms));
+      expect(level).toBeGreaterThanOrEqual(TRACK_DUCK);
+      expect(level).toBeLessThanOrEqual(TRACK_FULL);
+    }
+    expect(points.at(-1)).toEqual([duck.endMs + RISE_MS, TRACK_FULL]);
+    expect(trackLevelAt({ atMs: 0, endMs: 4000 }, 0)).toBe(TRACK_DUCK);
+  });
+});
+
+describe("landing the DJ at the estimated post", () => {
+  it("brings the song under a long clip so speech ends just before the post", () => {
+    const p = planSlot({ kind: "talkup", clipMs: 7000, finishAtMs: 3000, rampMs: 3000, legalIdChars: 0 });
+    expect(p.mic).toEqual({ atMs: 0, endMs: 7000 });
+    expect(p.music.atMs).toBe(4000 + POST_MARGIN_MS);
+    expect(p.vocalMs! - p.mic!.endMs).toBe(POST_MARGIN_MS);
+    expect(trackLevelAt(p.duck, p.vocalMs!)).toBe(TRACK_FULL);
+    expect(offsetsAt(p, p.music.atMs)).toEqual({ micMs: p.music.atMs, trackMs: 0 });
+  });
+  it("does not pad or delay a short clip to fill the post", () => {
+    const p = planSlot({ kind: "talkup", clipMs: 1500, finishAtMs: 4000, rampMs: 4000, legalIdChars: 0 });
+    expect(p.mic).toEqual({ atMs: 0, endMs: 1500 });
+    expect(p.music.atMs).toBe(0);
+    expect(trackLevelAt(p.duck, 4000)).toBe(TRACK_FULL);
+  });
+  it("caps beyond-five overlap using actual clip length without an invented cue", () => {
+    const p = planSlot({ kind: "talkup", clipMs: 6500, recordUnderMs: 5000, legalIdChars: 0 });
+    expect(p.music.atMs).toBe(1500);
+    expect(p.mic!.endMs - p.music.atMs).toBe(5000);
+    expect(p.vocalMs).toBeUndefined();
+  });
+  it("aligns a break's closing words while retaining its dry legal ID", () => {
+    const p = planSlot({ kind: "break", clipMs: 20000, finishAtMs: 3000, rampMs: 3000, legalIdChars: 20 });
+    expect(p.music.atMs).toBe(17000 + POST_MARGIN_MS);
+    expect(p.music.atMs).toBeGreaterThan(20 * LEGAL_ID_MS_PER_CHAR);
+    expect(trackLevelAt(p.duck, p.vocalMs!)).toBe(TRACK_FULL);
+  });
+});
+
+describe("voice edge fades", () => {
+  const mic = { atMs: 1000, endMs: 5000 };
+  it("softens only the clip edges and preserves the body of the speech", () => {
+    expect(voiceLevelAt(mic, mic.atMs)).toBe(0);
+    expect(voiceLevelAt(mic, mic.atMs + VOICE_IN_MS / 2)).toBeCloseTo(0.5);
+    expect(voiceLevelAt(mic, 2000)).toBe(1);
+    expect(voiceLevelAt(mic, mic.endMs - VOICE_OUT_MS / 2)).toBeCloseTo(0.5);
+    expect(voiceLevelAt(mic, mic.endMs)).toBe(0);
+    for (const [ms, level] of voiceGainPoints(mic)) expect(voiceLevelAt(mic, ms)).toBe(level);
+  });
+  it("keeps fade points ordered even for a tiny clip", () => {
+    const points = voiceGainPoints({ atMs: 0, endMs: 10 });
+    expect(points.map(([ms]) => ms)).toEqual([0, 5, 5, 10]);
   });
 });
 

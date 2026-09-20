@@ -1,10 +1,23 @@
 import { z } from "zod";
-import { template } from "./template.ts";
+import { jsonPrompt, template } from "./template.ts";
 import type { Hit } from "../../app/api/sessions/doc.ts";
-import { choice, type ChoiceQuestion } from "./contract.ts";
+import type { PreparedHeadline } from "../prepared.ts";
+import { choice, ChoiceQuestion } from "./contract.ts";
 
 const renderRecording = template("recording", z.strictObject({}));
-const renderHeadline = template("headline", z.strictObject({ index: z.number().int().nonnegative() }));
+const loadHeadlines = jsonPrompt(
+  "headlines",
+  z.strictObject({
+    ranking: ChoiceQuestion.omit({ criteria: true }),
+    count: ChoiceQuestion.extend({
+      criteria: z.strictObject({
+        "0": z.string().trim().min(1),
+        "1": z.string().trim().min(1),
+        "2": z.string().trim().min(1),
+      }),
+    }),
+  }),
+);
 
 export const recordingPrompt = {
   render(hits: Hit[]): ChoiceQuestion {
@@ -21,12 +34,22 @@ export const recordingPrompt = {
 };
 
 export const headlinePrompt = {
-  render(index: number): ChoiceQuestion {
-    return choice(renderHeadline({ index }), {
-      include: "A distinct, worthwhile story for this listener's requested show; suitable to include.",
-      omit: "Weak or inappropriate fit, unnecessary interruption, unclear usefulness, or the listener wants no news.",
-      repeat:
-        "The same event was already selected in history or appears earlier in this menu, even under another title or publisher.",
-    });
+  render(headlines: PreparedHeadline[]): Record<string, ChoiceQuestion> {
+    if (!headlines.length) return {};
+    const questions = loadHeadlines();
+    return {
+      ranking: ChoiceQuestion.parse({
+        ...questions.ranking,
+        criteria: Object.fromEntries(
+          headlines.map((h, index) => [`headline_${index}`, `headlines[${index}]: ${h.title} (${h.source})`]),
+        ),
+      }),
+      count: ChoiceQuestion.parse({
+        ...questions.count,
+        criteria: Object.fromEntries(
+          Object.entries(questions.count.criteria).filter(([count]) => Number(count) <= headlines.length),
+        ),
+      }),
+    };
   },
 };

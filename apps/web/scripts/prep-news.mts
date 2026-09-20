@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
 import { prompts } from "../src/lib/prompts/index.ts";
-import { createHeadlineReader, eligibleArticles, type Article } from "../src/app/api/sessions/headlines.ts";
+import { eligibleArticles, readHeadlines, type Article } from "../src/app/api/sessions/headlines.ts";
 import type { NewsConfig } from "../src/lib/news.ts";
 import { NEWS_VALID_MS, PREP_AIR_MARGIN_MS, type PreparedHeadline } from "../src/lib/prepared.ts";
 
@@ -62,12 +62,7 @@ export function checkedOptions(
 
 /** Batch research only. No listener-specific choice, spoken copy, Jev, or TTS. */
 export async function prepareNews(config: NewsConfig, apiKey: string, model: string, signal: AbortSignal) {
-  const snapshot = await createHeadlineReader()(config, {
-    refresh: true,
-    budgetMs: 60_000,
-    timeoutMs: 15_000,
-    signal,
-  });
+  const snapshot = await readHeadlines(config, { budgetMs: 60_000, timeoutMs: 15_000, signal });
   const healthy = new Set(snapshot.sources.filter((s) => s.status === "fresh").map((s) => s.id));
   const articles = eligibleArticles(snapshot.articles, Date.now())
     .filter((a) => healthy.has(a.sourceId) && a.evidence.length >= 60)
