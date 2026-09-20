@@ -201,7 +201,7 @@ describe("writeBrief — the legal ID, the weather, the headlines", () => {
     });
     const brief = writeBrief(input({ clockSaysBreak: true, weather }));
     expect(brief).toContain("Weather\nGive a brief weather update.");
-    const facts = JSON.parse(brief.split("Give a brief weather update.\n")[1].split("\n")[0]);
+    const facts: unknown = JSON.parse(brief.split("Give a brief weather update.\n")[1].split("\n")[0]);
     expect(facts).toEqual({
       city: "Dallas",
       current: { text: "Clear", tempF: 86, feelsLikeF: null, windMph: 10 },

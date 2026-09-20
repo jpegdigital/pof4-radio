@@ -74,6 +74,10 @@ describe("Jev recording selection", () => {
     ).toBeNull();
   });
 
+  it("refuses an answer from a model other than the one asked", () => {
+    expect(() => readPick(request(), { ...response(), model: "jev-0.0.1" }, 1)).toThrow(/model/i);
+  });
+
   it.each([
     { id: "unknown choice", over: { choice: "999" } },
     { id: "missing choice", over: { choice: undefined } },

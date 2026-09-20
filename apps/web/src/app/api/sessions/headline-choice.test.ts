@@ -60,7 +60,7 @@ describe("Jev headline choices", () => {
     ["1", ["b"]],
     ["2", ["b", "c"]],
   ])("takes the top headlines for count %s", (count, selected) => {
-    const result = readHeadlineChoice(request(), response(answers(count as string)), 5);
+    const result = readHeadlineChoice(request(), response(answers(count)), 5);
     expect(result.selected.map((h) => h.articleId)).toEqual(selected);
     expect(result.version).toBe("headlines-2");
     expect(result.response?.usage.input_tokens).toBe(10);
@@ -119,6 +119,21 @@ describe("Jev headline choices", () => {
       5,
     );
     expect(result.selected.map((h) => h.articleId)).toEqual(["a"]);
+  });
+  it("accepts a full menu whose rounded probabilities drift with its size", () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `h${i}`);
+    const req = headlineRequest(
+      { prompt: "music", headlines: ids.map(headline), history: [], now },
+      "jev-1.13.0",
+    );
+    // Twelve terms each rounded to 0.01: an honest distribution may sum to 0.95.
+    const ranking = Object.fromEntries(ids.map((_, i) => [`headline_${i}`, i === 3 ? 0.84 : 0.01]));
+    const result = readHeadlineChoice(
+      req,
+      response({ ranking: answer("headline_3", ranking), count: answer("1", { "0": 0, "1": 1, "2": 0 }) }),
+      5,
+    );
+    expect(result.selected.map((h) => h.articleId)).toEqual(["h3"]);
   });
   it("skips the API for an empty menu", async () => {
     const result = await chooseHeadlines(

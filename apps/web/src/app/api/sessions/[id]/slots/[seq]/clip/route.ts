@@ -15,8 +15,6 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[id]/s
   if (!z.uuid().safeParse(p.id).success || !Number.isInteger(seq) || seq < 1)
     return Response.json({ error: "no such clip" }, { status: 404 });
   const store = bucket();
-  if (!store)
-    return Response.json({ error: "the clips bucket is not configured (BUCKET_*)" }, { status: 503 });
   const { rows } = await pool().query<{
     clip_key: string | null;
     generation: SlotGeneration | null;

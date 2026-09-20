@@ -1,12 +1,9 @@
+import { askJev, readJev } from "../../../lib/jev.ts";
 import { prompts } from "../../../lib/prompts/index.ts";
-import type { ChoiceQuestion } from "../../../lib/prompts/contract.ts";
-import { z } from "zod";
 import type { Chart, Hit } from "./doc";
 import type { SlotKind } from "./rules";
 
 export const PLANNING_VERSION = "mix-5";
-const URL = "https://api.typesafe.ai/v1/systemone";
-const TIMEOUT_MS = 15000;
 const WORDS_PER_SECOND = 1.8;
 const WORDS_MAX = 35;
 const TALK_SECONDS = 5;
@@ -21,60 +18,13 @@ export interface PlanningInput {
   hit: Hit;
   recent: { title: string; artist: string; kind: string; words?: string | null }[];
 }
-interface Request {
-  model: string;
-  state: unknown;
-  questions: Record<string, ChoiceQuestion>;
-}
-const probability = z.number().min(0).max(1);
-const Response = z.object({
-  model: z.string(),
-  answers: z.record(
-    z.string(),
-    z.object({
-      type: z.literal("choice"),
-      choice: z.string(),
-      confidence: probability,
-      probabilities: z.record(z.string(), probability),
-    }),
-  ),
-  usage: z.object({
-    input_tokens: z.number().int().nonnegative(),
-    output_tokens: z.number().int().nonnegative(),
-  }),
-});
-/** A typed answer is not evidence of timing accuracy. Preserve the distribution for evaluation. */
-function read(request: Request, raw: unknown) {
-  const response = Response.parse(raw);
-  if (response.model !== request.model) throw new Error("Invalid Jev planning model");
-  const ids = Object.keys(request.questions);
-  if (Object.keys(response.answers).length !== ids.length || ids.some((id) => !response.answers[id]))
-    throw new Error("Invalid Jev planning answers");
-  for (const id of ids) {
-    const answer = response.answers[id];
-    const options = Object.keys(request.questions[id].criteria);
-    const entries = Object.entries(answer.probabilities);
-    if (
-      !options.includes(answer.choice) ||
-      entries.length !== options.length ||
-      entries.some(([key]) => !options.includes(key))
-    )
-      throw new Error("Invalid Jev planning choice: " + id);
-    // The API rounds probabilities to 0.01; each term may be off by half that unit.
-    // Jev's explicit choice is authoritative; reported probabilities are audit data.
-    const sum = entries.reduce((total, [, p]) => total + p, 0);
-    if (sum <= 0 || Math.abs(sum - 1) > entries.length * 0.005 + 0.000001)
-      throw new Error("Invalid Jev planning distribution: " + id + " " + JSON.stringify(answer));
-  }
-  return response;
-}
-
 /** Five independent judgments in one request; none refers to another question's answer. */
 export function chartRequest(input: PlanningInput, model: string) {
   return { model, state: { hit: input.hit }, questions: prompts.chart.render(input.hit) };
 }
+/** A typed answer is not evidence of timing accuracy. Preserve the distribution for evaluation. */
 export function readChart(request: ReturnType<typeof chartRequest>, raw: unknown, elapsedMs: number) {
-  const response = read(request, raw);
+  const response = readJev(request, raw);
   const a = response.answers;
   const postTiming = a.post.choice as NonNullable<Chart["postTiming"]>;
   const ending = a.ending.choice;
@@ -204,32 +154,19 @@ export function mixRequest(input: PlanningInput, estimate: ReturnType<typeof rea
   };
 }
 export function readMix(request: ReturnType<typeof mixRequest>, raw: unknown, elapsedMs: number) {
-  const response = read(request, raw);
+  const response = readJev(request, raw);
   const action = response.answers.action.choice;
   if (action === "stop") throw new Error("Jev found no suitable mixer action");
   const plan: MixPlan = { chart: request.state.chart, ...request.state.actions[action] };
   return { plan, request, response, elapsedMs };
 }
-async function ask(request: Request, apiKey: string) {
-  if (!apiKey) throw new Error("TYPESAFE_API_KEY is required for mixer planning");
-  const started = Date.now();
-  const response = await fetch(URL, {
-    method: "POST",
-    headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error("Jev mixer planning failed (HTTP " + response.status + ")");
-  const raw: unknown = await response.json();
-  return { raw, elapsedMs: Date.now() - started };
-}
 export async function producePlan(input: PlanningInput, config: { apiKey: string; model: string }) {
   const chartReq = chartRequest(input, config.model);
-  const chartAnswer = await ask(chartReq, config.apiKey);
+  const call = { apiKey: config.apiKey, what: "mixer planning" };
+  const chartAnswer = await askJev(chartReq, call);
   const chart = readChart(chartReq, chartAnswer.raw, chartAnswer.elapsedMs);
   const mixReq = mixRequest(input, chart, config.model);
-  const mixAnswer = await ask(mixReq, config.apiKey);
+  const mixAnswer = await askJev(mixReq, call);
   const mix = readMix(mixReq, mixAnswer.raw, mixAnswer.elapsedMs);
   return {
     version: PLANNING_VERSION,

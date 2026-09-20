@@ -49,10 +49,13 @@ philosophy).
 Three places, each owning what it alone needs:
 
 - **`apps/web/src/lib/`** — app-level process concerns, shared by the station and the control room:
-  `env` (zod over `process.env`, read lazily), `db` (one `pg.Pool`, `pool()`), `claude` (one client, no
+  `env` (zod over `process.env`, the one place a variable is required — the bucket and the voice key
+  included, so no route checks for them; read lazily for `next build`, and once at boot by
+  `src/instrumentation.ts`, which exits the process naming what is missing), `db` (one `pg.Pool`, `pool()`), `claude` (one client, no
   SDK retries), `bucket` (`put`, `open`, `head`) + `sigv4`, `guard`, `voices` (the roster's shape:
   schema, models, `ttsBody` — pure, client-safe), `identity` (call letters, city, on-air name — pure),
-  `clock` (break every, fill, low water — pure), `news` (source roster, configuration and receipt),
+  `clock` (break every, fill, low water — pure), `jev` (the one TypeSafe call and the reading every
+  answer is held to; plain-Node safe), `news` (source roster, configuration and receipt),
   `settings` (`loadVoices` / `loadIdentity` / `loadClock` / `loadNews`, server only: a client component that imports a module touching the
   pool drags `pg` into the browser bundle and the build fails).
 - **`apps/web/src/app/api/sessions/`** — the server, one folder: the routes and, beside them, the
@@ -183,7 +186,12 @@ start; every rule for their coming apart is pure and tested in `transport.ts`.
 
 ## Jev recording selection
 
-`pick.ts` uses plain fetch to TypeSafe. `TYPESAFE_API_KEY` comes from
+Every Jev judgment — the recording (`pick.ts`), the chart and the mixer action (`planning.ts`), the
+headlines (`headline-choice.ts`) — goes through `apps/web/src/lib/jev.ts`: `askJev` is the one plain
+`fetch` to TypeSafe (key handed in, per-call `timeoutMs`, a `JevError` carrying status and body) and
+`readJev` holds the raw answer to the request that was sent (same model, one answer per question,
+choices and probabilities on the menu, a sum tolerance of 0.005 per option because TypeSafe rounds
+to 0.01). Callers own only their request and what the answers mean. `TYPESAFE_API_KEY` comes from
 `op://Developer/pof4-radio-typesafe-proart/credential`; `TYPESAFE_MODEL` pins `jev-1.13.0`.
 Claude proposes songs and their order; Jev chooses the supplied Qobuz recording and its mixer plan.
 `Written` contains only words and leadLine. See `docs/jev-planning.md` for planning and timing limits. See `docs/jev-selection.md` for the labeled evaluation and

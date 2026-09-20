@@ -129,11 +129,7 @@ export async function POST(req: Request, ctx: Route) {
 
     const store = bucket();
 
-    if (!store) throw new Error("the clips bucket is not configured (BUCKET_*)");
-
     const key = env().ELEVENLABS_KEY;
-
-    if (!key) throw new Error("ELEVENLABS_KEY is not set on the server");
 
     if (slot.qobuz_id === null) {
       let generation = slot.generation;
@@ -315,7 +311,7 @@ export async function POST(req: Request, ctx: Route) {
 
       const made =
         input.plan.kind === "segue"
-          ? { written: { words: "", leadLine: "" }, thinking: "", receipt: undefined }
+          ? { written: { words: "", leadLine: "" }, receipt: undefined }
           : await produceWrite(input);
 
       generation = {
@@ -395,7 +391,7 @@ export async function POST(req: Request, ctx: Route) {
 
           kind = $12, words = $13, lead_line = $14, legal_id = $15, treatment = $16, fallback = $17,
 
-          record_under_ms = $18, voice_in_ms = $19, thinking = $20, news = $21, selection = $22, generation = $23
+          record_under_ms = $18, voice_in_ms = $19, news = $20, selection = $21, generation = $22
 
          where id = $1 returning id, ${SLOT_COLUMNS}`,
 
@@ -420,7 +416,6 @@ export async function POST(req: Request, ctx: Route) {
           null,
           w.recordUnderMs,
           w.voiceInMs,
-          made.thinking,
 
           news ? JSON.stringify(news) : null,
           JSON.stringify(generation.selection),
