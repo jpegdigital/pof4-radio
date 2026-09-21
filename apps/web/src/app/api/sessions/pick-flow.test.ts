@@ -205,8 +205,6 @@ beforeEach(() => {
   boundary.query.mockImplementation((sql: string, values: unknown[] = []) => {
     if (sql.includes("select prompt, voice_id"))
       return Promise.resolve({ rows: [{ prompt: "play Song", voice_id: "voice" }] });
-    if (sql.startsWith("select qobuz_id from session_slot"))
-      return Promise.resolve({ rows: [{ qobuz_id: row.qobuz_id }] });
     if (sql.includes("from session_slot where session_id = $1 and seq = $2"))
       return Promise.resolve({ rows: [row] });
     if (sql.startsWith("select seq, generation, news")) return Promise.resolve({ rows: prior });

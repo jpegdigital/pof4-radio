@@ -1,18 +1,16 @@
 import { z } from "zod";
-import { bucket } from "@/lib/bucket";
-import { pool } from "@/lib/db";
 import { speak } from "@/lib/elevenlabs";
 import { env } from "@/lib/env";
 import { loadClock, loadIdentity, loadNews, loadVoices } from "@/lib/settings";
 import type { NewsReceipt } from "@/lib/news";
 import { readPreparedNews, readPreparedWeather } from "@/lib/prepared";
-import { SLOT_COLUMNS, type SlotRow, slotDoc } from "../../../doc";
-import { chooseHeadlines, type HeadlineHistory } from "../../../headline-choice";
-import type { SlotGeneration } from "../../../generation";
+import { slotDoc } from "../../../doc";
+import { chooseHeadlines } from "../../../headline-choice";
 import { producePick } from "../../../pick";
 import { producePlan } from "../../../planning";
 import { SlotBody } from "../../../params";
 import { checkSlot, isBreak, legalIdDue } from "../../../rules";
+import { heldAmong, type LockedShow, lockShow, SessionBusy, UnknownSession } from "../../../show-store";
 import { clockOf, legalIdOf, produceWrite, type WriteInput } from "../../../write";
 
 /** One retained pipeline: DB facts -> Jev choices/plan -> one Claude script -> one TTS.
@@ -21,21 +19,7 @@ import { clockOf, legalIdOf, produceWrite, type WriteInput } from "../../../writ
  * Playback uses the saved production. Generation inputs and every take remain retained.
  */
 
-const LOCK_NOT_AVAILABLE = "55P03";
-
 const RECENT_SLOTS = 3;
-
-const clipKeyOf = (id: string, seq: number, take: string | null) =>
-  `sessions/${id}/${seq}${take ? `-${take}` : ""}.mp3`;
-
-interface RecentRow {
-  seq: number;
-  kind: string;
-  words: string | null;
-  lead_line: string | null;
-  title: string;
-  artist: string;
-}
 
 type Route = RouteContext<"/api/sessions/[id]/slots/[seq]">;
 
@@ -68,66 +52,38 @@ export async function POST(req: Request, ctx: Route) {
     stageAt = Date.now();
   };
 
-  const client = await pool().connect();
+  let show: LockedShow | undefined;
 
   let generationSaved = false;
 
-  const heldOf = async (trackId: string): Promise<ReadonlySet<string>> => {
-    const { rows } = await client.query<{ id: string }>("select id from track where id = $1", [trackId]);
-
-    return new Set(rows.map((r) => r.id));
-  };
-
   try {
-    await client.query("begin");
-
-    let session: { prompt: string; voice_id: string } | undefined;
-
     try {
-      const { rows } = await client.query<{ prompt: string; voice_id: string }>(
-        "select prompt, voice_id from session where id = $1 for update nowait",
-        [id],
-      );
-
-      session = rows[0];
+      show = await lockShow(id);
     } catch (err) {
-      if (err instanceof Error && "code" in err && err.code === LOCK_NOT_AVAILABLE) {
-        await client.query("rollback");
+      if (err instanceof SessionBusy) return Response.json({ error: err.message }, { status: 409 });
 
-        return Response.json({ error: "session is already producing" }, { status: 409 });
-      }
+      if (err instanceof UnknownSession) return Response.json({ error: err.message }, { status: 404 });
 
       throw err;
     }
 
-    if (!session) {
-      await client.query("rollback");
+    const voiceId = show.voiceId;
 
-      return Response.json({ error: "unknown session" }, { status: 404 });
-    }
-
-    const { rows: slots } = await client.query<SlotRow & { id: string }>(
-      `select id, ${SLOT_COLUMNS} from session_slot where session_id = $1 and seq = $2`,
-      [id, seq],
-    );
-
-    let slot = slots[0];
+    let slot = await show.slot(seq);
 
     if (!slot) {
-      await client.query("rollback");
+      await show.rollback();
 
       return Response.json({ error: `slot ${seq} is not proposed yet — fill first` }, { status: 404 });
     }
 
     if (slot.voiced_at && !(again && (slot.words || slot.lead_line || slot.legal_id))) {
-      const doc = slotDoc(slot, await heldOf(slot.qobuz_id ?? ""));
+      const doc = slotDoc(slot, await heldAmong(slot.qobuz_id === null ? [] : [slot.qobuz_id]));
 
-      await client.query("rollback");
+      await show.rollback();
 
       return Response.json(doc);
     }
-
-    const store = bucket();
 
     if (slot.qobuz_id === null) {
       let generation = slot.generation;
@@ -142,46 +98,19 @@ export async function POST(req: Request, ctx: Route) {
 
         const clockSaysBreak = isBreak(seq, clock.breakEvery);
 
-        const { rows: lastBreak } = await client.query<{ clock_ms: number }>(
-          "select clock_ms from session_slot where session_id = $1 and kind = 'break' and seq < $2 and clock_ms is not null order by seq desc limit 1",
-          [id, seq],
-        );
+        const lastBreakClockMs = await show.lastBreakClockMs(seq);
 
-        const { rows: recent } = await client.query<RecentRow>(
-          "select seq, kind, words, lead_line, title, artist from session_slot where session_id = $1 and seq < $2 and qobuz_id is not null order by seq desc limit $3",
-          [id, seq, RECENT_SLOTS],
-        );
+        const recent = await show.recentCopy(seq, RECENT_SLOTS);
 
-        const { rows: played } = await client.query<{ title: string; artist: string }>(
-          "select title, artist from session_slot where session_id = $1 and seq < $2 and qobuz_id is not null order by seq",
-          [id, seq],
-        );
+        const played = await show.played(seq);
 
-        const { rows: previous } = await client.query<{
-          seq: number;
-          generation: SlotGeneration | null;
-          news: NewsReceipt | null;
-        }>(
-          "select seq, generation, news from session_slot where session_id = $1 and seq <> $2 and (generation is not null or news is not null) order by seq",
-          [id, seq],
-        );
-
-        const history: HeadlineHistory[] = previous.flatMap((r) =>
-          (r.generation?.news.selected ?? []).map((h) => ({
-            seq: r.seq,
-            articleId: h.articleId,
-            storyId: h.storyId,
-            revision: h.revision,
-            title: h.title,
-            topic: h.topic,
-          })),
-        );
+        const history = await show.reservedNews(seq);
 
         enterStage("prepared news and weather");
 
-        const newsEntry = clockSaysBreak ? await readPreparedNews(client, config, history) : null;
+        const newsEntry = clockSaysBreak ? await readPreparedNews(show.client, config, history) : null;
 
-        const weatherEntry = clockSaysBreak ? await readPreparedWeather(client) : null;
+        const weatherEntry = clockSaysBreak ? await readPreparedWeather(show.client) : null;
 
         const jev = { apiKey: env().TYPESAFE_API_KEY, model: env().TYPESAFE_MODEL };
 
@@ -190,7 +119,7 @@ export async function POST(req: Request, ctx: Route) {
         const decisions = await Promise.allSettled([
           producePick(
             {
-              prompt: session.prompt,
+              prompt: show.prompt,
               proposal: { title: slot.title, artist: slot.artist, why: slot.why },
               hits: slot.hits,
             },
@@ -198,7 +127,7 @@ export async function POST(req: Request, ctx: Route) {
           ),
 
           chooseHeadlines(
-            { prompt: session.prompt, headlines: newsEntry?.data ?? [], history, now: Date.now() },
+            { prompt: show.prompt, headlines: newsEntry?.data ?? [], history, now: Date.now() },
             jev,
           ),
         ]);
@@ -223,7 +152,7 @@ export async function POST(req: Request, ctx: Route) {
 
         const planning = await producePlan(
           {
-            prompt: session.prompt,
+            prompt: show.prompt,
             seq,
             clockSaysBreak,
             stationName: identity.onAir,
@@ -241,13 +170,11 @@ export async function POST(req: Request, ctx: Route) {
         );
 
         const legalId =
-          clockSaysBreak && legalIdDue(seq, clockMs, lastBreak[0]?.clock_ms ?? null)
-            ? legalIdOf(identity)
-            : null;
+          clockSaysBreak && legalIdDue(seq, clockMs, lastBreakClockMs) ? legalIdOf(identity) : null;
 
         const input: WriteInput = {
-          prompt: session.prompt,
-          dj: voices.find((v) => v.id === session.voice_id)?.name ?? null,
+          prompt: show.prompt,
+          dj: voices.find((v) => v.id === voiceId)?.name ?? null,
           identity,
 
           clock: clockOf(clockMs),
@@ -291,15 +218,12 @@ export async function POST(req: Request, ctx: Route) {
           input,
         };
 
-        await client.query("update session_slot set generation = $2 where id = $1", [
-          slot.id,
-          JSON.stringify(generation),
-        ]);
+        await show.saveGeneration(slot.id, generation);
       }
 
       // Roll back failed writing only to this point; committing the reservation prevents repeats.
 
-      await client.query("savepoint generation_ready");
+      await show.keep("generation_ready");
 
       generationSaved = true;
 
@@ -327,12 +251,9 @@ export async function POST(req: Request, ctx: Route) {
       } catch (err) {
         const attempt = generation.attempts?.at(-1);
         if (attempt) attempt.error = err instanceof Error ? err.message : String(err);
-        await client.query("update session_slot set generation = $2 where id = $1", [
-          slot.id,
-          JSON.stringify(generation),
-        ]);
+        await show.saveGeneration(slot.id, generation);
         // Preserve returned-but-rejected copy as well as the original choices on an explicit retry.
-        await client.query("savepoint generation_ready");
+        await show.keep("generation_ready");
         throw err;
       }
 
@@ -382,66 +303,22 @@ export async function POST(req: Request, ctx: Route) {
 
       enterStage("saving script and decisions");
 
-      const { rows } = await client.query<SlotRow & { id: string }>(
-        `update session_slot set qobuz_id = $2, clock_ms = $3,
-
-          ramp_ms = $4, sure = $5, post = $6, outro = $7, outro_ms = $8, energy = $9, tempo = $10, mood = $11,
-
-          kind = $12, words = $13, lead_line = $14, legal_id = $15, treatment = $16, fallback = $17,
-
-          record_under_ms = $18, voice_in_ms = $19, news = $20, selection = $21, generation = $22
-
-         where id = $1 returning id, ${SLOT_COLUMNS}`,
-
-        [
-          slot.id,
-          w.qobuzId,
-          generation.clockMs,
-          w.rampMs,
-          w.sure,
-          w.post,
-          w.outro,
-          w.outroMs,
-          w.energy,
-          w.tempo,
-          w.mood,
-
-          w.kind,
-          w.words,
-          w.leadLine,
-          w.legalId,
-          w.treatment,
-          null,
-          w.recordUnderMs,
-          w.voiceInMs,
-
-          news ? JSON.stringify(news) : null,
-          JSON.stringify(generation.selection),
-          JSON.stringify(generation),
-        ],
-      );
-
-      slot = rows[0];
+      slot = await show.saveWritten(slot.id, w, news, generation);
     }
 
     enterStage("ElevenLabs voice");
 
-    await client.query("savepoint script_ready");
+    await show.keep("script_ready");
 
     try {
       const said = [slot.legal_id, slot.words, slot.lead_line].filter(Boolean).join(" ");
 
       if (!said) {
-        const { rows } = await client.query<SlotRow & { id: string }>(
-          `update session_slot set voiced_at = now(), clip_key = null where id = $1 returning id, ${SLOT_COLUMNS}`,
-          [slot.id],
-        );
-
-        slot = rows[0];
+        slot = await show.voicedDry(slot.id);
       } else {
         const voices = await loadVoices();
 
-        const voice = voices.find((v) => v.id === session.voice_id) ?? voices[0];
+        const voice = voices.find((v) => v.id === voiceId) ?? voices[0];
 
         if (!voice) throw new Error("no voice on the roster (settings.voices)");
 
@@ -449,7 +326,7 @@ export async function POST(req: Request, ctx: Route) {
           apiKey: env().ELEVENLABS_KEY,
         });
 
-        const clipKey = clipKeyOf(id, seq, slot.voiced_at ? crypto.randomUUID() : null);
+        const clipKey = show.clipKey(seq, slot.voiced_at !== null);
 
         const generation = slot.generation
           ? {
@@ -473,20 +350,7 @@ export async function POST(req: Request, ctx: Route) {
 
         enterStage("saving audio");
 
-        await store.put(clipKey, bytes, "audio/mpeg");
-
-        const { rows } = await client.query<SlotRow & { id: string }>(
-          `update session_slot set clip_key = $2, voiced_at = now(), news = $3, generation = $4 where id = $1 returning id, ${SLOT_COLUMNS}`,
-
-          [
-            slot.id,
-            clipKey,
-            slot.news ? JSON.stringify(slot.news) : null,
-            generation ? JSON.stringify(generation) : null,
-          ],
-        );
-
-        slot = rows[0];
+        slot = await show.saveTake(slot.id, clipKey, bytes, slot.news ?? null, generation);
 
         console.log(`${tag} voiced: ${said.length} chars, ${bytes.byteLength} bytes`);
       }
@@ -495,26 +359,26 @@ export async function POST(req: Request, ctx: Route) {
 
       console.warn(`${tag} voice failed; retained script: ${message}`);
 
-      await client.query("rollback to savepoint script_ready");
+      await show.backTo("script_ready");
 
-      const doc = slotDoc(slot, await heldOf(slot.qobuz_id ?? ""));
+      const doc = slotDoc(slot, await heldAmong(slot.qobuz_id === null ? [] : [slot.qobuz_id]));
 
-      await client.query("commit");
+      await show.commit();
 
       return Response.json({ error: message, slot: doc }, { status: 502 });
     }
 
-    const doc = slotDoc(slot, await heldOf(slot.qobuz_id ?? ""));
+    const doc = slotDoc(slot, await heldAmong(slot.qobuz_id === null ? [] : [slot.qobuz_id]));
 
-    await client.query("commit");
+    await show.commit();
 
     return Response.json(doc);
   } catch (err) {
-    if (generationSaved) {
-      await client.query("rollback to savepoint generation_ready");
+    if (show && generationSaved) {
+      await show.backTo("generation_ready");
 
-      await client.query("commit");
-    } else await client.query("rollback");
+      await show.commit();
+    } else if (show) await show.rollback();
 
     const message = err instanceof Error ? err.message : String(err);
 
@@ -524,6 +388,6 @@ export async function POST(req: Request, ctx: Route) {
   } finally {
     console.log(`${tag} timing: ${stage} ${Date.now() - stageAt}ms; total ${Date.now() - startedAt}ms`);
 
-    client.release();
+    show?.release();
   }
 }

@@ -1,80 +1,88 @@
 ---
-name: "reshape"
-description: "Rebuild a tangled part of the codebase into clean, testable, well-modelled pieces, in three passes: model (understand the domain and what the code really does), design (decide the target shape and its boundaries), build (a measured refactor loop that runs until the design's fitness checks pass). Use when the user asks to make code healthy, reduce complexity, apply SOLID / separation of concerns, extract services or use cases, or restructure a route, module or feature — not for a quick rename or a one-function cleanup."
-argument-hint: "model|design|build|all <path or feature> [notes]"
-user-invocable: true
-disable-model-invocation: false
+name: reshape
+description: Refactor a codebase the way a senior engineer would — first see what the app is for, slice it into capabilities worth modelling, find the slice the code models worst, then reshape that one slice against a rubric until it passes. Four commands — architecture, slice, measure, or a plain-language ask naming what to reshape. Use when the user wants healthier structure (SOLID, separation of concerns, testable boundaries), not for a rename or a one-function cleanup.
 ---
 
-## User Input
+# Reshape
 
-```text
-$ARGUMENTS
-```
+The idea: a fresh agent asked to "clean up this code" tidies files. A senior engineer first sees what
+the business is doing, names the pieces *that should exist* — often ones the code never named — and
+only then opens the code, one piece at a time, with a clear picture of good. This skill is that order
+of work. The first three commands stay high and cheap; only the last goes deep.
 
-The first word picks the pass, the rest names the target (a file, a folder, or a feature in words) and
-any notes from the owner. No pass named → work out which pass is next from the artifacts that exist
-(below) and say which one you are running. No target → ask.
+Everything it writes lives in `docs/reshape/`. `/reshape <command>`:
 
-## What this is for
+| Command | Height | Reads | Writes |
+|---|---|---|---|
+| `architecture` | High. Not about the code. | Project docs, the tree, entry points, schema, config | `architecture.html` |
+| `slice` | High. Synthesis, not study. | `architecture.html` | `slices.md` |
+| `measure` | Skims for signals. Judges nothing. | `slices.md`, [measure.md](measure.md) | The queue in `slices.md` |
+| anything else — the ask | Deep, in one slice only. | The slice's entry, [rubric.md](rubric.md), the code | Code, tests, the slice's entry |
 
-An agent asked to "clean this up" makes the smallest safe-looking change: it moves code within a file,
-extracts a helper or two, and stops. That is not a redesign, and it is why the owner has had to walk
-every refactor step by step. The cause is not a lack of skill at editing; it is that **design was never
-a deliverable** — it happened, if at all, as a side effect of editing, anchored to whatever the house
-rules already said, with nothing to check the result against.
+If a command's input is missing, say which command makes it and stop.
 
-This skill makes each missing thing explicit and separate:
+## architecture
 
-| Pass | Question it answers | Output | Touches code? |
-|------|--------------------|--------|---------------|
-| `model` | What is really here — the business, and the code? | `model.md` | No |
-| `design` | What should it be, and how will we know we got there? | `design.md` | No |
-| `build` | Get there, in small green steps, measured. | the code, `log.md` | Yes |
+What the app is for and what flows where — the page that would still be true after every file was
+rewritten. Get there fast: the project's own docs, the directory tree, the entry points, the schema,
+the deploy config. Open an implementation only to settle what a box *is*, never how it works. If you
+are learning function names, you are too low.
 
-Artifacts live in `docs/reshape/<slug>/`, where `<slug>` is a short kebab-case name for the target
-(`slot-producer`, not `route-ts`). A later pass reads the earlier artifacts — never the conversation —
-so each document must stand on its own for a reader who was not there.
+One self-contained HTML page (match the repo's existing docs if it has a style; diagrams in Mermaid):
 
-## Before any pass
+1. **What it is for** — the few promises the product makes, and the shape those force on the system.
+2. **The system** — one data-flow diagram: the outside services, the processes we run, the stores,
+   the clients, and who touches what.
+3. **The pipelines** — the handful of things the app does end to end: trigger, what happens, what it
+   leaves behind. A closer diagram only for a pipeline with real internal stages.
+4. **The laws** — the invariants any change must keep.
 
-1. **Read `concepts.md`** (beside this file). It is the vocabulary and the judgment every pass relies
-   on: layers, shapes, where rules live, when a function should exist, what metrics are for. Do not
-   skip it because the ideas sound familiar; the point is to apply *these* definitions consistently.
-2. **Read the house rules** — `CLAUDE.md`, anything under `.claude/rules/`, and the docs they point
-   at. Then hold them at arm's length: they describe how the code was built, and part of this job is to
-   find where they are the cause of the problem. **A house rule that conflicts with a healthy shape is
-   named in the artifact as a tension, with a proposed rewrite. It is never silently obeyed, and never
-   silently broken.** Only the owner changes house rules.
-3. Read the pass file: `pass-1-model.md`, `pass-2-design.md` or `pass-3-build.md`.
+No file inventories, no line counts, no findings. It changes only when a box or an arrow changes.
 
-## Running the passes
+## slice
 
-- `model` and `design` each end by stopping and giving the owner the path to the document and a
-  five-line summary. The design is the one cheap, high-leverage review point: five minutes reading one
-  page replaces an afternoon of steering. Do not start `build` on a design the owner has not seen,
-  unless the pass was `all`.
-- `all` runs the three in order without stopping, for when the owner wants to come back to a finished
-  job. Every gate inside the passes still applies, and the independent reviews (below) stand in for the
-  owner's. If the design review raises a blocking objection that you cannot resolve from the code and
-  the model, stop there — a wrong design built well is the expensive failure.
-- `build` may be re-run; it resumes from `log.md`.
+Read the architecture and ask what a senior engineer would: *what is this business doing, and what are
+the pieces I would want to exist?* Name the capabilities first, as verbs in the domain's words — "produce
+a slot", not "slot route". Name them even when — especially when — the code has no such thing: a
+capability smeared across handlers, a store that exists only as scattered SQL. Those are the finds.
+What the capabilities stand on (adapters, stores, rules) falls out after.
 
-## Independent review
+Do not study the code for this. One glance per slice to say where it lives today, in a line.
 
-Your own judgment of your own document is the weak point, so each pass ends with a review by a fresh
-agent (the Agent tool, general-purpose, no conversation context) that is given only the artifact, the
-target's paths and `concepts.md`, and is asked to **find what is wrong**, not to approve. Each pass
-file says what that reviewer is asked. Fix what it finds, note in the artifact what you rejected and
-why, and do not run more than two review rounds per pass — past that you are polishing.
+`slices.md`, lean:
 
-## What never changes, in any pass
+- **The types** and what good means for each — capability, entry point, adapter, store, rule, view
+  (adjust to the codebase; keep it to a handful).
+- **What is frozen** while working inside any slice: the public contracts — wire shapes, schema,
+  storage keys, every other slice's "exposes".
+- **One entry per slice:** its job in a sentence, consumes → exposes, what it stands on, where it
+  lives today. Slices already in shape get one line between them.
+- **The queue:** the order to work in, bottom-up — a capability can't be made good until what it
+  stands on can be handed to it. A judgment until `measure` replaces it.
 
-- **Behaviour is fixed.** This is restructuring. A bug found on the way is written down, not fixed,
-  unless the owner asked for it; a fix rides in its own step with its own red test.
-- **The score is a prompt to look, never the target.** A change that lowers a complexity number while
-  failing the function-existence test in `concepts.md` is a worse codebase with a better number.
-- **Right-size.** Most code is fine. A 30-line route is already its own best design. Say "leave it"
-  when that is the answer, and say why.
-- **Report faithfully.** What was pinned by tests, what was only verified live, what was not verified
-  at all — each stated as what it is.
+## measure
+
+Follow [measure.md](measure.md). Gather the cheap signals, roll them up to slices, and answer in
+slices, never files: *"produce-a-slot is not contained — it is spread across X and knows how to do
+everything it touches"*, not *"route.ts is 500 lines"*. Name the top three and why, rewrite the queue,
+and stop. No fixing.
+
+## the ask
+
+The user names something in their own words — "the http layer for program generation". Resolve it to
+slices; following the rubric may pull in a slice they didn't name (an entry point can't be made good
+if the capability behind it doesn't exist). Say which slices in a line.
+
+From here the architecture, the other slices and the measurements have done their job. Work from
+the slice's entry and [rubric.md](rubric.md), and now go deep: read all of the slice's code.
+
+1. **Goal.** Answer the rubric's questions about the slice as it stands. Tell the user, briefly: what
+   fails, the shape you are going to, and how done will be measured. Then keep going — stop only if a
+   frozen contract has to move.
+2. **Pin.** Hold today's behaviour at the slice's outer contract, as the rubric describes.
+3. **Reshape.** Smallest steps that keep the pin green, committing as you go if the user has asked
+   for commits. Work bottom-up inside the slice too.
+4. **Verify.** The project's full check. Then a fresh agent, given only the rubric and the slice's
+   code, answers the questions cold. Any "no" is the next step; loop until there are none.
+5. **Record.** Update the slice's entry and the queue. Report what changed, what was verified and
+   how, and anything found but deliberately not fixed.

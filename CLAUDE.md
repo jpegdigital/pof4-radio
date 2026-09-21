@@ -18,7 +18,8 @@ philosophy).
   that directory**. Secrets stay `preserve()`d, set via `railway variables`.
 - One database, on purpose: `pnpm dev` talks to the same Railway Postgres (and bucket) as prod over its
   public proxy.
-- Fewest moving parts: plain `pg` + SQL (no ORM), declarative schema diffed and applied from the dev
+- Fewest moving parts: plain `pg` + SQL (no ORM — that is the whole rule: SQL you can read, not SQL
+  in every file; a store module owns its tables and the routes ask it), declarative schema diffed and applied from the dev
   machine (`pnpm db:plan` / `db:apply`, no migration files — `db/schema/*.sql`).
 - **Always minimize dependencies.** Before adding a package, ask whether `fetch`, Web Crypto, the
   platform, or thirty lines of our own would do: Qobuz is plain `fetch` against its web player's own
@@ -65,7 +66,9 @@ Three places, each owning what it alone needs:
   dedupe), `write` (the writer's
   brief and call), `rules` (the clock's law: `isBreak`, `legalIdDue`, `checkSlot`), `qobuz` (search
   and the pull, on the listener's token), `weather`, `headlines` (the news worker's one read: fetch/evidence),
-  `headline-choice` (Jev choices over prepared facts), `generation` (retained audit), `doc` (the slot on the wire). Tests
+  `headline-choice` (Jev choices over prepared facts), `generation` (retained audit), `doc` (the slot on the wire), `show-store` (the one place that
+  knows the `session` / `session_slot` / `track` SQL, the bucket keys, the session lock, the keep
+  points and bucket-first-row-second — a route asks it, never the pool). Tests
   sit next to the pure parts.
 - **`apps/web/src/app/(app)/`** — the browser: the home (`page.tsx` + `home-desk.tsx`), the session
   page (`sessions/[id]/`: `session-view` (the loop), `loop` (pure: `nextMove`), `player`, `rundown`,

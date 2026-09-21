@@ -2,8 +2,9 @@ import pg from "pg";
 import { env } from "./env";
 
 /**
- * One Postgres pool per server process (survives HMR in dev via globalThis). Queries are plain
- * SQL at the call site — no query layer: a route reads like the request it serves.
+ * One Postgres pool per server process (survives HMR in dev via globalThis). Plain SQL over an
+ * ORM — readable queries, owned by the store for their tables (the show's: session, session_slot,
+ * track, in `api/sessions/show-store.ts`), not scattered through the routes.
  */
 const g = globalThis as unknown as { __pool?: pg.Pool };
 

@@ -27,7 +27,7 @@ export type Tags = Hit;
 
 export type SlotStatus = "proposed" | "written" | "voiced";
 
-/** One session_slot row as the routes read it (`SLOT_COLUMNS`). */
+/** One session_slot row as show-store reads it (its `SLOT_COLUMNS`). */
 export interface SlotRow {
   generation?: SlotGeneration | null;
   news?: NewsReceipt | null;
@@ -57,10 +57,6 @@ export interface SlotRow {
   clip_key: string | null;
   voiced_at: Date | null;
 }
-
-/** The columns `SlotRow` reads, in one place so every route selects the same. */
-export const SLOT_COLUMNS =
-  "seq, title, artist, why, hits, qobuz_id, clock_ms, ramp_ms, sure, post, outro, outro_ms, energy, tempo, mood, kind, words, lead_line, legal_id, treatment, fallback, record_under_ms, voice_in_ms, clip_key, voiced_at, news, generation";
 
 export interface Chart {
   postTiming?: "0" | "1" | "2" | "3" | "4" | "5" | "beyond_5";

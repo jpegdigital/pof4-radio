@@ -1,16 +1,8 @@
-import { pool } from "@/lib/db";
 import { loadVoices } from "@/lib/settings";
+import { sessionLog } from "../api/sessions/show-store";
 import { HomeDesk, type SessionSummary } from "./home-desk";
 
 export const dynamic = "force-dynamic";
-
-interface SessionRow {
-  id: string;
-  prompt: string;
-  voice_id: string;
-  created_at: Date;
-  slots: string;
-}
 
 /** How many earlier sessions the desk shows. */
 const LOG_LENGTH = 20;
@@ -21,21 +13,13 @@ const LOG_LENGTH = 20;
  * the form and the redirect are the browser's (home-desk.tsx).
  */
 export default async function HomePage() {
-  const [voices, { rows }] = await Promise.all([
-    loadVoices(),
-    pool().query<SessionRow>(
-      `select s.id, s.prompt, s.voice_id, s.created_at, count(l.id) as slots
-       from session s left join session_slot l on l.session_id = s.id
-       group by s.id order by s.created_at desc limit $1`,
-      [LOG_LENGTH],
-    ),
-  ]);
-  const sessions: SessionSummary[] = rows.map((r) => ({
-    sessionId: r.id,
-    prompt: r.prompt,
-    dj: (voices.find((v) => v.id === r.voice_id) ?? voices[0])?.name ?? "no voice",
-    slots: Number(r.slots),
-    createdAt: r.created_at.toISOString(),
+  const [voices, log] = await Promise.all([loadVoices(), sessionLog(LOG_LENGTH)]);
+  const sessions: SessionSummary[] = log.map((s) => ({
+    sessionId: s.id,
+    prompt: s.prompt,
+    dj: (voices.find((v) => v.id === s.voiceId) ?? voices[0])?.name ?? "no voice",
+    slots: s.slots,
+    createdAt: s.createdAt.toISOString(),
   }));
   return (
     <HomeDesk djs={voices.map((v) => ({ id: v.id, name: v.name, gender: v.gender }))} sessions={sessions} />

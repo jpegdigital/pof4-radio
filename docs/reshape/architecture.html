@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radio — the shape</title>
+<style>
+  :root { color-scheme: light dark;
+    --bg:#fbfaf7; --fg:#1f1d1a; --muted:#6b665e; --line:#e4e0d8; --code:#f2efe8; --accent:#b4531a; --nav:#f5f2ec; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161513; --fg:#e8e4dc; --muted:#a09a90; --line:#2c2a26; --code:#211f1c; --accent:#f0a06a; --nav:#1c1a17; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 16px/1.6 Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  .wrap { display:grid; grid-template-columns: 240px minmax(0,1fr); min-height:100vh; }
+  nav { position:sticky; top:0; height:100vh; overflow:auto; padding:28px 20px; background:var(--nav); border-right:1px solid var(--line);
+        font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  nav .t { font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:12px; font-size:11px; }
+  nav a { display:block; color:var(--fg); text-decoration:none; padding:3px 0; }
+  nav a:hover { color:var(--accent); }
+  main { padding: 48px 56px 96px; max-width: 1040px; }
+  h1 { font-size:2.2rem; line-height:1.15; margin:0 0 .3em; letter-spacing:-.01em; }
+  h2 { font-size:1.5rem; margin:2.4em 0 .6em; padding-top:.6em; border-top:1px solid var(--line); }
+  h3 { font-size:1.1rem; margin:1.6em 0 .4em; }
+  h1+p { color:var(--muted); font-style:italic; }
+  p, li { max-width: 76ch; }
+  a { color:var(--accent); }
+  code { font: 0.86em/1.5 ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; background:var(--code); padding:.1em .35em; border-radius:4px; }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; font-size:.9rem; margin:1em 0; }
+  th, td { text-align:left; vertical-align:top; padding:8px 12px; border-bottom:1px solid var(--line); }
+  th { font: 600 .78rem ui-sans-serif, system-ui; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .diagram { border:1px solid var(--line); border-radius:8px; padding:16px; margin:1em 0; overflow-x:auto; background:var(--nav); }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } nav { position:static; height:auto; } main { padding:24px 20px 64px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <div class="t">Radio — the shape</div>
+  <a href="#intent">1. What it is for</a>
+  <a href="#system">2. The system</a>
+  <a href="#pipelines">3. The pipelines</a>
+  <a href="#laws">4. The laws</a>
+</nav>
+<main>
+
+<h1>Radio — the shape</h1>
+<p>What the app is for and what flows where — the page that would still be true after every file was
+rewritten. It changes only when a box or an arrow changes. The API is <a href="../sessions.html">sessions.html</a>,
+the data <a href="../domain.html">domain.html</a>; how the code should be cut is <a href="slices.md">slices.md</a>.</p>
+
+<h2 id="intent">1. What it is for</h2>
+<p>A listener types an ask and gets a radio show made from their own Qobuz account: real recordings,
+a DJ who talks up the intros, a break with today's news and weather, the legal ID at the top of the
+hour. Three promises shape everything else:</p>
+<ul>
+  <li><strong>It sounds like radio.</strong> Voice, bed and track are mixed to a plan — the DJ finishes
+      where the vocal starts. A playback problem, solved in the browser.</li>
+  <li><strong>First sound is fast and the show never runs dry.</strong> Production runs one slot ahead of
+      the listener and no further. A sequencing problem, also the browser's.</li>
+  <li><strong>Everything made is kept.</strong> Every judgment, script, take and track is retained and
+      replayed as saved; nothing is regenerated to play. A storage discipline, the server's.</li>
+</ul>
+<p>The shape that forces: <strong>the browser is the state machine; the server is stateless functions</strong>
+over one Postgres and one bucket. No queue, no worker pool, no session process — two small cron jobs
+are the only thing that runs without a listener.</p>
+<p>Who does what among the minds: <strong>Claude</strong> has taste and words — it proposes the songs and
+writes the copy. <strong>Jev</strong> makes every judgment — which recording, what its chart is, how to
+mix it, which headlines. <strong>Code</strong> keeps the law — the clock, the budgets, what is valid.</p>
+
+<h2 id="system">2. The system</h2>
+<div class="diagram"><pre class="mermaid">
+flowchart LR
+  subgraph EXT["Outside"]
+    direction TB
+    CL["Claude<br/>proposes songs, writes copy"]
+    JV["Jev via TypeSafe<br/>every judgment"]
+    QB["Qobuz<br/>catalog search, the MP3"]
+    EL["ElevenLabs<br/>the voice"]
+    SRC["NWS + RSS<br/>weather, headlines"]
+  end
+
+  subgraph CRON["Cron workers"]
+    PREP["prepare news<br/>prepare weather"]
+  end
+
+  subgraph SRV["radio-web, stateless, behind Guard"]
+    direction TB
+    FILL["fill rung"]
+    SLOT["slot rung"]
+    TRK["track hold"]
+    SNAP["snapshot, streams, receipts"]
+    SET["control room"]
+  end
+
+  subgraph STORE["Kept forever"]
+    direction TB
+    PG[("Postgres<br/>sessions and slots, the track library,<br/>settings, news and weather editions")]
+    BK[("Bucket<br/>voice clips, tracks")]
+  end
+
+  subgraph WEB["Browser, the state machine"]
+    direction TB
+    LOOP["production loop<br/>one slot ahead"]
+    DECK["deck<br/>three lanes, one clock"]
+  end
+
+  SRC --> PREP
+  CL --- PREP
+  PREP --> PG
+
+  LOOP -->|"fill"| FILL
+  LOOP -->|"produce slot"| SLOT
+  LOOP -->|"hold track"| TRK
+  LOOP -->|"snapshot"| SNAP
+
+  FILL --- CL
+  FILL --- QB
+  SLOT --- JV
+  SLOT --- CL
+  SLOT --- EL
+  TRK --- QB
+  SET --- EL
+  SET --- JV
+
+  FILL --> PG
+  SLOT --> PG
+  SLOT --> BK
+  TRK --> BK
+  TRK --> PG
+  SET --> PG
+  PG --> SNAP
+  BK --> SNAP
+
+  SNAP -->|"slots, clip and track bytes"| DECK
+  DECK -->|"break heard"| SNAP
+  LOOP --> DECK
+</pre></div>
+<p>Left to right: only the server and the cron workers touch the outside world, and only they write the
+store. The browser reads snapshots and bytes, and decides what to ask for next. Settings (the station's
+identity, the clock, the voice roster, the news desk) are rows read per request by every rung. Dev and
+prod share the one database and bucket on purpose.</p>
+
+<h2 id="pipelines">3. The pipelines</h2>
+<p>Everything the app does is one of these five.</p>
+<div class="scroll"><table>
+  <tr><th>Pipeline</th><th>Trigger</th><th>What happens</th><th>Leaves behind</th></tr>
+  <tr><td><strong>Prepare</strong></td><td>Cron</td>
+      <td>Read NWS and the RSS roster once; for news, Claude prepares and reviews facts from the evidence.</td>
+      <td>A dated edition of news, of weather</td></tr>
+  <tr><td><strong>Fill</strong></td><td>Browser: no slots yet, or the proposed ones are at low water</td>
+      <td>Claude proposes the next songs with catalog lookups in hand; Qobuz search finds each one's versions; repeats dropped.</td>
+      <td>Proposed slots: a proposal and its hits, nothing judged</td></tr>
+  <tr><td><strong>Slot</strong></td><td>Browser: the first unvoiced slot, one ahead of the cue</td>
+      <td>Jev picks the recording, charts it and chooses the mix; on a break, Jev chooses from the prepared news; Claude writes; ElevenLabs voices.</td>
+      <td>The slot's pick, plan, copy and receipts; the clip</td></tr>
+  <tr><td><strong>Track</strong></td><td>Browser: the moment a pick is known</td>
+      <td>Already in the library → held. Bytes in the bucket → the row rebuilt. Else pulled from Qobuz once.</td>
+      <td>The track in the library, shared by every session after</td></tr>
+  <tr><td><strong>Playback</strong></td><td>The listener presses start</td>
+      <td>The deck loads clip and track, lays the mix plan, runs mic, bed and track on one audio clock; a track ending advances the show.</td>
+      <td>Sound; a receipt when a break's news was heard in full</td></tr>
+</table></div>
+<p>Fill and Slot are <em>rungs</em>: idempotent, and serialized per session — a second producer is turned
+away. Track is not serialized, because a track belongs to the library, not the session.</p>
+
+<h3>The slot rung, closer</h3>
+<p>The one pipeline with real internal stages: four outside minds and services, one request.</p>
+<div class="diagram"><pre class="mermaid">
+flowchart LR
+  A["Clock's law<br/>is it a break? is the legal ID due?"] --> B["Pick<br/>Jev: one recording from the hits"]
+  B --> C["Chart<br/>Jev: five questions at once"]
+  C --> D["Mix<br/>Jev: one action from<br/>code-built plans"]
+  D --> E{"break?"}
+  E -->|yes| F["News<br/>Jev chooses 0 to 2 prepared stories,<br/>reserved before writing"]
+  E -->|no| G
+  F --> G["Write<br/>Claude: words and lead line"]
+  G --> H["Check<br/>copy against the law"]
+  H --> I["Save<br/>plan, copy, receipts"]
+  I --> J["Voice<br/>ElevenLabs, then the bucket, then the row"]
+  D -.->|"segue: no words, no clip"| I
+</pre></div>
+<p>Failure is staged, not atomic: a failed writer keeps the news reservation, a failed voice keeps the
+script, and the next request resumes from what is saved. Every stage's question, answer and
+probabilities are retained on the slot.</p>
+
+<h2 id="laws">4. The laws</h2>
+<ul>
+  <li><strong>The browser decides, the server does.</strong> No server-side session state, queue or background work beyond the two cron jobs.</li>
+  <li><strong>Rungs are idempotent and serialized per session.</strong> The track hold is neither locked nor session-owned.</li>
+  <li><strong>Bucket first, row second.</strong> A row always means the bytes exist.</li>
+  <li><strong>Status is derived from presence</strong>, never stored.</li>
+  <li><strong>Staged failure.</strong> What was produced before a failure stays; the retry resumes, and never re-researches or re-selects.</li>
+  <li><strong>Kept forever, played as saved.</strong> No regeneration and no freshness check at play time; another take is a new key.</li>
+  <li><strong>No request-time research.</strong> A break reads the latest prepared edition and nothing else.</li>
+  <li><strong>One call per outside service, no hidden retries or fallbacks.</strong> A judgment that fails stops the slot.</li>
+  <li><strong>The clock is a setting</strong>, as are identity, voices and the news desk; a missing one is a fault, not a default.</li>
+  <li><strong>The domain's words:</strong> track, tags, slot, proposal, hits, pick, chart, copy, timing, clip, fill, plan, the clock.</li>
+  <li><strong>Few parts.</strong> One service, one database, one bucket; a dependency only when the platform and thirty lines won't do.</li>
+</ul>
+
+</main>
+</div>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: dark ? "dark" : "neutral",
+    securityLevel: "strict",
+    flowchart: { useMaxWidth: false, htmlLabels: true, nodeSpacing: 28, rankSpacing: 44 },
+  });
+</script>
+</body>
+</html>

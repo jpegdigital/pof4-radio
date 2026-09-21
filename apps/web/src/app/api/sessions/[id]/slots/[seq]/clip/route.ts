@@ -1,7 +1,5 @@
-import type { SlotGeneration } from "../../../../generation";
 import { z } from "zod";
-import { bucket } from "@/lib/bucket";
-import { pool } from "@/lib/db";
+import { clipKeysOf, openClip } from "../../../../show-store";
 
 /**
  * GET /api/sessions/:id/slots/:seq/clip — the clip's bytes, streamed from the bucket. A key is
@@ -14,19 +12,14 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[id]/s
   const seq = Number(p.seq);
   if (!z.uuid().safeParse(p.id).success || !Number.isInteger(seq) || seq < 1)
     return Response.json({ error: "no such clip" }, { status: 404 });
-  const store = bucket();
-  const { rows } = await pool().query<{
-    clip_key: string | null;
-    generation: SlotGeneration | null;
-  }>("select clip_key, generation from session_slot where session_id = $1 and seq = $2", [p.id, seq]);
+  const kept = await clipKeysOf(p.id, seq);
   const requested = new URL(_req.url).searchParams.get("take");
-  const row = rows[0];
-  const allowed = new Set([row?.clip_key, ...(row?.generation?.takes ?? []).map((take) => take.clipKey)]);
+  const allowed = new Set([kept?.clipKey, ...(kept?.takeKeys ?? [])]);
   if (requested && !allowed.has(requested))
     return Response.json({ error: "unknown clip take" }, { status: 404 });
-  const clipKey = requested ?? row?.clip_key;
+  const clipKey = requested ?? kept?.clipKey;
   if (!clipKey) return Response.json({ error: "no such clip" }, { status: 404 });
-  const obj = await store.open(clipKey);
+  const obj = await openClip(clipKey);
   if (!obj) return Response.json({ error: "no such clip" }, { status: 404 });
   const headers: Record<string, string> = {
     "Content-Type": "audio/mpeg",

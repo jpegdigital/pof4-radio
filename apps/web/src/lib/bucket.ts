@@ -4,7 +4,7 @@ import { sign } from "./sigv4";
 /**
  * The clips bucket (Railway's `radio-clips`, S3-compatible): three verbs over `fetch` with the
  * request signed by hand (sigv4.ts). Path-style URLs (`<endpoint>/<bucket>/<key>`). The voice clips
- * live under `sessions/`, the tracks under `tracks/` (the routes name the keys). `head` is how the
+ * live under `sessions/`, the tracks under `tracks/` (show-store names the keys). `head` is how the
  * pull finds bytes it has no row for (a `track` row is rebuilt from the tags, no download). The
  * five `BUCKET_*` vars are required by `env`: a missing one is its fault to name, not a null here.
  */

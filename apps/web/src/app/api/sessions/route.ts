@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { pool } from "@/lib/db";
 import { SessionParams } from "./params";
+import { openSession } from "./show-store";
 
 /**
  * POST /api/sessions — creation only, instant: the ask and the voice become a session row. No
@@ -13,11 +13,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return Response.json({ error: z.prettifyError(parsed.error) }, { status: 400 });
   const { prompt, voiceId } = parsed.data;
   try {
-    const { rows } = await pool().query<{ id: string }>(
-      "insert into session (prompt, voice_id) values ($1, $2) returning id",
-      [prompt, voiceId],
-    );
-    const sessionId = rows[0].id;
+    const sessionId = await openSession(prompt, voiceId);
     console.log(`[session ${sessionId.slice(0, 8)}] opened: ${prompt}`);
     return Response.json({ sessionId });
   } catch (err) {

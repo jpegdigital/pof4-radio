@@ -1,9 +1,8 @@
 import { z } from "zod";
-import { bucket } from "@/lib/bucket";
-import { pool } from "@/lib/db";
 import { env } from "@/lib/env";
-import type { Hit, Tags } from "../../../../doc";
+import type { Tags } from "../../../../doc";
 import { qobuz, QobuzError } from "../../../../qobuz";
+import { adoptTrack, keepTrack, openTrack, pickedOf, trackHeld } from "../../../../show-store";
 
 /**
  * POST /api/sessions/:id/slots/:seq/track — the slot's pick, held: the track is addressed through
@@ -20,8 +19,6 @@ import { qobuz, QobuzError } from "../../../../qobuz";
  * immutable and the browser caches it for good. Playback never touches Qobuz.
  */
 
-const audioKeyOf = (trackId: string) => `tracks/${trackId}.mp3`;
-
 type Route = RouteContext<"/api/sessions/[id]/slots/[seq]/track">;
 
 const where = async (ctx: Route) => {
@@ -32,53 +29,35 @@ const where = async (ctx: Route) => {
 
 /** The slot's pick with its tags, or why there is none. */
 async function pickOf(id: string, seq: number): Promise<Tags | { status: number; error: string }> {
-  const { rows } = await pool().query<{ qobuz_id: string | null; hits: Hit[] }>(
-    "select qobuz_id, hits from session_slot where session_id = $1 and seq = $2",
-    [id, seq],
-  );
-  const slot = rows[0];
+  const slot = await pickedOf(id, seq);
   if (!slot) return { status: 404, error: "unknown slot" };
-  if (slot.qobuz_id === null) return { status: 409, error: `slot ${seq} is not written yet` };
-  const pick = slot.hits.find((h) => h.id === slot.qobuz_id);
-  if (!pick)
-    return { status: 500, error: `slot ${seq} picked ${slot.qobuz_id}, which is not one of its hits` };
+  if (slot.pickId === null) return { status: 409, error: `slot ${seq} is not written yet` };
+  const pick = slot.hits.find((h) => h.id === slot.pickId);
+  if (!pick) return { status: 500, error: `slot ${seq} picked ${slot.pickId}, which is not one of its hits` };
   return pick;
-}
-
-async function insertTrack(pick: Tags, key: string, bytes: number): Promise<void> {
-  await pool().query(
-    `insert into track (id, title, artists, album, image, duration_ms, audio_key, bytes)
-     values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (id) do nothing`,
-    [pick.id, pick.title, JSON.stringify(pick.artists), pick.album, pick.image, pick.durationMs, key, bytes],
-  );
 }
 
 export async function POST(_req: Request, ctx: Route) {
   const w = await where(ctx);
   if (!w.ok) return Response.json({ error: "unknown slot" }, { status: 404 });
-  const store = bucket();
   const pick = await pickOf(w.id, w.seq);
   if ("error" in pick) return Response.json({ error: pick.error }, { status: pick.status });
   const tag = `[session ${w.id.slice(0, 8)}] slot ${w.seq}`;
   const name = `${pick.artists.join(", ")} — ${pick.title}`;
 
   // Idempotent: held returns the tags marked, no pull.
-  const { rows: held } = await pool().query("select 1 from track where id = $1", [pick.id]);
-  if (held.length) return Response.json({ held: true, ...pick });
+  if (await trackHeld(pick.id)) return Response.json({ held: true, ...pick });
 
   try {
-    const key = audioKeyOf(pick.id);
-    const found = await store.head(key);
+    const found = await adoptTrack(pick);
     if (found) {
-      await insertTrack(pick, key, found.contentLength ?? 0);
       console.log(`${tag} track held: ${name}, ${found.contentLength ?? "?"} bytes already in the bucket`);
       return Response.json({ held: true, ...pick });
     }
     const e = env();
     const q = qobuz({ token: e.QOBUZ_TOKEN, appId: e.QOBUZ_APP_ID, secret: e.QOBUZ_SECRET });
     const rec = await q.download(pick.id);
-    await store.put(key, rec.bytes, rec.mimeType);
-    await insertTrack(pick, key, rec.bytes.byteLength);
+    await keepTrack(pick, rec.bytes, rec.mimeType);
     console.log(`${tag} track held: ${name}, ${rec.bytes.byteLength} bytes`);
     return Response.json({ held: true, ...pick });
   } catch (err) {
@@ -96,15 +75,9 @@ export async function POST(_req: Request, ctx: Route) {
 export async function GET(_req: Request, ctx: Route) {
   const w = await where(ctx);
   if (!w.ok) return Response.json({ error: "no such track" }, { status: 404 });
-  const store = bucket();
   const pick = await pickOf(w.id, w.seq);
   if ("error" in pick) return Response.json({ error: "no such track" }, { status: 404 });
-  const { rows } = await pool().query<{ audio_key: string }>("select audio_key from track where id = $1", [
-    pick.id,
-  ]);
-  const key = rows[0]?.audio_key;
-  if (!key) return Response.json({ error: "no such track" }, { status: 404 });
-  const obj = await store.open(key);
+  const obj = await openTrack(pick.id);
   if (!obj) return Response.json({ error: "no such track" }, { status: 404 });
   const headers: Record<string, string> = {
     "Content-Type": "audio/mpeg",

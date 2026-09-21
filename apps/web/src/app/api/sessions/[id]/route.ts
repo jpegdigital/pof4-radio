@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { pool } from "@/lib/db";
 import { loadClock } from "@/lib/settings";
-import { SLOT_COLUMNS, type SlotRow, slotDoc } from "../doc";
+import { slotDoc } from "../doc";
+import { heldAmong, sessionOf, slotsOf } from "../show-store";
 
 /**
  * GET /api/sessions/:id — the session as stored, a snapshot that never produces anything: the
@@ -12,41 +12,21 @@ import { SLOT_COLUMNS, type SlotRow, slotDoc } from "../doc";
  * document can still grow. A missing clock row is a 500 naming it.
  */
 
-interface SessionRow {
-  id: string;
-  prompt: string;
-  voice_id: string;
-  created_at: Date;
-}
-
 export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[id]">) {
   const { id } = await ctx.params;
   if (!z.uuid().safeParse(id).success) return Response.json({ error: "unknown session" }, { status: 404 });
-  const { rows } = await pool().query<SessionRow>(
-    "select id, prompt, voice_id, created_at from session where id = $1",
-    [id],
-  );
-  if (!rows.length) return Response.json({ error: "unknown session" }, { status: 404 });
-  const s = rows[0];
+  const s = await sessionOf(id);
+  if (!s) return Response.json({ error: "unknown session" }, { status: 404 });
   try {
-    const [clock, { rows: slots }] = await Promise.all([
-      loadClock(),
-      pool().query<SlotRow>(`select ${SLOT_COLUMNS} from session_slot where session_id = $1 order by seq`, [
-        id,
-      ]),
-    ]);
+    const [clock, slots] = await Promise.all([loadClock(), slotsOf(id)]);
     // Which of the session's picks the bucket holds — one query across every slot.
-    const { rows: held } = await pool().query<{ id: string }>(
-      "select id from track where id = any($1::text[])",
-      [slots.map((r) => r.qobuz_id).filter((x): x is string => x !== null)],
-    );
-    const holds = new Set(held.map((r) => r.id));
+    const holds = await heldAmong(slots.map((r) => r.qobuz_id).filter((x): x is string => x !== null));
     return Response.json(
       {
         sessionId: s.id,
         prompt: s.prompt,
-        voiceId: s.voice_id,
-        createdAt: s.created_at.toISOString(),
+        voiceId: s.voiceId,
+        createdAt: s.createdAt.toISOString(),
         clock,
         slots: slots.map((r) => slotDoc(r, holds)),
       },
