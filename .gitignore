@@ -9,3 +9,5 @@ out/
 .DS_Store
 *.log
 .clauderc
+.vitest-attachments/
+**/__screenshots__/

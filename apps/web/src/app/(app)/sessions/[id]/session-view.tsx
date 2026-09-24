@@ -345,7 +345,14 @@ export function SessionView({ id }: { id: string }) {
     cue: deck.cue,
     phase,
     track: deck.track,
-    onToggle: toggle,
+    operationId: deck.operationId,
+    intent: deck.intent,
+    onPlay: () => {
+      deck.unlock();
+      if (deck.cue) deck.play();
+      else if (cue) go(cue);
+    },
+    onPause: deck.pause,
     onPrev: prev,
     onNext: next,
   });
@@ -455,6 +462,9 @@ export function SessionView({ id }: { id: string }) {
                   ) : undefined
                 }
                 phase={phase}
+                intent={deck.intent}
+                playbackId={deck.playbackId}
+                operationId={deck.operationId}
                 plan={deck.plan}
                 headMs={deck.headMs}
                 track={deck.track}

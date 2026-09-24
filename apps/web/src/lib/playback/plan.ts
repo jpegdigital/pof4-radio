@@ -25,8 +25,8 @@ export interface PlanInput {
 }
 
 export interface Plan {
-  /** How long the timeline runs: the track's start plus a tail. */
-  lengthMs: number;
+  /** Mixer viewport only, never the duration of the song or a playback limit. */
+  previewEndMs: number;
   mic: { atMs: number; endMs: number } | null;
   /** The bed's gain: up from atMs to fullMs, down from downMs to outMs. */
   bed: { atMs: number; fullMs: number; downMs: number; outMs: number } | null;
@@ -109,10 +109,10 @@ export function voiceGainPoints(mic: NonNullable<Plan["mic"]>): [number, number]
 }
 
 /** How long the timeline runs past the track's start, and where its vocal is. */
-function past(musicAt: number, rampMs: number | undefined): { lengthMs: number; vocalMs?: number } {
-  if (rampMs === undefined) return { lengthMs: musicAt + TAIL_MS };
+function past(musicAt: number, rampMs: number | undefined): { previewEndMs: number; vocalMs?: number } {
+  if (rampMs === undefined) return { previewEndMs: musicAt + TAIL_MS };
   const vocalMs = musicAt + rampMs;
-  return { lengthMs: Math.max(musicAt + TAIL_MS, vocalMs + VOCAL_TAIL_MS), vocalMs };
+  return { previewEndMs: Math.max(musicAt + TAIL_MS, vocalMs + VOCAL_TAIL_MS), vocalMs };
 }
 
 /** The bed's gain at a moment, from its ramps: what a scrub into the middle of it must land on. */
@@ -123,21 +123,21 @@ export function bedGainAt(bed: NonNullable<Plan["bed"]>, ms: number): number {
   return (BED_GAIN * (bed.outMs - ms)) / (bed.outMs - bed.downMs);
 }
 
-/**
- * Where the mic and the record stand at a moment: how far into its clip the mic is while it is
- * on, how far into the record once it has started, null when not (yet, or any more). What an
- * element is seeked to when its start fires — at the head as it really is, since a hidden page's
- * timers fire late — and where a scrub or a resume lands.
- */
-export function offsetsAt(plan: Plan, ms: number): { micMs: number | null; trackMs: number | null } {
-  const m = plan.mic;
-  return {
-    micMs: m && ms >= m.atMs && ms < m.endMs ? ms - m.atMs : null,
-    trackMs: ms >= plan.music.atMs ? ms - plan.music.atMs : null,
-  };
+/** The last moment any intro lane or duck-release automation is still active. */
+export function mixEnd(plan: Plan): number {
+  return Math.max(
+    plan.mic?.endMs ?? 0,
+    plan.bed?.outMs ?? 0,
+    plan.duck ? plan.duck.endMs + (plan.duck.riseMs ?? RISE_MS) : 0,
+  );
 }
 
 export function planSlot(input: PlanInput): Plan {
+  const plan = buildPlan(input);
+  return { ...plan, previewEndMs: Math.max(plan.previewEndMs, mixEnd(plan)) };
+}
+
+function buildPlan(input: PlanInput): Plan {
   const { kind, clipMs } = input;
   if (clipMs === null || kind === "segue")
     return { ...past(0, input.rampMs), mic: null, bed: null, music: { atMs: 0 }, duck: null };
@@ -190,7 +190,7 @@ export function planSlot(input: PlanInput): Plan {
     const mic = { atMs: at, endMs: at + clipMs };
     const plan: Plan = {
       ...p,
-      lengthMs: Math.max(p.lengthMs, at + clipMs),
+      previewEndMs: Math.max(p.previewEndMs, at + clipMs),
       mic,
       bed: null,
       music: { atMs: 0 },

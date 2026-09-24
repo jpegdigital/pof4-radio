@@ -3,7 +3,7 @@ import { lockScreen } from "./transport";
 import type { Cue, DeckPhase, TrackClock } from "./types";
 
 /**
- * The lock screen. Under a "playback" audio session (use-deck.ts) iOS treats the page as a media
+ * The lock screen. Under the engine's "playback" audio session iOS treats the page as a media
  * player and routes the lock screen's and the headphones' buttons to it; without handlers it shows
  * a bare player and the buttons do nothing. The metadata is the pick's tags; what state and
  * position it shows is the transport's judgment (lockScreen); play, pause, ⏮ and ⏭ are the
@@ -17,20 +17,26 @@ export function useMediaSession({
   cue,
   phase,
   track,
-  onToggle,
+  onPlay,
+  onPause,
+  operationId,
+  intent,
   onPrev,
   onNext,
 }: {
   cue: Cue | null;
   phase: DeckPhase;
   track: TrackClock | null;
-  onToggle: () => void;
+  onPlay: () => void;
+  onPause: () => void;
+  operationId: number;
+  intent: "play" | "pause";
   onPrev: () => void;
   onNext: () => void;
 }) {
-  const now = useRef({ phase, track, onToggle, onPrev, onNext });
+  const now = useRef({ phase, track, onPlay, onPause, onPrev, onNext });
   useEffect(() => {
-    now.current = { phase, track, onToggle, onPrev, onNext };
+    now.current = { phase, track, onPlay, onPause, onPrev, onNext };
   });
 
   useEffect(() => {
@@ -38,10 +44,10 @@ export function useMediaSession({
     const ms = navigator.mediaSession;
     // Play and pause each do one thing: a stale lock screen must not flip the deck the wrong way.
     ms.setActionHandler("play", () => {
-      if (lockScreen(now.current.phase, null).playbackState !== "playing") now.current.onToggle();
+      now.current.onPlay();
     });
     ms.setActionHandler("pause", () => {
-      if (lockScreen(now.current.phase, null).playbackState === "playing") now.current.onToggle();
+      now.current.onPause();
     });
     ms.setActionHandler("previoustrack", () => now.current.onPrev());
     ms.setActionHandler("nexttrack", () => now.current.onNext());
@@ -63,11 +69,11 @@ export function useMediaSession({
   }, [cue]);
 
   // The state and the scrubber: the record's clock is read every frame, but only a start, a stop
-  // or a change of phase re-posts it — the device extrapolates between.
+  // seek confirmation or change of phase re-posts it — the device extrapolates between.
   const playing = track?.playing ?? false;
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
-    const { playbackState, position } = lockScreen(phase, now.current.track);
+    const { playbackState, position } = lockScreen(phase, now.current.track, intent);
     navigator.mediaSession.playbackState = playbackState;
     if (!position) {
       navigator.mediaSession.setPositionState();
@@ -78,5 +84,5 @@ export function useMediaSession({
       position: position.positionMs / 1000,
       playbackRate: 1,
     });
-  }, [cue, phase, playing]);
+  }, [cue, phase, playing, operationId, intent]);
 }

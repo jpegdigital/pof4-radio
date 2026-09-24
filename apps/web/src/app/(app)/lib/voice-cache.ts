@@ -2,8 +2,7 @@
  * The clips and the tracks, once per URL for the life of the page: each fetched as a blob,
  * measured, and kept as an object URL its element plays (a rewind is instant; a resumed show's
  * past slots are ready the moment they are fetched; a track pulled while the last one played
- * starts on time). The bed is decoded once into the shared graph's context. A
- * failed fetch is remembered as such and retried on the next ask.
+ * starts on time). A failed fetch is remembered as such and retried on the next ask.
  */
 
 export type ClipEntry = { url: string; durationMs: number } | { error: string };
@@ -47,22 +46,4 @@ function measure(url: string): Promise<number> {
     a.onerror = () => reject(new Error("could not read the clip's length"));
     a.src = url;
   });
-}
-
-const beds = new Map<string, Promise<AudioBuffer>>();
-
-/** The bed decoded once per URL in the graph's context. */
-export function getBed(ctx: AudioContext, url: string): Promise<AudioBuffer> {
-  let p = beds.get(url);
-  if (!p) {
-    p = fetch(url)
-      .then((res) => {
-        if (!res.ok) throw new Error(`bed ${res.status}`);
-        return res.arrayBuffer();
-      })
-      .then((buf) => ctx.decodeAudioData(buf));
-    p.catch(() => beds.delete(url));
-    beds.set(url, p);
-  }
-  return p;
 }

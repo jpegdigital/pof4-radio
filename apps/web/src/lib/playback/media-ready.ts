@@ -28,7 +28,9 @@ export function prepareMedia(
         positioned = true;
         if (media.currentTime !== positionMs / 1000) media.currentTime = positionMs / 1000;
       }
-      if (media.seeking || media.readyState < 3) return;
+      // At the exact end there can be no future frames. A paused placement there is still ready.
+      const atEnd = Number.isFinite(media.duration) && positionMs / 1000 >= media.duration;
+      if (media.seeking || media.readyState < (atEnd ? 2 : 3)) return;
       cleanup();
       resolve();
     };
@@ -36,7 +38,7 @@ export function prepareMedia(
     for (const event of events) media.addEventListener(event, check);
     media.addEventListener("error", failed);
     signal.addEventListener("abort", aborted, { once: true });
-    if (media.getAttribute("src") !== url) {
+    if (media.getAttribute("src") !== url || media.error) {
       media.src = url;
       media.load();
     }

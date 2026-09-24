@@ -81,7 +81,7 @@ export const isCue = (s: Slot): s is Cue => s.pick !== undefined && s.kind !== u
 export const cueKey = (c: Cue) => String(c.seq);
 
 /** "held" is a platform interruption; "waiting" is an ended track awaiting the next cue. */
-export type DeckPhase = "idle" | "loading" | "playing" | "waiting" | "paused" | "held" | "error";
+export type DeckPhase = "idle" | "loading" | "seeking" | "playing" | "waiting" | "paused" | "held" | "error";
 
 /** The track's own clock, as of the last frame. */
 export interface TrackClock {

@@ -33,4 +33,6 @@ jobs:
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: pnpm test:browser
       - run: pnpm --filter web build

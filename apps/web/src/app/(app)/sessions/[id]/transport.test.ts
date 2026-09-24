@@ -1,54 +1,25 @@
 import { describe, expect, it } from "vitest";
-import type { Plan } from "./plan";
-import {
-  type ContextMove,
-  DRIFT_MS,
-  type LockScreen,
-  lockScreen,
-  onContext,
-  onMic,
-  prevTarget,
-  realign,
-  RESTART_AFTER_MS,
-  resumes,
-  toggleMove,
-} from "./transport";
+import type { Plan } from "@/lib/playback/plan";
+import { type LockScreen, lockScreen, onMic, prevTarget, RESTART_AFTER_MS } from "./transport";
 import type { DeckPhase, TrackClock } from "./types";
 
-/**
- * The transport's judgment, pure: whether a paused deck can pick up where it was or must run
- * the slot again from the top, whether the mic is still on at a moment, and where ⏮ goes.
- */
+/** Display projections and previous-slot navigation, independent of the audio runtime. */
 
 const brk: Plan = {
-  lengthMs: 25_000,
+  previewEndMs: 25_000,
   mic: { atMs: 0, endMs: 20_000 },
   bed: { atMs: 0, fullMs: 800, downMs: 15_500, outMs: 17_000 },
   music: { atMs: 17_000 },
   duck: { atMs: 17_000, endMs: 20_000 },
 };
 const talkup: Plan = {
-  lengthMs: 8000,
+  previewEndMs: 8000,
   mic: { atMs: 2000, endMs: 6000 },
   bed: null,
   music: { atMs: 0 },
   duck: { atMs: 2000, endMs: 6000 },
 };
-const segue: Plan = { lengthMs: 8000, mic: null, bed: null, music: { atMs: 0 }, duck: null };
-
-describe("resumes", () => {
-  it.each<[Plan, number, boolean, string]>([
-    [brk, 5000, false, "a break with the voice still on: the mix runs again"],
-    [brk, 18_000, false, "a break under the lead line, record started but voice not done"],
-    [brk, 21_000, true, "a break once the voice is done: the track picks up"],
-    [talkup, 1000, false, "a talk-up before the voice comes in"],
-    [talkup, 4000, false, "a talk-up mid-voice"],
-    [talkup, 7000, true, "a talk-up after the voice"],
-    [segue, 100, true, "a segue: the track alone, always resumable"],
-  ])("%#: %s", (plan, headMs, want, _id) => {
-    expect(resumes(plan, headMs)).toBe(want);
-  });
-});
+const segue: Plan = { previewEndMs: 8000, mic: null, bed: null, music: { atMs: 0 }, duck: null };
 
 describe("the lock screen while the next track is being prepared", () => {
   it("keeps pause available without showing a completed track position", () => {
@@ -56,21 +27,6 @@ describe("the lock screen while the next track is being prepared", () => {
       playbackState: "playing",
       position: null,
     });
-  });
-});
-
-describe("play and pause intent", () => {
-  it.each<{ id: string; phase: DeckPhase; ended: boolean; want: string | null }>([
-    { id: "pause a playing track", phase: "playing", ended: false, want: "pause" },
-    { id: "pause automatic continuation", phase: "waiting", ended: true, want: "pause" },
-    { id: "resume waiting without replaying the ended track", phase: "paused", ended: true, want: "wait" },
-    { id: "resume a paused track", phase: "paused", ended: false, want: "resume" },
-    { id: "resume an interrupted track", phase: "held", ended: false, want: "resume" },
-    { id: "retry a failed track load", phase: "error", ended: false, want: "load" },
-    { id: "start a ready cue", phase: "idle", ended: false, want: "load" },
-    { id: "do not duplicate an active load", phase: "loading", ended: false, want: null },
-  ])("$id", ({ phase, ended, want }) => {
-    expect(toggleMove(phase, ended)).toBe(want);
   });
 });
 
@@ -95,45 +51,6 @@ describe("prevTarget", () => {
     [0, 0, 0, "the first slot has nothing before it"],
   ])("%#: %s", (index, headMs, want, _id) => {
     expect(prevTarget(index, headMs)).toBe(want);
-  });
-});
-
-describe("realign: the head the record's own clock implies", () => {
-  // Two clocks: the head runs on wall time, the record on its element's. Once the record is on,
-  // the element is the truth — an interruption stops it and the head runs on; a stall does the
-  // same; a throttled page can leave the head behind. Past the tolerance the mix is laid again
-  // from where the record actually is.
-  it.each<[Plan, number, number, number | null, string]>([
-    [brk, 20_000, 3000, null, "the timeline and the record agree"],
-    [brk, 20_000, 3000 - DRIFT_MS + 1, null, "just inside the tolerance: left alone"],
-    [brk, 20_000, 3000 - DRIFT_MS, 20_000 - DRIFT_MS, "at the tolerance: the record's head"],
-    [brk, 50_000, 3000, 20_000, "the timeline ran through an interruption the record did not: back to it"],
-    [brk, 5000, 0, null, "the record not on yet: its clock says nothing"],
-    [segue, 8000, 12_000, 12_000, "the record ran on while the timeline stalled: forward to it"],
-  ])("%#: %s", (plan, headMs, trackMs, want, _id) => {
-    expect(realign(plan, headMs, trackMs)).toBe(want);
-  });
-});
-
-describe("onContext: what the audio context's state means to the deck", () => {
-  it.each<[DeckPhase, string, ContextMove | null, string]>([
-    ["playing", "interrupted", "hold", "on air and the platform takes the audio (a call, Siri): hold"],
-    ["held", "running", "play", "the audio back after a hold: play again from the head"],
-    ["playing", "running", null, "on air, running: nothing"],
-    [
-      "playing",
-      "suspended",
-      null,
-      "our own suspend (the kick after a stalled return) is not an interruption",
-    ],
-    ["paused", "interrupted", null, "the listener's pause: nothing to hold"],
-    ["paused", "running", null, "the listener's pause stands when the audio comes back"],
-    ["held", "interrupted", null, "already held"],
-    ["idle", "interrupted", null, "nothing loaded"],
-    ["loading", "interrupted", null, "still loading: the start will fail or play on its own"],
-    ["error", "running", null, "stopped on an error stays stopped"],
-  ])("%#: %s", (phase, state, want, _id) => {
-    expect(onContext(phase, state)).toBe(want);
   });
 });
 

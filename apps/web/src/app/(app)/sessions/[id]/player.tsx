@@ -1,8 +1,10 @@
 import { Disc3, Mic, Pause, Play, SkipBack, SkipForward, SlidersHorizontal } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent, type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
+import { useScrub } from "@/components/use-scrub";
+import type { ScrubSnapshot } from "@/components/scrub";
 import type { Preparation } from "./preparation";
 import { focusRing } from "../../lib/ui";
-import type { Plan } from "./plan";
+import type { Plan } from "@/lib/playback/plan";
 import { onMic } from "./transport";
 import { type Cue, clock, type DeckPhase, secs, type TrackClock } from "./types";
 
@@ -15,12 +17,10 @@ import { type Cue, clock, type DeckPhase, secs, type TrackClock } from "./types"
  * the deck every frame, and scrubs the track.
  */
 
-/** A keyboard nudge on either scrubber. */
-const NUDGE_MS = 1000;
-
 const MIXER_STATUS: Record<DeckPhase, string> = {
   idle: "STANDBY",
   loading: "LOADING",
+  seeking: "SEEKING",
   playing: "ON AIR",
   paused: "PAUSED",
   held: "INTERRUPTED",
@@ -43,6 +43,9 @@ export function Player({
   onSeekTrack,
   preparation,
   startup,
+  playbackId,
+  operationId,
+  intent,
 }: {
   cue: Cue;
   phase: DeckPhase;
@@ -55,17 +58,21 @@ export function Player({
   onNext: () => void;
   onToggle: () => void;
   /** Move the head on the cue. */
-  onScrub: (ms: number) => void;
+  onScrub: (ms: number) => number | null;
   /** Move within the track. */
-  onSeekTrack: (ms: number) => void;
+  onSeekTrack: (ms: number) => number | null;
   preparation: Preparation;
   startup?: ReactNode;
+  playbackId: string;
+  operationId: number;
+  intent: "play" | "pause";
 }) {
   const { pick } = cue;
   const making = phase === "loading" || !preparation.ready;
-  const running = phase === "playing" || phase === "paused" || phase === "held";
+  const running = phase === "playing" || phase === "paused" || phase === "held" || phase === "seeking";
   const talking = plan !== null && running && onMic(plan, headMs);
-  const paused = phase !== "playing" && phase !== "waiting";
+  const paused = intent === "pause" || phase === "idle" || phase === "error";
+  const scrub = { cueId: playbackId, operationId, seeking: phase === "seeking" };
   const rec = track ?? { positionMs: 0, durationMs: pick.durationMs, playing: false };
 
   return (
@@ -106,7 +113,7 @@ export function Player({
             <p className="text-center text-sm text-amber-200">{preparation.label}</p>
           )
         ) : (
-          <Progress clock={rec} onSeek={track && running ? onSeekTrack : null} />
+          <Progress clock={rec} scrub={scrub} onSeek={track && running ? onSeekTrack : null} />
         ))}
 
       <div className="player-transport">
@@ -140,6 +147,7 @@ export function Player({
         {plan ? (
           <Lanes
             plan={plan}
+            scrub={scrub}
             headMs={running ? headMs : null}
             track={pick}
             onScrub={running ? onScrub : null}
@@ -166,63 +174,32 @@ export function Player({
 
 const iconBtn = `flex size-12 items-center justify-center rounded-full text-zinc-300 transition hover:text-white active:scale-95 disabled:opacity-30 disabled:hover:text-zinc-300 ${focusRing}`;
 
-/**
- * A strip you can scrub: pointer down and drag shows where you are (`drag`), letting go
- * commits it; arrow keys nudge. Null handlers when there is nothing to scrub yet.
- */
-function useScrub(lengthMs: number, onCommit: ((ms: number) => void) | null) {
-  const [drag, setDrag] = useState<number | null>(null);
-  const msAt = (e: PointerEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * lengthMs;
-  };
-  const handlers = onCommit
-    ? {
-        onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          setDrag(msAt(e));
-        },
-        onPointerMove: (e: PointerEvent<HTMLDivElement>) => {
-          if (drag !== null) setDrag(msAt(e));
-        },
-        onPointerUp: (e: PointerEvent<HTMLDivElement>) => {
-          if (drag === null) return;
-          setDrag(null);
-          onCommit(msAt(e));
-        },
-        onPointerCancel: () => setDrag(null),
-        onKeyDown: (e: KeyboardEvent<HTMLDivElement>, at: number) => {
-          if (e.key === "ArrowLeft") onCommit(Math.max(0, at - NUDGE_MS));
-          else if (e.key === "ArrowRight") onCommit(Math.min(lengthMs, at + NUDGE_MS));
-          else return;
-          e.preventDefault();
-        },
-      }
-    : null;
-  return { drag, handlers };
-}
-
 /** The cue: three lanes on one scale — the mic in the lamp's amber, the bed with its ramps, the track to its vocal — and the head. */
 function Lanes({
   plan,
   headMs,
   track,
   onScrub,
+  scrub,
 }: {
+  scrub: Pick<ScrubSnapshot, "cueId" | "operationId" | "seeking">;
   plan: Plan;
   headMs: number | null;
   track: { title: string };
-  onScrub: ((ms: number) => void) | null;
+  onScrub: ((ms: number) => number | null) | null;
 }) {
-  const pct = (ms: number) => `${Math.min(100, Math.max(0, (ms / plan.lengthMs) * 100))}%`;
+  const pct = (ms: number) => `${Math.min(100, Math.max(0, (ms / plan.previewEndMs) * 100))}%`;
   const ticks: number[] = [];
-  for (let t = 0; t <= plan.lengthMs; t += Math.max(5000, Math.ceil(plan.lengthMs / 5 / 5000) * 5000))
+  for (let t = 0; t <= plan.previewEndMs; t += Math.max(5000, Math.ceil(plan.previewEndMs / 5 / 5000) * 5000))
     ticks.push(t);
   const lane = "mixer-lane";
   const bed = plan.bed;
   const bedSpan = bed ? bed.outMs - bed.atMs : 0;
-  const { drag, handlers } = useScrub(plan.lengthMs, onScrub);
-  const head = drag ?? (headMs === null ? null : Math.min(plan.lengthMs, headMs));
+  const { shown, handlers } = useScrub(
+    { ...scrub, positionMs: Math.min(plan.previewEndMs, headMs ?? 0), durationMs: plan.previewEndMs },
+    onScrub,
+  );
+  const head = headMs === null ? null : shown;
   return (
     <div>
       <div className="flex gap-2 font-display text-[10px] uppercase tracking-[0.18em] text-zinc-500">
@@ -236,7 +213,7 @@ function Lanes({
           aria-label="Mix timeline"
           aria-disabled={!onScrub}
           aria-valuemin={0}
-          aria-valuemax={Math.round(plan.lengthMs / 1000)}
+          aria-valuemax={Math.round(plan.previewEndMs / 1000)}
           aria-valuenow={Math.round((head ?? 0) / 1000)}
           aria-valuetext={secs(head ?? 0)}
           tabIndex={onScrub ? 0 : -1}
@@ -245,7 +222,8 @@ function Lanes({
           onPointerMove={handlers?.onPointerMove}
           onPointerUp={handlers?.onPointerUp}
           onPointerCancel={handlers?.onPointerCancel}
-          onKeyDown={handlers ? (e) => handlers.onKeyDown(e, head ?? 0) : undefined}
+          onLostPointerCapture={handlers?.onLostPointerCapture}
+          onKeyDown={handlers?.onKeyDown}
         >
           <div className={lane}>
             {plan.mic && (
@@ -330,9 +308,19 @@ function Lanes({
 }
 
 /** The track's clock, as the deck reads it each frame; a scrub moves within the track. */
-function Progress({ clock: c, onSeek }: { clock: TrackClock; onSeek: ((ms: number) => void) | null }) {
-  const { drag, handlers } = useScrub(c.durationMs, onSeek);
-  const shown = drag ?? c.positionMs;
+function Progress({
+  clock: c,
+  onSeek,
+  scrub,
+}: {
+  clock: TrackClock;
+  onSeek: ((ms: number) => number | null) | null;
+  scrub: Pick<ScrubSnapshot, "cueId" | "operationId" | "seeking">;
+}) {
+  const { shown, handlers } = useScrub(
+    { ...scrub, positionMs: c.positionMs, durationMs: c.durationMs },
+    onSeek,
+  );
   const pct = c.durationMs > 0 ? Math.min(100, (shown / c.durationMs) * 100) : 0;
   return (
     <div className="player-progress">
@@ -350,7 +338,8 @@ function Progress({ clock: c, onSeek }: { clock: TrackClock; onSeek: ((ms: numbe
         onPointerMove={handlers?.onPointerMove}
         onPointerUp={handlers?.onPointerUp}
         onPointerCancel={handlers?.onPointerCancel}
-        onKeyDown={handlers ? (e) => handlers.onKeyDown(e, shown) : undefined}
+        onLostPointerCapture={handlers?.onLostPointerCapture}
+        onKeyDown={handlers?.onKeyDown}
       >
         <div className="h-1 overflow-hidden rounded-full bg-zinc-800">
           <div className="h-full bg-zinc-200" style={{ width: `${pct}%` }} />

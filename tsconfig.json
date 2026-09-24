@@ -15,5 +15,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["vitest.config.mts", "db/*.mts"]
+  "include": ["vitest.config.mts", "vitest.browser.config.mts", "db/*.mts"]
 }
