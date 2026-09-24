@@ -13,12 +13,14 @@ import {
   voiceGainPoints,
 } from "./plan";
 import { onContext, realign, resumes, toggleMove } from "./transport";
+import { prepareMedia } from "./media-ready";
 import { type Cue, type DeckPhase, type Slot, type TrackClock } from "./types";
 
 /**
  * The deck: one slot on air at a time, three lanes from one clock. Load a cue and its clip and
  * its track are fetched and measured (the track pulled into the bucket first if the page has not
- * managed it yet — POST on the slot's track, idempotent), the plan laid (plan.ts), then the mic —
+ * managed it yet — POST on the slot's track, idempotent), the plan laid (plan.ts), and the playback
+ * elements buffered before any clocks or fades start. Then the mic —
  * the voice <audio> element — the bed — a looping buffer — and the track — the MP3 in its own
  * <audio> element — run in one Web Audio graph, the bed's and the track's gain scheduled on the
  * audio clock, the track started at its mark. The run can start anywhere on the timeline (a
@@ -178,11 +180,14 @@ export function useDeck({
     h.current = { onSlot };
   });
   const run = useRef<Run | null>(null);
+  const preparing = useRef<AbortController | null>(null);
   // A load overtaken by a later one must not start playing.
   const loads = useRef(0);
 
   /** Silence all three lanes and stop the clock. Returns the head where it stopped. */
   const halt = useCallback((): number => {
+    preparing.current?.abort();
+    preparing.current = null;
     const r = run.current;
     run.current = null;
     if (!r) return st.current.headMs;
@@ -202,7 +207,9 @@ export function useDeck({
       g.recGain.gain.setValueAtTime(g.recGain.gain.value, now);
       r.bed?.stop(now + 0.05);
     }
-    return performance.now() - r.startedAt;
+    const headMs = performance.now() - r.startedAt;
+    const plan = st.current.plan;
+    return g && plan ? (realign(plan, headMs, g.rec.currentTime * 1000) ?? headMs) : headMs;
   }, []);
 
   useEffect(
@@ -228,11 +235,32 @@ export function useDeck({
   /** The three lanes from one clock, from `fromMs` on the timeline. */
   const start = useCallback(
     async (cue: Cue, plan: Plan, clipUrl: string | null, trackUrl: string, fromMs: number) => {
-      const generation = loads.current;
-      if (generation !== loads.current) return;
+      preparing.current?.abort();
+      const pending = new AbortController();
+      preparing.current = pending;
       const g = ensureGraph();
-      void g.ctx.resume();
-      const from = Math.max(0, Math.min(plan.lengthMs, fromMs));
+      // lengthMs is only the mixer preview, not the song's duration. Recovery can be minutes in.
+      const from = Math.max(0, fromMs);
+      const offsets = offsetsAt(plan, from);
+      let bedBuffer: AudioBuffer | null;
+      try {
+        const [buffer] = await Promise.all([
+          plan.bed && from < plan.bed.outMs ? getBed(g.ctx, BED_URL) : Promise.resolve(null),
+          g.ctx.resume(),
+          prepareMedia(g.rec, trackUrl, offsets.trackMs ?? 0, pending.signal),
+          plan.mic && clipUrl && from < plan.mic.endMs
+            ? prepareMedia(g.mic, clipUrl, offsets.micMs ?? 0, pending.signal)
+            : Promise.resolve(),
+        ]);
+        bedBuffer = buffer;
+      } catch (e: unknown) {
+        if (pending.signal.aborted) return;
+        halt();
+        setState((s) => ({ ...s, phase: "error", message: e instanceof Error ? e.message : String(e) }));
+        return;
+      }
+      if (pending.signal.aborted) return;
+      preparing.current = null;
       const timers: number[] = [];
       const startedAt = performance.now() - from;
       // Something due at `ms` on the timeline: now if it is behind the head, else on time. A hidden
@@ -255,14 +283,11 @@ export function useDeck({
             if (ms > from) gain.linearRampToValueAtTime(level, t0 + (ms - from) / 1000);
       }
       if (plan.mic && clipUrl && from < plan.mic.endMs) {
-        if (g.mic.src !== clipUrl) {
-          g.mic.src = clipUrl;
-          g.mic.load();
-        }
         at(plan.mic.atMs, (headMs) => {
           const { micMs } = offsetsAt(plan, headMs);
           if (micMs === null) return; // so late the voice is over
-          g.mic.currentTime = micMs / 1000;
+          // Immediate starts were already seeked and buffered before the clock began.
+          if (plan.mic && plan.mic.atMs > from && micMs > 0) g.mic.currentTime = micMs / 1000;
           // A complete break from its beginning is a conservative proof that its news was heard.
           // Pauses/seeks may lose an acknowledgment; they must never invent one.
           g.mic.onended =
@@ -286,10 +311,9 @@ export function useDeck({
           g.mic.play().catch((e: unknown) => console.warn("[deck] mic:", e));
         });
       }
-      if (plan.bed && from < plan.bed.outMs) {
-        const buf = await getBed(g.ctx, BED_URL);
+      if (plan.bed && bedBuffer && from < plan.bed.outMs) {
         bed = g.ctx.createBufferSource();
-        bed.buffer = buf;
+        bed.buffer = bedBuffer;
         bed.loop = true;
         bed.connect(g.bedGain);
         const b = plan.bed;
@@ -319,10 +343,6 @@ export function useDeck({
             if (ms > from) gain.linearRampToValueAtTime(v, t0 + (ms - from) / 1000);
         }
       }
-      if (g.rec.src !== trackUrl) {
-        g.rec.src = trackUrl;
-        g.rec.load();
-      }
       g.rec.onended = () => {
         const headMs = halt();
         setState((s) => ({
@@ -334,7 +354,7 @@ export function useDeck({
         }));
       };
       at(plan.music.atMs, (headMs) => {
-        g.rec.currentTime = (offsetsAt(plan, headMs).trackMs ?? 0) / 1000;
+        if (plan.music.atMs > from) g.rec.currentTime = (offsetsAt(plan, headMs).trackMs ?? 0) / 1000;
         g.rec.play().catch((e: unknown) => {
           setState((s) => ({ ...s, phase: "error", message: e instanceof Error ? e.message : String(e) }));
         });
@@ -363,7 +383,9 @@ export function useDeck({
     for (const el of [g.mic, g.rec]) {
       el.src = SILENCE;
       void el.play().then(
-        () => el.pause(),
+        () => {
+          if (el.getAttribute("src") === SILENCE) el.pause();
+        },
         () => {},
       );
     }
@@ -480,8 +502,9 @@ export function useDeck({
   }, [halt, resume]);
 
   // Back from the background while on air. The record's clock is the truth: if it and the head
-  // came apart (the record stalled, or ran while the page's timers slept) the mix is laid again
-  // from where the record is. Otherwise iOS does not always bring the context back on its own
+  // came apart (the record stalled, or ran while the page's timers slept), rebase the head without
+  // touching the song; only rebuild the mix if the voice is still ahead. iOS does not always
+  // bring the context back on its own
   // (WebKit bug 263627 — it can even say "running" with its clock stopped): resume it, and if the
   // clock has not moved a moment later, suspend and resume to kick it.
   useEffect(() => {
@@ -490,14 +513,20 @@ export function useDeck({
       const r = run.current;
       const s = st.current;
       if (s.ended) return;
-      if (document.visibilityState !== "visible" || !g || !r) return;
-      if (s.cue && s.plan && s.trackUrl) {
+      if (document.visibilityState !== "visible" || !g) return;
+      if (!r && s.phase !== "held") return;
+      if (r && s.cue && s.plan && s.trackUrl) {
         const headMs = realign(s.plan, performance.now() - r.startedAt, g.rec.currentTime * 1000);
         if (headMs !== null) {
-          console.warn(`[deck] the head and the record came apart; the mix again from ${headMs} ms`);
-          halt();
-          void start(s.cue, s.plan, s.clipUrl, s.trackUrl, headMs);
-          return;
+          if (resumes(s.plan, headMs)) {
+            // The song is already at the correct position. Only repair the UI clock.
+            r.startedAt = performance.now() - headMs;
+            setState((x) => ({ ...x, headMs, track: clockOf(g.rec, s.cue!.pick.durationMs) }));
+          } else {
+            halt();
+            void start(s.cue, s.plan, s.clipUrl, s.trackUrl, headMs);
+            return;
+          }
         }
       }
       g.ctx.resume().catch((e: unknown) => console.warn("[deck] resume:", e));
