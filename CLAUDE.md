@@ -38,9 +38,8 @@ philosophy).
   card, candidate, playlist, segment, program — as identifiers; prose may still say "record" for the
   thing on the shelf, and the writer's timing number stays `recordUnderMs` (the writer's word, and
   the schema's). `docs/domain.html` §"What goes away" is the map.
-- Private behind Guard (`guard.pof4.com`): one gate, `apps/web/src/proxy.ts` (**temporarily open** —
-  `GUARD_OPEN = true` there, so friends can test without a login — only `/settings` and the voice
-  preview and news preview still ask for the passkey; flip it back). Exempt = `api/health` + static, nothing else. No
+- Private behind Guard (`guard.pof4.com`): one gate, `apps/web/src/proxy.ts`: every route asks for the
+  passkey. Exempt = `api/health` + static (the icons, the manifest and the share card included), nothing else. No
   user table. Dev runs at `https://dev.radio.pof4.com:3000` because the cookie is bound to `pof4.com` —
   no localhost bypass.
 

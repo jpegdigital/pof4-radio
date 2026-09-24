@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { guardUrl } from "@/lib/guard";
 
 /**
  * The control room shell: wide, for a desk. Same ground as the station, but the signage
@@ -15,7 +16,16 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
             ← Back to the station
           </span>
         </Link>
-        <span className="font-display text-sm uppercase tracking-[0.2em] text-zinc-500">Control room</span>
+        <div className="flex items-baseline gap-5">
+          <span className="font-display text-sm uppercase tracking-[0.2em] text-zinc-500">Control room</span>
+          {/* Guard owns the session: a plain link, no cookie handling here (proxy.ts). */}
+          <a
+            href={`${guardUrl()}/logout`}
+            className="font-display text-sm uppercase tracking-[0.2em] text-zinc-400 transition hover:text-lamp"
+          >
+            Sign out
+          </a>
+        </div>
       </header>
       <main className="flex flex-1 flex-col gap-8">{children}</main>
     </div>
