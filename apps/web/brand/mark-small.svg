@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Claude Radio</title>
+  <defs>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe0a3"/>
+      <stop offset=".55" stop-color="#ff8a8e"/>
+      <stop offset="1" stop-color="#c763a8"/>
+    </linearGradient>
+    <mask id="m">
+      <rect width="64" height="64" fill="#fff"/>
+      <rect y="30" width="64" height="3" fill="#000"/>
+      <rect y="36.5" width="64" height="4" fill="#000"/>
+    </mask>
+    <clipPath id="c"><rect width="64" height="64" rx="14"/></clipPath>
+  </defs>
+  <g clip-path="url(#c)">
+    <rect width="64" height="64" fill="#1f1630"/>
+    <circle cx="32" cy="31" r="19" fill="url(#s)" mask="url(#m)"/>
+    <rect y="43" width="64" height="21" fill="#130f1e"/>
+    <path d="M32 43 20 64M32 43 44 64M32 43 6 64M32 43 58 64M0 51H64" stroke="#ff7fb8" stroke-opacity=".7" stroke-width="1.8"/>
+    <path d="M0 43H64" stroke="#ff9cc6" stroke-width="2.5"/>
+    <path d="M41 9V43" stroke="#91e8dc" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, Headphones, ListMusic, MessageSquareText, Radio, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LogoMark } from "../../lib/logo-mark";
 import { focusRing, Label } from "../../lib/ui";
 import { nextMove } from "./loop";
 import { canContinue } from "./continuation";
@@ -386,7 +387,7 @@ export function SessionView({ id }: { id: string }) {
           <ArrowLeft className="size-5" aria-hidden="true" />
         </Link>
         <Link href="/" className={"station-wordmark " + focusRing}>
-          <Radio aria-hidden="true" /> Claude<span>Radio</span>
+          <LogoMark /> Claude<span>Radio</span>
         </Link>
         <Link href="/settings" aria-label="Control room" className={"station-icon " + focusRing}>
           <Settings2 className="size-5" aria-hidden="true" />

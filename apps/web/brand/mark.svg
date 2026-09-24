@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Claude Radio</title>
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="62%" r="70%">
+      <stop offset="0" stop-color="#5a2a5e"/>
+      <stop offset=".45" stop-color="#241a3c"/>
+      <stop offset="1" stop-color="#0c0d18"/>
+    </radialGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe0a3"/>
+      <stop offset=".45" stop-color="#ff9a86"/>
+      <stop offset=".75" stop-color="#f06f96"/>
+      <stop offset="1" stop-color="#b965ac"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1838"/>
+      <stop offset="1" stop-color="#0c0d18"/>
+    </linearGradient>
+    <linearGradient id="gridFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#fff"/>
+    </linearGradient>
+    <mask id="slats">
+      <rect width="512" height="512" fill="#fff"/>
+      <rect y="232" width="512" height="6" fill="#000"/>
+      <rect y="258" width="512" height="9" fill="#000"/>
+      <rect y="283" width="512" height="12" fill="#000"/>
+      <rect y="307" width="512" height="15" fill="#000"/>
+    </mask>
+    <mask id="gridMask">
+      <rect y="334" width="512" height="178" fill="url(#gridFade)"/>
+    </mask>
+    <clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="halo" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="26"/>
+    </filter>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect width="512" height="512" fill="url(#sky)"/>
+    <!-- the dial's scale -->
+    <g stroke="#e8b7d4" stroke-opacity=".55" stroke-width="5" stroke-linecap="round">
+      <path d="M96 92v18M136 92v10M176 92v10M216 92v18M256 92v10M296 92v10M336 92v18M376 92v10M416 92v18"/>
+    </g>
+    <!-- the sun -->
+    <circle cx="256" cy="240" r="150" fill="#fa7f8a" opacity=".45" filter="url(#halo)"/>
+    <circle cx="256" cy="240" r="140" fill="url(#sun)" mask="url(#slats)"/>
+    <!-- the floor -->
+    <rect y="334" width="512" height="178" fill="url(#floor)"/>
+    <g mask="url(#gridMask)" stroke="#ff7fb8" stroke-width="3.5" fill="none">
+      <path d="M256 334 256 512M256 334 170 512M256 334 84 512M256 334-2 512M256 334-120 512M256 334 342 512M256 334 428 512M256 334 514 512M256 334 632 512"/>
+      <path d="M0 348H512M0 368H512M0 396H512M0 434H512M0 484H512"/>
+    </g>
+    <path d="M0 334H512" stroke="#ffb3d2" stroke-width="5" filter="url(#glow)"/>
+    <!-- the tuning needle -->
+    <g filter="url(#glow)">
+      <path d="M328 78V334" stroke="#91e8dc" stroke-width="10" stroke-linecap="round"/>
+      <circle cx="328" cy="78" r="13" fill="#91e8dc"/>
+    </g>
+  </g>
+</svg>

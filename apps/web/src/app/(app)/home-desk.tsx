@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { DjPicker } from "./lib/dj-picker";
+import { LogoMark } from "./lib/logo-mark";
 import { focusRing } from "./lib/ui";
 import { type Dj, findDj, loadDj, saveDj } from "./lib/voice-store";
 
@@ -94,7 +95,7 @@ export function HomeDesk({ djs, sessions }: { djs: Dj[]; sessions: SessionSummar
     <main className="station-shell home-screen">
       <header className="station-header">
         <span className="station-wordmark">
-          <Radio aria-hidden="true" /> Claude<span>Radio</span>
+          <LogoMark /> Claude<span>Radio</span>
         </span>
         <Link href="/settings" aria-label="Control room" className={"station-icon " + focusRing}>
           <Settings2 className="size-5" aria-hidden="true" />

@@ -13,9 +13,21 @@ export const viewport: Viewport = {
   themeColor: "#11131f",
 };
 
+// The icons, the manifest and the share card are file conventions beside this layout
+// (icon.svg, favicon.ico, apple-icon.png, manifest.ts, opengraph-image.png); their sources are in brand/.
 export const metadata: Metadata = {
+  metadataBase: new URL("https://radio.pof4.com"),
   title: "Claude Radio",
   description: "An AI DJ over your records.",
+  applicationName: "Claude Radio",
+  appleWebApp: { capable: true, title: "Radio", statusBarStyle: "black-translucent" },
+  openGraph: {
+    type: "website",
+    siteName: "Claude Radio",
+    title: "Claude Radio",
+    description: "An AI DJ over your records.",
+  },
+  twitter: { card: "summary_large_image", title: "Claude Radio", description: "An AI DJ over your records." },
 };
 
 /**
