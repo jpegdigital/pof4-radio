@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { WEATHER_WORDS, type WeatherReport } from "../../app/api/sessions/weather-report.ts";
 import { template } from "./template.ts";
-import type { PreparedHeadline, PreparedWeather } from "../prepared.ts";
+import type { RawHeadline, LegacyPreparedHeadline, PreparedWeather } from "../prepared.ts";
 import type { Identity } from "../identity.ts";
 import type { Hit } from "../../app/api/sessions/doc.ts";
 import type { MixPlan } from "../../app/api/sessions/planning.ts";
@@ -20,6 +21,8 @@ export interface RecentSlot {
 export interface WriteInput {
   prompt: string;
   dj: string | null;
+  /** The selected TTS voice supports Eleven v3 inline audio directions. */
+  audioTags?: boolean;
   identity: Identity;
   /** "8:43 pm". */
   clock: string;
@@ -38,7 +41,9 @@ export interface WriteInput {
   legalId: string | null;
   /** Structured, previously fetched facts; no request-time research. */
   weather: PreparedWeather | null;
-  headlines: PreparedHeadline[];
+  /** Frozen at first generation; absent only on historical saved inputs. */
+  weatherReport?: WeatherReport | null;
+  headlines: (RawHeadline | LegacyPreparedHeadline)[];
 }
 
 const mmss = (ms: number) =>
@@ -110,6 +115,10 @@ const renderBrief = template(
     wordsMin: z.number().int().nonnegative(),
     headlines: z.string(),
     weather: z.string(),
+    audioTags: z.boolean(),
+    fullWeather: z.boolean(),
+    hourlyWeather: z.boolean(),
+    weatherWords: z.number(),
   }),
 );
 
@@ -151,17 +160,26 @@ export function writeBrief(input: WriteInput): string {
     wordsMin: plan.wordsMin ?? 0,
     headlines: input.headlines.length
       ? JSON.stringify(
-          input.headlines.map(({ articleId, source, title, facts, publishedAt, expiresAt }) => ({
-            articleId,
-            source,
-            title,
-            facts,
-            publishedAt,
-            expiresAt,
-          })),
+          input.headlines.map((headline) => {
+            if ("excerpt" in headline) return headline;
+            // A retry of an old generation keeps its original checked facts.
+            const { articleId, source, title, facts, publishedAt, expiresAt } = headline;
+            return { articleId, source, title, facts, publishedAt, expiresAt };
+          }),
         )
       : "",
-    weather: input.weather ? JSON.stringify(weatherBrief(input.weather)) : "",
+    audioTags: input.audioTags === true,
+    fullWeather: input.weatherReport?.mode === "full",
+    hourlyWeather: input.weatherReport?.mode === "hourly",
+    weatherWords: input.weatherReport ? WEATHER_WORDS[input.weatherReport.mode] : 25,
+    weather:
+      input.weatherReport !== undefined
+        ? input.weatherReport
+          ? JSON.stringify(input.weatherReport)
+          : ""
+        : input.weather
+          ? JSON.stringify(weatherBrief(input.weather))
+          : "",
   });
 }
 

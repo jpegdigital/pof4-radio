@@ -341,7 +341,7 @@ describe("one read, as the news worker makes it", () => {
         most = Math.max(most, ++active);
         await new Promise((resolve) => setTimeout(resolve, 1));
         active--;
-        return new Response(feed());
+        return _url.includes("topstories.json") ? Response.json([]) : new Response(feed());
       });
       const snapshot = await readOnce(fetchFn, NEWS_DEFAULTS);
       expect(fetchFn).toHaveBeenCalledTimes(NEWS_DEFAULTS.sources.length);

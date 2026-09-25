@@ -1,4 +1,4 @@
-import type { Voice } from "./voices.ts";
+import { withoutAudioTags, type Voice } from "./voices.ts";
 
 /**
  * ElevenLabs, the station's voice: a line of talk in a roster voice becomes MP3. One POST for
@@ -28,7 +28,7 @@ export class ElevenLabsError extends Error {
 /** The text-to-speech request body for one line of talk in this voice. */
 export function ttsBody(voice: Voice, text: string) {
   return {
-    text,
+    text: voice.modelId === "eleven_v3" ? text : withoutAudioTags(text),
     model_id: voice.modelId,
     voice_settings: {
       stability: voice.stability,

@@ -76,3 +76,10 @@ export const VOICE_DEFAULTS: Omit<Voice, "id" | "name" | "gender"> = {
 export function parseVoices(json: string): Voice[] {
   return VoicesSchema.parse(JSON.parse(json));
 }
+
+/** Speech text without inline Eleven v3 delivery directions. */
+export const withoutAudioTags = (text: string): string =>
+  text
+    .replace(/\[[^\]\r\n]+\]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();

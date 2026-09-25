@@ -1,8 +1,8 @@
 import { askJev, type JevResponse, readJev } from "../../../lib/jev.ts";
 import { prompts } from "../../../lib/prompts/index.ts";
-import type { PreparedHeadline } from "../../../lib/prepared.ts";
+import type { RawHeadline } from "../../../lib/prepared.ts";
 
-export const HEADLINE_CHOICE_VERSION = "headlines-2";
+export const HEADLINE_CHOICE_VERSION = "raw-headlines-2";
 export interface HeadlineHistory {
   seq: number;
   articleId: string;
@@ -13,64 +13,85 @@ export interface HeadlineHistory {
 }
 interface Input {
   prompt: string;
-  headlines: PreparedHeadline[];
+  headlines: RawHeadline[];
   history: HeadlineHistory[];
   now: number;
+  selected?: RawHeadline[];
 }
 
-/** Reuse is forbidden once selected for generation, whether or not the listener heard the clip. */
+/** Choose from the complete bounded source menu, excluding exact reservations in code. */
 export function headlineRequest(input: Input, model: string) {
   const seen = new Set<string>();
   const seenStories = new Set<string>();
+  const selected = input.selected ?? [];
+  const previous = [...input.history, ...selected];
   const headlines = input.headlines
     .filter((h) => {
       if (
         seen.has(h.articleId) ||
         seenStories.has(h.storyId) ||
-        input.history.some((old) => old.articleId === h.articleId || old.storyId === h.storyId)
+        previous.some((old) => old.articleId === h.articleId || old.storyId === h.storyId)
       )
         return false;
       seen.add(h.articleId);
       seenStories.add(h.storyId);
       return true;
     })
-    .slice(0, 12);
+    .slice(0, 114);
   return {
     model,
     state: {
       prompt: input.prompt,
       now: new Date(input.now).toISOString(),
       headlines,
+      selected,
       history: input.history.slice(-60),
     },
-    questions: prompts.headlines.render(headlines),
+    questions: prompts.headlines.render(headlines, selected.length > 0),
   };
 }
 export type HeadlineRequest = ReturnType<typeof headlineRequest>;
 export function readHeadlineChoice(request: HeadlineRequest, raw: unknown, elapsedMs: number) {
   const response = readJev(request, raw);
-  // Count decides whether to air news; the competing headline probabilities order the stories.
-  const selected = request.state.headlines
-    .map((h, i) => ({ h, probability: response.answers.ranking.probabilities[`headline_${i}`], i }))
-    .sort((a, b) => b.probability - a.probability || a.i - b.i)
-    .slice(0, Number(response.answers.count.choice))
-    .map(({ h }) => h);
+  const choice = response.answers.selection.choice;
+  const selected =
+    choice === "none" ? [] : [request.state.headlines[Number(choice.slice("headline_".length))]];
   return { version: HEADLINE_CHOICE_VERSION, selected, request, response, elapsedMs };
 }
 export interface HeadlineChoice {
   version: string;
-  selected: PreparedHeadline[];
+  selected: RawHeadline[];
   request: HeadlineRequest;
   response: JevResponse | null;
   elapsedMs: number;
+  followup?: { request: HeadlineRequest; response: JevResponse; elapsedMs: number };
 }
+/** A second Choice depends on the first: it must add a distinct worthwhile story, or choose none. */
 export async function chooseHeadlines(
   input: Input,
-  config: { apiKey: string; model: string },
+  config: { apiKey: string; model: string; fetchFn?: typeof fetch },
 ): Promise<HeadlineChoice> {
   const request = headlineRequest(input, config.model);
   if (!request.state.headlines.length)
     return { version: HEADLINE_CHOICE_VERSION, selected: [], request, response: null, elapsedMs: 0 };
-  const { raw, elapsedMs } = await askJev(request, { apiKey: config.apiKey, what: "headline selection" });
-  return readHeadlineChoice(request, raw, elapsedMs);
+  const first = await askJev(request, {
+    apiKey: config.apiKey,
+    fetchFn: config.fetchFn,
+    what: "headline selection",
+  });
+  const result: HeadlineChoice = readHeadlineChoice(request, first.raw, first.elapsedMs);
+  const secondRequest = headlineRequest({ ...input, selected: result.selected }, config.model);
+  if (!secondRequest.state.headlines.length) return result;
+  const second = await askJev(secondRequest, {
+    apiKey: config.apiKey,
+    fetchFn: config.fetchFn,
+    what: "second headline selection",
+  });
+  const followup = readHeadlineChoice(secondRequest, second.raw, second.elapsedMs);
+  return {
+    ...result,
+    selected: [...result.selected, ...followup.selected],
+    elapsedMs: result.elapsedMs + followup.elapsedMs,
+    followup: { request: secondRequest, response: followup.response, elapsedMs: followup.elapsedMs },
+  };
 }

@@ -40,6 +40,18 @@ db:clear` wipes the sessions (the cards and the records stay).
 
 ## Deploy
 
+Song playback uses native audio and byte-range requests directly to the private Railway bucket.
+`GET /api/sessions/:id/slots/:seq/track?playback=1` resolves the held slot in one database query
+and returns a signed URL with its expiry (`private, no-store`); the plain track URL redirects.
+The player renews URLs before a record could outlive them, including after a long pause, and
+buffers the next held song in a second reusable audio element. DJ clips remain fully decoded
+for Web Audio scheduling. Browser metadata supplies the exact song duration.
+
+Bucket CORS belongs to `../pof4-infra/.railway/radio-bucket-cors.ts`: run
+`pnpm radio:bucket:check` or `pnpm radio:bucket:apply` from that repository. Apply it before
+deploying this playback path. Railway's bucket IaC DSL does not expose CORS, so the focused
+command uses the S3 API and preserves other rules. Production and local HTTPS origins are declared there.
+
 Every push to `main` redeploys `radio-web` (pof4 Railway project; builds from the repo root with
 `pnpm --filter web`). Infra changes go in `../pof4-infra`. Secrets are pushed once, straight
 from 1Password — IaC declares them `preserve()` and never touches them:
@@ -55,6 +67,6 @@ railway variables -s radio-web \
 
 ## Scheduled preparation
 
-News and weather cron workers save dated editions for later Jev selection and Claude scripting.
+The news worker saves raw HN/Dallas headlines without model calls. Jev selects stories during a break; Claude incorporates them into the program. Weather is collected independently.
 See [prepared content](docs/prepared-content.md) for schedules, storage, commands, and the session contract.
 Railway resources live in the sibling pof4-infra repository.

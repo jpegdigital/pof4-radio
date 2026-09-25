@@ -39,7 +39,7 @@ try {
   } else {
     const created = await call("/api/sessions", {
       voiceId: roster[0].id,
-      prompt: `[Prepared pipeline smoke ${new Date().toISOString()}] A Dallas music discovery show with local arts, interesting science and culture, and a concise weather update. Include worthwhile fresh headlines, without repeating stories.`,
+      prompt: `[Prepared pipeline smoke ${new Date().toISOString()}] A Dallas music discovery show with current AI developments, local Dallas news, interesting science and culture, and a concise weather update. Include worthwhile fresh headlines, without repeating stories.`,
     });
     sessionId = ((await created.json()) as { sessionId: string }).sessionId;
   }
@@ -62,7 +62,7 @@ try {
     const slot = (await (
       await call(`/api/sessions/${sessionId}/slots/${seq}`, { clockMs: 16 * 3600000 })
     ).json()) as SlotDoc;
-    assert(slot.voiced && slot.clipKey && slot.news?.version === "prepared-1");
+    assert(slot.voiced && slot.clipKey && slot.news?.version === "raw-news-1");
     const { rows }: pg.QueryResult<{ generation: SlotGeneration }> = await db.query<{
       generation: SlotGeneration;
     }>("select generation from session_slot where session_id=$1 and seq=$2", [sessionId, seq]);
@@ -73,13 +73,31 @@ try {
       "Jev inputs and decisions must be retained",
     );
     assert.equal(generation.takes?.length, 1, "Only one take per generated break");
+    if (generation.input.audioTags) {
+      const tts = generation.takes[0].request as { text: string; model_id: string };
+      assert.equal(tts.model_id, "eleven_v3");
+      assert(/\[[^\]]+\]/u.test(tts.text), "Claude should supply inline emotion tags to v3");
+      assert(tts.text.includes(slot.words ?? ""), "Tagged copy must reach TTS unchanged");
+    }
+    assert(
+      !/with some headlines|news tucked in between|a quick weather update/iu.test(slot.words ?? ""),
+      "Avoid announcing the show format",
+    );
     if (seq === 1 && generation.input.dj)
       assert(
         slot.words?.includes(generation.input.dj),
         "A new show must introduce the DJ by name in the unified script",
       );
-    assert(generation.input.headlines.length <= 1);
+    assert(generation.input.headlines.length <= 2);
     assert(generation.input.weather, "This live check requires a fresh weather edition");
+    const report = generation.input.weatherReport;
+    assert(report, "This live check requires a saved weather report");
+    assert.equal(report.at, generation.preparedAt);
+    assert.equal(report.mode, seq === 1 ? "full" : "hourly");
+    if (seq !== 1) {
+      assert.equal(report.outlook.length, 0);
+      assert.equal(report.current?.basis, "forecast");
+    }
     if (!generated.length)
       assert(
         generation.input.headlines.length > 0,

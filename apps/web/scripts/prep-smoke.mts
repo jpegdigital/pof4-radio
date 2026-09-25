@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import pg from "pg";
 import { NEWS_DEFAULTS, NEWS_KEY, NewsConfig } from "../src/lib/news.ts";
-import { readPreparedNews, readPreparedWeather } from "../src/lib/prepared.ts";
+import { readNews, readPreparedWeather } from "../src/lib/prepared.ts";
 
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const pool = new pg.Pool({
@@ -15,21 +15,23 @@ try {
     NEWS_KEY,
   ]);
   const config = NewsConfig.parse(rows[0] ? JSON.parse(rows[0].value) : NEWS_DEFAULTS);
-  const news = await readPreparedNews(pool, config);
+  const news = await readNews(pool, config);
   const weather = await readPreparedWeather(pool);
   assert(news && news.data.length, "Run prep:news first: no usable news edition");
   assert(weather && weather.data.periods.length, "Run prep:weather first: no usable weather edition");
-  assert.equal((await readPreparedNews(pool, config, [], news.date))?.id, news.id);
+  assert.equal((await readNews(pool, config, [], news.date))?.id, news.id);
   assert.equal((await readPreparedWeather(pool, weather.date))?.id, weather.id);
-  assert.equal(await readPreparedNews(pool, config, news.data), null, "Exact used revisions must be omitted");
-  assert.equal(await readPreparedNews(pool, { ...config, enabled: false }), null);
+  assert.equal(await readNews(pool, config, news.data), null, "Exact used revisions must be omitted");
+  assert.equal(await readNews(pool, { ...config, enabled: false }), null);
   const evidence = await pool.query<{ articles: number }>(
     "select jsonb_array_length(snapshot->'articles') as articles from headline_snapshot where id = $1",
     [news.id],
   );
   assert(evidence.rows[0]?.articles, "News must link to its retained source snapshot");
-  for (const option of news.data)
-    for (const fact of option.facts) assert(option.evidence.includes(fact.quote));
+  for (const article of news.data) {
+    assert(!("facts" in article) && !("checkedAt" in article), "Only raw headlines may be selected");
+    assert(typeof article.excerpt === "string");
+  }
   console.log(
     JSON.stringify(
       {

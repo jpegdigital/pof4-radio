@@ -3,8 +3,9 @@ import { speak } from "@/lib/elevenlabs";
 import { env } from "@/lib/env";
 import { loadClock, loadIdentity, loadNews, loadVoices } from "@/lib/settings";
 import type { NewsReceipt } from "@/lib/news";
-import { readPreparedNews, readPreparedWeather } from "@/lib/prepared";
+import { readNews, readPreparedWeather } from "@/lib/prepared";
 import { slotDoc } from "../../../doc";
+import { weatherReport, WEATHER_WORDS } from "../../../weather-report";
 import { chooseHeadlines } from "../../../headline-choice";
 import { producePick } from "../../../pick";
 import { producePlan } from "../../../planning";
@@ -89,6 +90,7 @@ export async function POST(req: Request, ctx: Route) {
       let generation = slot.generation;
 
       if (!generation) {
+        const generatedAt = new Date().toISOString();
         const [clock, identity, voices, config] = await Promise.all([
           loadClock(),
           loadIdentity(),
@@ -108,9 +110,11 @@ export async function POST(req: Request, ctx: Route) {
 
         enterStage("prepared news and weather");
 
-        const newsEntry = clockSaysBreak ? await readPreparedNews(show.client, config, history) : null;
+        const newsEntry = clockSaysBreak ? await readNews(show.client, config, history) : null;
 
         const weatherEntry = clockSaysBreak ? await readPreparedWeather(show.client) : null;
+
+        const report = weatherEntry ? weatherReport(weatherEntry.data, generatedAt, seq === 1) : null;
 
         const jev = { apiKey: env().TYPESAFE_API_KEY, model: env().TYPESAFE_MODEL };
 
@@ -164,7 +168,9 @@ export async function POST(req: Request, ctx: Route) {
               .reverse()
               .map(({ title, artist, kind, words }) => ({ title, artist, kind, words })),
 
-            contentWords: choice.selected.length * 25 + (weatherEntry ? 25 : 0),
+            contentWords:
+              choice.selected.length * 25 +
+              (report ? WEATHER_WORDS[report.mode] + (report.alerts.length ? WEATHER_WORDS.alerts : 0) : 0),
           },
           jev,
         );
@@ -175,6 +181,7 @@ export async function POST(req: Request, ctx: Route) {
         const input: WriteInput = {
           prompt: show.prompt,
           dj: voices.find((v) => v.id === voiceId)?.name ?? null,
+          audioTags: (voices.find((v) => v.id === voiceId) ?? voices[0])?.modelId === "eleven_v3",
           identity,
 
           clock: clockOf(clockMs),
@@ -190,12 +197,13 @@ export async function POST(req: Request, ctx: Route) {
           legalId,
           headlines: choice.selected,
           weather: weatherEntry?.data ?? null,
+          weatherReport: report,
         };
 
         generation = {
-          version: "prepared-1",
+          version: "raw-news-1",
           id: crypto.randomUUID(),
-          preparedAt: new Date().toISOString(),
+          preparedAt: generatedAt,
           clockMs,
 
           selection: { ...selection, planning },
@@ -261,7 +269,7 @@ export async function POST(req: Request, ctx: Route) {
 
       const news: NewsReceipt | null = input.clockSaysBreak
         ? {
-            version: "prepared-1",
+            version: generation.version,
             snapshotId: generation.news.entryId ?? generation.id,
             selectedAt: generation.preparedAt,
 
@@ -269,22 +277,22 @@ export async function POST(req: Request, ctx: Route) {
             storyId: input.headlines[0]?.storyId ?? null,
             revision: input.headlines[0]?.revision ?? null,
 
-            topic: input.headlines.map((h) => h.topic).join("; "),
+            topic: input.headlines.map((h) => ("topic" in h ? h.topic : h.title)).join("; "),
             words: input.headlines.length ? w.words : null,
 
-            stories: input.headlines.map(({ articleId, storyId, revision, title, topic }) => ({
-              articleId,
-              storyId,
-              revision,
-              title,
-              topic,
+            stories: input.headlines.map((h) => ({
+              articleId: h.articleId,
+              storyId: h.storyId,
+              revision: h.revision,
+              title: h.title,
+              topic: "topic" in h ? h.topic : h.title,
             })),
 
             sources: input.headlines.map((h) => ({
               title: h.title,
               source: h.source,
               url: h.url,
-              at: h.publishedAt,
+              at: h.publishedAt ?? h.fetchedAt,
             })),
 
             ...(input.weather && generation.weather
@@ -297,7 +305,7 @@ export async function POST(req: Request, ctx: Route) {
                 }
               : {}),
 
-            reason: `Jev selected ${input.headlines.length} prepared headline(s). ${input.weather ? "Prepared weather included." : "No prepared weather."}`,
+            reason: `Jev selected ${input.headlines.length} headline(s). ${input.weather ? "Prepared weather included." : "No prepared weather."}`,
           }
         : null;
 

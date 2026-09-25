@@ -4,14 +4,14 @@ import { useActionState, useState } from "react";
 
 import { NEWS_SOURCES, type NewsConfig } from "@/lib/news";
 
-import type { PreparedHeadline } from "@/lib/prepared";
+import type { RawHeadline } from "@/lib/prepared";
 
 import { saveNews, type SaveState } from "./actions";
 
 interface Preview {
   preparedAt: string | null;
-  options: PreparedHeadline[];
-  selected: PreparedHeadline[];
+  options: RawHeadline[];
+  selected: RawHeadline[];
   error?: string;
 }
 
@@ -62,8 +62,8 @@ export function NewsEditor({ value }: { value: NewsConfig }) {
       <header>
         <h1 className="text-2xl font-semibold">Headlines</h1>
         <p className="mt-2 max-w-prose text-sm text-zinc-400">
-          Jev chooses zero, one, or two prepared stories that fit your show. Weak matches and stories already
-          selected in the show are omitted.
+          Jev chooses zero, one, or two collected headlines that fit your show. Weak matches and stories
+          already selected in the show are omitted.
         </p>
       </header>
       <form action={action} className="flex flex-col gap-4">
@@ -120,7 +120,7 @@ export function NewsEditor({ value }: { value: NewsConfig }) {
       <section className="border-t border-zinc-800 pt-6">
         <h2 className="text-lg font-medium">Try the news desk</h2>
         <p className="mt-1 text-sm text-zinc-400">
-          Preview Jev’s choices from saved evidence without recording a voice or changing a show.
+          Preview Jev’s choices from collected source material without recording a voice or changing a show.
         </p>
         <label className="mt-3 flex flex-col gap-1 text-sm">
           Listener request
@@ -137,7 +137,7 @@ export function NewsEditor({ value }: { value: NewsConfig }) {
           onClick={() => void trial()}
           className="mt-3 min-h-11 rounded border border-zinc-600 px-4 text-sm disabled:opacity-40"
         >
-          {busy ? "Jev is choosing…" : "Preview prepared headlines"}
+          {busy ? "Jev is choosing…" : "Preview collected headlines"}
         </button>
         {dirty && <p className="mt-2 text-xs text-amber-200">Save settings before previewing.</p>}
         {error && (
@@ -150,11 +150,11 @@ export function NewsEditor({ value }: { value: NewsConfig }) {
             <p className="text-lg">
               {preview.selected.length
                 ? `Jev selected ${preview.selected.length} stories`
-                : "No suitable prepared stories"}
+                : "No suitable collected headlines"}
             </p>
             <p className="text-xs text-zinc-500">
               {preview.preparedAt
-                ? `Prepared ${new Date(preview.preparedAt).toLocaleString()} · ${preview.options.length} options`
+                ? `Collected ${new Date(preview.preparedAt).toLocaleString()} · ${preview.options.length} options`
                 : "No usable edition. The next scheduled run will refresh the options."}
             </p>
             {preview.options.map((article) => (
@@ -164,9 +164,13 @@ export function NewsEditor({ value }: { value: NewsConfig }) {
                   {article.source} · {article.title}
                 </summary>
                 <p className="mt-2 text-xs text-zinc-500">
-                  Published {new Date(article.publishedAt).toLocaleString()}
+                  {article.publishedAt
+                    ? `Published ${new Date(article.publishedAt).toLocaleString()}`
+                    : "Publication time unavailable"}
                 </p>
-                <p className="mt-2 text-sm text-zinc-400">{article.facts.map((f) => f.text).join(" ")}</p>
+                <p className="mt-2 text-sm text-zinc-400">
+                  {article.excerpt || "Headline only; no source excerpt."}
+                </p>
                 <a
                   href={article.url}
                   target="_blank"

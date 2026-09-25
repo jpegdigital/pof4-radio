@@ -1,21 +1,14 @@
 import { z } from "zod";
 import { jsonPrompt, template } from "./template.ts";
 import type { Hit } from "../../app/api/sessions/doc.ts";
-import type { PreparedHeadline } from "../prepared.ts";
+import type { RawHeadline } from "../prepared.ts";
 import { choice, ChoiceQuestion } from "./contract.ts";
 
 const renderRecording = template("recording", z.strictObject({}));
 const loadHeadlines = jsonPrompt(
   "headlines",
   z.strictObject({
-    ranking: ChoiceQuestion.omit({ criteria: true }),
-    count: ChoiceQuestion.extend({
-      criteria: z.strictObject({
-        "0": z.string().trim().min(1),
-        "1": z.string().trim().min(1),
-        "2": z.string().trim().min(1),
-      }),
-    }),
+    selection: ChoiceQuestion.omit({ criteria: true }),
   }),
 );
 
@@ -34,21 +27,21 @@ export const recordingPrompt = {
 };
 
 export const headlinePrompt = {
-  render(headlines: PreparedHeadline[]): Record<string, ChoiceQuestion> {
+  render(headlines: RawHeadline[], allowNone = false): Record<string, ChoiceQuestion> {
     if (!headlines.length) return {};
     const questions = loadHeadlines();
     return {
-      ranking: ChoiceQuestion.parse({
-        ...questions.ranking,
-        criteria: Object.fromEntries(
-          headlines.map((h, index) => [`headline_${index}`, `headlines[${index}]: ${h.title} (${h.source})`]),
-        ),
-      }),
-      count: ChoiceQuestion.parse({
-        ...questions.count,
-        criteria: Object.fromEntries(
-          Object.entries(questions.count.criteria).filter(([count]) => Number(count) <= headlines.length),
-        ),
+      selection: ChoiceQuestion.parse({
+        ...questions.selection,
+        criteria: {
+          ...(allowNone ? { none: "No further headline deserves airtime in this break." } : {}),
+          ...Object.fromEntries(
+            headlines.map((h, index) => [
+              `headline_${index}`,
+              `headlines[${index}]: ${h.title} (${h.source})`,
+            ]),
+          ),
+        },
       }),
     };
   },

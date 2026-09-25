@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readHackerNews } from "./hacker-news.ts";
+import type { NewsCommunity } from "../../../lib/news.ts";
 import { XMLParser } from "fast-xml-parser";
 import { NEWS_SOURCES, type NewsConfig, type NewsScope, type NewsSource } from "../../../lib/news.ts";
 
@@ -15,6 +17,7 @@ export interface Article extends Headline {
   evidence: string;
   revision: string;
   fetchedAt: string;
+  community?: NewsCommunity;
 }
 export interface SourceStatus {
   id: string;
@@ -29,6 +32,7 @@ export interface HeadlineSnapshot {
   config: NewsConfig;
   articles: Article[];
   sources: SourceStatus[];
+  raw?: Record<string, unknown>;
 }
 export const HEADLINES_PER_FEED = 12;
 const MAX_BODY_BYTES = 2_000_000;
@@ -37,7 +41,7 @@ const BUDGET_MS = 6_000;
 const CONCURRENT_FEEDS = 4;
 const MAX_REDIRECTS = 3;
 const REDIRECT_STATUSES = [301, 302, 303, 307, 308];
-const MAX_ARTICLES = 84;
+const MAX_ARTICLES = 114;
 const MAX_EVIDENCE = 1800;
 const USER_AGENT = "pof4-radio (jpegdigital@users.noreply.github.com)";
 export const fingerprint = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 24);
@@ -54,7 +58,7 @@ const decode = (value: string): string =>
   });
 const valueOf = (v: unknown): string =>
   typeof v === "string" ? v : v && typeof v === "object" && "#text" in v ? valueOf(v["#text"]) : "";
-const plain = (v: unknown) =>
+export const plain = (v: unknown) =>
   decode(
     decode(valueOf(v))
       .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
@@ -248,6 +252,7 @@ export async function readHeadlines(
     ...(opts.signal ? [opts.signal] : []),
   ]);
   const articles: Article[] = [];
+  const raw: Record<string, unknown> = {};
   const statuses: SourceStatus[] = [];
   const sources = config.enabled
     ? NEWS_SOURCES.filter(
@@ -266,7 +271,17 @@ export async function readHeadlines(
             : source.url;
         try {
           const signal = AbortSignal.any([deadline, AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS)]);
-          const found = parseFeed(await fetchFeed(source.id, url, { signal, fetchFn }), source, clock());
+          let found: Article[];
+          if (source.id === "hacker-news") {
+            const result = await readHackerNews({ now: clock(), signal: deadline, fetchFn });
+            found = result.articles;
+            raw[source.id] = result.raw;
+            for (const error of result.errors) console.warn("[news] hacker-news: " + error);
+          } else {
+            const xml = await fetchFeed(source.id, url, { signal, fetchFn });
+            raw[source.id] = xml;
+            found = parseFeed(xml, source, clock());
+          }
           articles.push(...found);
           statuses.push({
             id: source.id,
@@ -291,5 +306,6 @@ export async function readHeadlines(
     config,
     articles: articles.slice(0, MAX_ARTICLES),
     sources: statuses,
+    raw,
   };
 }

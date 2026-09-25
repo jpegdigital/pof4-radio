@@ -24,6 +24,7 @@ const NWS = "https://api.weather.gov";
 export const WEATHER_URLS = {
   observation: `${NWS}/stations/${WEATHER_PLACE.station}/observations/latest`,
   forecast: `${NWS}/gridpoints/${WEATHER_PLACE.grid}/forecast`,
+  hourly: `${NWS}/gridpoints/${WEATHER_PLACE.grid}/forecast/hourly`,
 } as const;
 
 /** How many forecast periods the brief carries: today and tonight (after dark, tonight and tomorrow). */

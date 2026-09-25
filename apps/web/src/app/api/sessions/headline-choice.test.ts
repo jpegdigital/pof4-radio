@@ -1,161 +1,127 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { chooseHeadlines, headlineRequest, readHeadlineChoice } from "./headline-choice";
-import type { PreparedHeadline } from "../../../lib/prepared";
+import type { RawHeadline } from "../../../lib/prepared";
 
-const now = Date.parse("2026-09-19T20:00:00Z");
-const headline = (id: string): PreparedHeadline => ({
+const now = Date.parse("2026-09-24T03:00:00Z");
+const headline = (id: string): RawHeadline => ({
   articleId: id,
   storyId: `story-${id}`,
   revision: "v1",
-  title: `Concert ${id}`,
-  topic: "Dallas music",
+  title: `Story ${id}`,
   sourceId: "kxt",
   source: "KXT",
   url: `https://kxt.org/${id}`,
   scope: "culture",
-  publishedAt: new Date(now - 3600000).toISOString(),
+  publishedAt: new Date(now).toISOString(),
   fetchedAt: new Date(now).toISOString(),
-  checkedAt: new Date(now).toISOString(),
-  expiresAt: new Date(now + 3600000).toISOString(),
-  evidence: "A free concert in Dallas.",
-  facts: [{ text: "A free concert in Dallas.", quote: "A free concert in Dallas." }],
+  excerpt: `Source text ${id}`,
 });
-const request = () =>
-  headlineRequest(
-    { prompt: "Dallas music discoveries", headlines: ["a", "b", "c", "d"].map(headline), history: [], now },
-    "jev-1.13.0",
-  );
-const answer = (choice: string, probabilities: Record<string, number>) => ({
-  type: "choice",
-  choice,
-  confidence: 0.8,
-  probabilities,
-});
-const response = (answers: Record<string, ReturnType<typeof answer>>) => ({
-  model: "jev-1.13.0",
-  answers,
-  usage: { input_tokens: 10, output_tokens: 10 },
-});
-const answers = (count = "2") => ({
-  ranking: answer("headline_1", { headline_0: 0.1, headline_1: 0.5, headline_2: 0.3, headline_3: 0.1 }),
-  count: answer(count, { "0": 0.1, "1": 0.2, "2": 0.7 }),
-});
-
-describe("Jev headline choices", () => {
-  it("asks ranking and count choices over the same prompt, headlines and history", () => {
-    const req = request();
-    expect(req.state.prompt).toBe("Dallas music discoveries");
-    expect(Object.keys(req.questions)).toEqual(["ranking", "count"]);
-    expect(Object.keys(req.questions.ranking.criteria)).toEqual([
-      "headline_0",
-      "headline_1",
-      "headline_2",
-      "headline_3",
-    ]);
-    expect(Object.keys(req.questions.count.criteria)).toEqual(["0", "1", "2"]);
-    expect(req.questions.ranking.criteria.headline_0).toContain("headlines[0]");
-  });
-  it.each([
-    ["0", []],
-    ["1", ["b"]],
-    ["2", ["b", "c"]],
-  ])("takes the top headlines for count %s", (count, selected) => {
-    const result = readHeadlineChoice(request(), response(answers(count)), 5);
-    expect(result.selected.map((h) => h.articleId)).toEqual(selected);
-    expect(result.version).toBe("headlines-2");
-    expect(result.response?.usage.input_tokens).toBe(10);
-  });
-  it("breaks tied ranking probabilities in feed order", () => {
-    const result = readHeadlineChoice(
-      request(),
-      response({
-        ...answers(),
-        ranking: answer("headline_0", {
-          headline_0: 0.25,
-          headline_1: 0.25,
-          headline_2: 0.25,
-          headline_3: 0.25,
-        }),
-      }),
-      5,
-    );
-    expect(result.selected.map((h) => h.articleId)).toEqual(["a", "b"]);
-  });
-  it("excludes previously generated stories even when the revision changes or they were never heard", () => {
-    const req = headlineRequest(
-      {
-        prompt: "music",
-        headlines: [
-          { ...headline("a"), revision: "v2" },
-          headline("b"),
-          { ...headline("c"), expiresAt: new Date(now).toISOString() },
-        ],
-        history: [{ ...headline("a"), seq: 1 }],
-        now,
+const input = () => ({ prompt: "Dallas music", headlines: ["a", "b", "c"].map(headline), history: [], now });
+function response(req: ReturnType<typeof headlineRequest>, choice: string) {
+  return {
+    model: req.model,
+    answers: {
+      selection: {
+        type: "choice",
+        choice,
+        confidence: 0.2,
+        probabilities: Object.fromEntries(
+          Object.keys(req.questions.selection.criteria).map((key) => [key, key === choice ? 1 : 0]),
+        ),
       },
-      "jev-1.13.0",
-    );
-    expect(req.state.headlines.map((h) => h.articleId)).toEqual(["b", "c"]);
-    expect(req.state.history).toHaveLength(1);
-  });
-  it("deduplicates article and story IDs before building options", () => {
-    const req = headlineRequest(
-      {
-        prompt: "music",
-        headlines: [headline("a"), headline("a"), { ...headline("b"), storyId: "story-a" }],
-        history: [],
-        now,
-      },
-      "jev-1.13.0",
-    );
-    expect(req.state.headlines).toHaveLength(1);
-    expect(Object.keys(req.questions.count.criteria)).toEqual(["0", "1"]);
-    const result = readHeadlineChoice(
-      req,
-      response({
-        ranking: answer("headline_0", { headline_0: 1 }),
-        count: answer("1", { "0": 0, "1": 1 }),
-      }),
-      5,
-    );
-    expect(result.selected.map((h) => h.articleId)).toEqual(["a"]);
-  });
-  it("accepts a full menu whose rounded probabilities drift with its size", () => {
-    const ids = Array.from({ length: 12 }, (_, i) => `h${i}`);
-    const req = headlineRequest(
-      { prompt: "music", headlines: ids.map(headline), history: [], now },
-      "jev-1.13.0",
-    );
-    // Twelve terms each rounded to 0.01: an honest distribution may sum to 0.95.
-    const ranking = Object.fromEntries(ids.map((_, i) => [`headline_${i}`, i === 3 ? 0.84 : 0.01]));
-    const result = readHeadlineChoice(
-      req,
-      response({ ranking: answer("headline_3", ranking), count: answer("1", { "0": 0, "1": 1, "2": 0 }) }),
-      5,
-    );
-    expect(result.selected.map((h) => h.articleId)).toEqual(["h3"]);
-  });
-  it("skips the API for an empty menu", async () => {
-    const result = await chooseHeadlines(
-      { prompt: "music", headlines: [], history: [], now },
-      { apiKey: "", model: "jev-1.13.0" },
-    );
-    expect(result.selected).toEqual([]);
-    expect(result.request.questions).toEqual({});
-    expect(result.response).toBeNull();
-  });
-  it.each([
-    {},
-    { ...answers(), extra: answer("x", { x: 1 }) },
-    { ...answers(), ranking: answer("invented", answers().ranking.probabilities) },
-    { ...answers(), ranking: answer("headline_0", { headline_0: 1 }) },
-    {
-      ...answers(),
-      ranking: answer("headline_0", { headline_0: 0.1, headline_1: 0.1, headline_2: 0.1, headline_3: 0.1 }),
     },
-    { ...answers(), count: answer("3", { "0": 0, "1": 0, "2": 1 }) },
-    { ...answers(), count: answer("2", { "0": 0, "1": 0, "2": 1, "3": 0 }) },
-  ])("refuses missing, invented or malformed model answers: %j", (invalid) => {
-    expect(() => readHeadlineChoice(request(), response(invalid), 5)).toThrow();
+    usage: { input_tokens: 100, output_tokens: 20 },
+  };
+}
+describe("Jev chooses raw headlines", () => {
+  it("requires a first headline with the listener's interests and original source text", () => {
+    const req = headlineRequest(input(), "jev-1.13.0");
+    expect(Object.keys(req.questions)).toEqual(["selection"]);
+    expect(Object.keys(req.questions.selection.criteria)).toEqual(["headline_0", "headline_1", "headline_2"]);
+    expect(req.state.headlines[0].excerpt).toBe("Source text a");
+    expect(req.questions.selection.instructions).toMatch(/AI/);
+  });
+  it.each([["headline_1", ["b"]]] as const)(
+    "obeys the declared choice %s without a confidence gate",
+    (choice, expected) => {
+      const req = headlineRequest(input(), "jev-1.13.0");
+      expect(readHeadlineChoice(req, response(req, choice), 5).selected.map((h) => h.articleId)).toEqual(
+        expected,
+      );
+    },
+  );
+  it("asks for a complementary second story only after knowing the first", async () => {
+    const fetchFn = vi.fn((_url: string, init: RequestInit) => {
+      const req = JSON.parse(init.body as string) as ReturnType<typeof headlineRequest>;
+      if (!req.state.selected.length) return Promise.resolve(Response.json(response(req, "headline_1")));
+      expect(req.questions.selection.criteria).toHaveProperty("none");
+      expect(req.state.selected.map((h) => h.articleId)).toEqual(["b"]);
+      expect(req.state.headlines.map((h) => h.articleId)).toEqual(["a", "c"]);
+      return Promise.resolve(Response.json(response(req, "headline_1")));
+    });
+    const result = await chooseHeadlines(input(), {
+      apiKey: "test",
+      model: "jev-1.13.0",
+      fetchFn: fetchFn as typeof fetch,
+    });
+    expect(result.selected.map((h) => h.articleId)).toEqual(["b", "c"]);
+    expect(result.followup?.response).toBeDefined();
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+  it("keeps the first story when the optional second choice is none", async () => {
+    const fetchFn = vi.fn((_url: string, init: RequestInit) =>
+      Promise.resolve(
+        Response.json(
+          response(
+            JSON.parse(init.body as string) as ReturnType<typeof headlineRequest>,
+            (JSON.parse(init.body as string) as ReturnType<typeof headlineRequest>).state.selected.length
+              ? "none"
+              : "headline_0",
+          ),
+        ),
+      ),
+    );
+    expect(
+      (
+        await chooseHeadlines(input(), {
+          apiKey: "test",
+          model: "jev-1.13.0",
+          fetchFn: fetchFn as typeof fetch,
+        })
+      ).selected,
+    ).toEqual([headline("a")]);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    fetchFn.mockClear();
+    expect(
+      (
+        await chooseHeadlines(
+          { ...input(), headlines: [] },
+          { apiKey: "test", model: "jev-1.13.0", fetchFn: fetchFn as typeof fetch },
+        )
+      ).selected,
+    ).toEqual([]);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+  it("deduplicates by article and story and excludes already reserved stories", () => {
+    const req = headlineRequest(
+      {
+        ...input(),
+        headlines: [headline("a"), headline("a"), { ...headline("b"), storyId: "story-a" }, headline("c")],
+        history: [{ ...headline("c"), topic: "culture", seq: 1 }],
+      },
+      "jev-1.13.0",
+    );
+    expect(req.state.headlines.map((h) => h.articleId)).toEqual(["a"]);
+  });
+  it("does not silently cut the menu down to twelve stories", () => {
+    const req = headlineRequest(
+      { ...input(), headlines: Array.from({ length: 60 }, (_, i) => headline(String(i))) },
+      "jev-1.13.0",
+    );
+    expect(req.state.headlines).toHaveLength(60);
+  });
+  it.each(["none", "invented"])("rejects %s as a first selection", (invalid) => {
+    const req = headlineRequest(input(), "jev-1.13.0");
+    expect(() => readHeadlineChoice(req, response(req, invalid), 5)).toThrow();
   });
 });

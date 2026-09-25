@@ -6,6 +6,12 @@ const wolfe = { id: "mR1/x", name: "David Wolfe", gender: "male", ...VOICE_DEFAU
 const audio = () => vi.fn<typeof fetch>(() => Promise.resolve(new Response(new Uint8Array([1, 2, 3]))));
 
 describe("ttsBody", () => {
+  it.each([
+    ["eleven_v3", "[curious] What comes next?"],
+    ["eleven_multilingual_v2", "What comes next?"],
+  ] as const)("sends model-appropriate copy to %s", (modelId, expected) => {
+    expect(ttsBody({ ...wolfe, modelId }, "[curious] What comes next?").text).toBe(expected);
+  });
   it("assembles the ElevenLabs body from the voice", () => {
     expect(ttsBody(wolfe, "Hello, night owls.")).toEqual({
       text: "Hello, night owls.",

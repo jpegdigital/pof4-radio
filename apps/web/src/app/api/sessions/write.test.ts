@@ -60,6 +60,11 @@ const input = (over: Partial<WriteInput> = {}): WriteInput => ({
 });
 
 describe("writeBrief — the slot", () => {
+  it.each([true, false])("renders voice-appropriate audio direction rules (%s)", (audioTags) => {
+    const brief = writeBrief(input({ audioTags }));
+    expect(brief.includes("The voice uses Eleven v3.")).toBe(audioTags);
+    expect(brief.includes("this voice does not support them")).toBe(!audioTags);
+  });
   it("carries only the fixed recording and explicitly forbids changing it", () => {
     const brief = writeBrief(input());
     expect(brief).toContain("Your direction for this show: rainy morning soul");
@@ -96,7 +101,7 @@ describe("writeBrief — what came before", () => {
     const brief = writeBrief(input({ seq: 1, dj, recent: [], played: [], clockSaysBreak: true }));
     expect(brief).toContain("Welcome the listener");
     expect(brief).toContain(dj ? "introduce yourself by name as Ada" : "do not invent a DJ name");
-    expect(brief).toContain("before the headlines and weather");
+    expect(brief).toContain("move directly into the first story");
     expect(brief).not.toContain("Skip greetings");
   });
 
@@ -148,6 +153,29 @@ describe("writeBrief — what came before", () => {
 });
 
 describe("writeBrief — the legal ID, the weather, the headlines", () => {
+  it("passes only the frozen hourly weather to later breaks", () => {
+    const weatherReport = {
+      mode: "hourly" as const,
+      city: "Dallas",
+      timeZone: "America/Chicago",
+      at: "2026-09-24T05:30:00Z",
+      current: {
+        basis: "forecast" as const,
+        startTime: "2026-09-24T05:00:00Z",
+        endTime: "2026-09-24T06:00:00Z",
+        text: "Cloudy",
+        tempF: 78,
+        precipitationPercent: 10,
+        windSpeed: "5 mph",
+        windDirection: "S",
+      },
+      outlook: [],
+      alerts: [],
+    };
+    const brief = writeBrief(input({ seq: 6, clockSaysBreak: true, weatherReport }));
+    expect(brief).toContain(JSON.stringify(weatherReport));
+    expect(brief).toContain("Do not repeat the day/night outlook");
+  });
   it("gives the weather section current facts without timestamps or source metadata", () => {
     const weather: NonNullable<WriteInput["weather"]> = {
       location: {
@@ -236,7 +264,7 @@ describe("writeBrief — the legal ID, the weather, the headlines", () => {
     expect(writeBrief(input())).not.toMatch(/legal ID on this break|said first, dry/);
   });
 
-  it("passes selected checked facts into the single script brief", () => {
+  it("passes selected raw source text into the single script brief", () => {
     const brief = writeBrief(
       input({
         clockSaysBreak: true,
@@ -246,17 +274,13 @@ describe("writeBrief — the legal ID, the weather, the headlines", () => {
             storyId: "story-a",
             revision: "v1",
             title: "Dallas concert",
-            topic: "music",
             sourceId: "kxt",
             source: "KXT",
             url: "https://kxt.org/concert",
             scope: "culture",
             publishedAt: "2026-09-19T12:00:00Z",
             fetchedAt: "2026-09-19T13:00:00Z",
-            checkedAt: "2026-09-19T13:00:00Z",
-            expiresAt: "2026-09-19T18:00:00Z",
-            evidence: "The Dallas concert is free.",
-            facts: [{ text: "The Dallas concert is free.", quote: "The Dallas concert is free." }],
+            excerpt: "The Dallas concert is free.",
           },
         ],
       }),
@@ -264,6 +288,9 @@ describe("writeBrief — the legal ID, the weather, the headlines", () => {
     expect(brief).toContain("The Dallas concert is free.");
     expect(brief).toContain("KXT");
     expect(brief).toContain("The stories you are covering this break");
+    expect(brief).toContain('"excerpt":"The Dallas concert is free."');
+    expect(brief).not.toContain('"facts":');
+    expect(brief).toContain("comments are attributed opinions");
     expect(brief).not.toContain("news editor");
     expect(brief).not.toContain("inserted before your words");
   });

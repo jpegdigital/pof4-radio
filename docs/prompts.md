@@ -10,7 +10,6 @@ Edit prompts in `apps/web/prompts/`. The directory is flat; names identify the j
 | `headlines.jev.json` | Both headline Choice questions, including count option descriptions |
 | `chart.jev.json` | Five track questions and all their choice descriptions |
 | `mix.jev.json` | Delivery question and all transition descriptions |
-| `news-prepare`, `news-review` | Evidence preparation and checking |
 
 Each `.prompt` file is plain text with Handlebars variables (`{{name}}`) and `if`/`unless`
 conditionals. No YAML frontmatter or model settings are needed. This is ordinary

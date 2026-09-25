@@ -25,7 +25,7 @@ philosophy).
   platform, or thirty lines of our own would do: Qobuz is plain `fetch` against its web player's own
   API (`api/sessions/qobuz.ts`, the app id + secret read out of the player's bundle), the bucket
   client is AWS SigV4 by hand (`apps/web/src/lib/sigv4.ts`, tested against the AWS vectors), the
-  weather is plain fetch; headlines use `fast-xml-parser` for bounded RSS/Atom evidence (DTD/entity
+  weather is plain fetch; headlines use the official HN API and `fast-xml-parser` for bounded RSS/Atom source text (DTD/entity
   declarations rejected), read once per worker run with ordinary fetch. No AWS SDK, no auth or
   state-management library. Same rule for services: if the browser can do it (playback, audio
   mixing), the server doesn't.
@@ -65,7 +65,7 @@ Three places, each owning what it alone needs:
   dedupe), `write` (the writer's
   brief and call), `rules` (the clock's law: `isBreak`, `legalIdDue`, `checkSlot`), `qobuz` (search
   and the pull, on the listener's token), `weather`, `headlines` (the news worker's one read: fetch/evidence),
-  `headline-choice` (Jev choices over prepared facts), `generation` (retained audit), `doc` (the slot on the wire), `show-store` (the one place that
+  `headline-choice` (Jev choices over raw headlines), `generation` (retained audit), `doc` (the slot on the wire), `show-store` (the one place that
   knows the `session` / `session_slot` / `track` SQL, the bucket keys, the session lock, the keep
   points and bucket-first-row-second — a route asks it, never the pool). Tests
   sit next to the pure parts.
@@ -75,7 +75,7 @@ Three places, each owning what it alone needs:
   and tracks fetched once as blobs, `voice-store`, `dj-picker`, `ui`).
 - **`apps/web/src/app/(settings)/`** — the control room, desktop-wide: the identity, the clock and the
   voice roster and news desk, every row in the `settings` table. `/api/tts/preview` is its "hear it";
-  `/settings?news=1` previews prepared options through the shared Jev selector at `/api/news/preview` without writing or TTS.
+  `/settings?news=1` previews collected headlines through the shared Jev selector at `/api/news/preview` without writing or TTS.
 
 `docs/sessions.html` is the API dance and `docs/domain.html` the data model — the source of truth for
 how the pieces talk; keep them current. `docs/slot-first.md` is why the show is shaped this way.
@@ -114,7 +114,7 @@ the track pull, lock-free:
   legal ID is due (`legalIdDue`: slot 1, or the hour turned since the last break). The brief carries
   the ask, the clock, the identity, the DJ, the proposal and the fixed recording selected by Jev, the last three slots'
   copy, everything played, Jev's fixed mixer plan and word budgets, and for a break the
-  latest prepared NWS weather and up to two prepared stories selected by Jev's headline ranking and count choices. **One Jev Choice call** selects a recording from the hits (or fails if none fits). Its request,
+  latest prepared NWS weather and up to two raw source stories selected by sequential Jev Choices (first, then a complementary second or none). **One Jev Choice call** selects a recording from the hits (or fails if none fits). Its request,
   response, model, usage and elapsed time are retained in `session_slot.selection`. No alternative
   picker or automatic retry. Jev then answers five chart questions in parallel (DJ finish point at 0–5 seconds or beyond 5,
   ending, energy, tempo, mood), followed by one action choice over code-built executable mixer

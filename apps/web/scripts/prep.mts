@@ -1,13 +1,7 @@
 /** Railway runs one bounded job and exits. No HTTP server or queue. */
 import pg from "pg";
 import { NEWS_DEFAULTS, NEWS_KEY, NewsConfig } from "../src/lib/news.ts";
-import {
-  editionDate,
-  NEWS_VALID_MS,
-  PREP_PLACE,
-  PREP_TIME_ZONE,
-  PreparedHeadline,
-} from "../src/lib/prepared.ts";
+import { editionDate, NEWS_VALID_MS, PREP_PLACE, PREP_TIME_ZONE, RawHeadline } from "../src/lib/prepared.ts";
 import { prepareNews } from "./prep-news.mts";
 import { prepareWeather } from "./prep-weather.mts";
 
@@ -16,8 +10,6 @@ if (kind !== "news" && kind !== "weather") throw new Error("usage: prep.mts news
 const dryRun = process.argv.includes("--dry-run");
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is required");
-if (kind === "news" && (!process.env.CLAUDE_KEY || !process.env.CLAUDE_MODEL))
-  throw new Error("CLAUDE_KEY and CLAUDE_MODEL are required for news preparation");
 const controller = new AbortController();
 const stop = () => controller.abort(new Error("Preparation interrupted"));
 process.once("SIGTERM", stop);
@@ -63,21 +55,11 @@ try {
           throw new Error("Scheduled news currently supports Dallas, TX / America/Chicago only");
         if (!config.enabled) console.log("[prep:news] station news disabled; skipped");
         else {
-          const result = await prepareNews(
-            config,
-            process.env.CLAUDE_KEY!,
-            process.env.CLAUDE_MODEL!,
-            deadline,
-          );
-          const options = PreparedHeadline.array().parse(result.options);
+          const result = await prepareNews(config, deadline);
+          const articles = RawHeadline.array().parse(result.articles);
           const prepared = new Date();
           deadline.throwIfAborted();
-          const expires = new Date(
-            Math.min(
-              started.getTime() + NEWS_VALID_MS,
-              options.length ? Math.max(...options.map((o) => Date.parse(o.expiresAt))) : Infinity,
-            ),
-          );
+          const expires = new Date(started.getTime() + NEWS_VALID_MS);
           if (expires <= prepared) throw new Error("News edition expired before publication");
           if (!dryRun) {
             await client.query("begin");
@@ -85,12 +67,12 @@ try {
             await client.query("insert into headline_snapshot (id, snapshot, audit) values ($1, $2, $3)", [
               id,
               JSON.stringify({ ...result.snapshot, id }),
-              JSON.stringify(result.audit),
+              JSON.stringify({ version: "raw-news-1" }),
             ]);
             await client.query(
-              `insert into news_entries (id, edition_date, place, time_zone, started_at, prepared_at, expires_at, options)
+              `insert into news_entries (id, edition_date, place, time_zone, started_at, prepared_at, expires_at, articles)
               values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-              [id, date, PREP_PLACE, PREP_TIME_ZONE, started, prepared, expires, JSON.stringify(options)],
+              [id, date, PREP_PLACE, PREP_TIME_ZONE, started, prepared, expires, JSON.stringify(articles)],
             );
             await client.query("commit");
             transaction = false;
@@ -101,7 +83,7 @@ try {
               dryRun,
               id,
               date,
-              options: options.length,
+              articles: articles.length,
               sources: result.snapshot.sources,
               expiresAt: expires,
             }),
@@ -134,6 +116,7 @@ try {
             date,
             observedAt: result.weather.observedAt,
             periods: result.weather.periods.length,
+            hours: result.weather.hourly?.length ?? 0,
             alerts: result.weather.alerts.length,
             expiresAt: result.expiresAt,
           }),

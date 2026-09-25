@@ -1,88 +1,95 @@
-# Scheduled news and weather
+# Collected headlines and prepared weather
 
-The preparation workers live in `apps/web/scripts/prep*.mts`. Railway resources live only in
-`../pof4-infra/.railway/railway.ts`. They reuse the web workspace's dependencies and run directly
-on Node 24; no server, queue, new dependency, Jev call, or voice generation is involved.
+News collection is deliberately model-free:
 
-| Service | UTC schedule | Content validity |
-| --- | --- | --- |
-| `radio-news` | `0 */3 * * *` (every three hours) | Up to four hours; each option may expire sooner |
-| `radio-weather` | `10,40 * * * *` (every 30 minutes) | Up to one hour; observation must remain under two hours old, forecast under 24 hours |
-
-Both jobs take a per-location Postgres advisory lock, run once, close the pool, and exit. A duplicate
-run skips. Errors exit nonzero. The soft deadline is four minutes; a five-minute watchdog bounds a
-stuck driver. Railway restart policy is `NEVER`; the next scheduled run is the retry. See
-[Railway cron behavior](https://docs.railway.com/cron-jobs).
-
-## Storage and dates
-
-`news_entries` and `weather_entries` retain every successful run. `edition_date` is the job's start
-date in `America/Chicago`, including daylight saving. `(place, edition_date, prepared_at)` indexes
-support finding the latest run for a date; UUIDs distinguish runs on the same date. Rerunning a
-job appends an edition rather than destroying that day's earlier evidence.
-
-Each entry records start, preparation and expiry times. Failed or incomplete pulls publish nothing.
-News publication atomically inserts the raw evidence/audit in existing `headline_snapshot` and the
-checked options in `news_entries`; its ID links the two. `headline_story` and session exposure rows
-remain owned by the existing playback flow. Weather stores normalized data and original NWS JSON
-together in one insert. No schema changes happen during worker startup.
-
-News reads `settings.station.news` (the existing Dallas defaults on first install). It reuses the
-allowlisted RSS/Atom reader with a larger scheduled fetch budget. KERA, KXT, Dallas City Hall and NPR
-provide publisher excerpts; Google feeds remain discovery-only and cannot substantiate facts.
-Fresh publisher material is prepared as up to 12 options, with room for Dallas news and cultural
-discoveries. Claude extracts facts with exact supporting quotes and separately reviews them.
-Rejected options do not publish. A successful review that omits everything publishes an empty edition;
-a source/model outage preserves the previous successful edition. This is feed-based research, not
-an article-page crawler; short or missing evidence is omitted.
-
-Weather uses [NWS observations, forecasts](https://www.weather.gov/documentation/services-web-api)
-and [point alerts](https://www.weather.gov/documentation/services-web-alerts) for northwest Dallas
-(75229, Love Field station KDAL, FWD/87,109). The DJ uses the city name (Dallas) on air; the observation station, airport name and grid are retained as source metadata, not spoken location labels. Temperatures are °F, observed wind is mph, precipitation
-is percent. Observation and forecast times remain separate; forecast periods have absolute start/end
-times. Alert failure fails the whole edition instead of publishing a misleading empty alert list.
-This first implementation explicitly supports Dallas; changing cities requires configuring both jobs.
-
-## Session contract
-
-`apps/web/src/lib/prepared.ts` exports database-only readers:
-
-```ts
-const news = await readPreparedNews(pool(), config, recentArticleRevisions);
-const weather = await readPreparedWeather(pool());
-// Optional final argument selects a particular YYYY-MM-DD edition date.
+```text
+HN front page + Dallas publisher feeds → raw edition in Postgres
+break → Jev chooses a story, then an optional complementary story
+      → Claude writes both into the music/weather script → ElevenLabs voices it
 ```
 
-The readers return the latest saved edition for Dallas (or the requested date), with source timestamps
-retained as evidence. There are no session-time expiry checks. Already selected articles are omitted
-across revisions. Missing prepared data never triggers request-time research.
+## Collection
 
-Every full break reads these editions under the session lock. `headline-choice.ts` gives Jev the
-listener request, up to 12 checked options, and the session's reserved story history. One Choice
-compares the headlines; another chooses how many deserve airtime (zero, one, or two). Code sorts
-the headline probabilities and takes that many stories. Exact article/story IDs are deduplicated
-and excluded across revisions; both questions consider previously covered events.
+`apps/web/scripts/prep.mts news` needs only `DATABASE_URL`. It calls no Claude,
+Jev, extraction, review or voice API. The default roster is Hacker News, KERA,
+KXT and City of Dallas. Saved station source settings still take precedence.
 
-`session_slot.generation` reserves choices before writing, even if Claude fails or playback never
-happens. It retains edition IDs and dates, exact Jev requests, answers and probabilities, the music
-plan, structured weather, Claude's actual brief/output/usage, and every voice take's text, settings
-and bucket key. Returned scripts rejected by slot validation remain in the attempt history with their error. A writer retry keeps the exact saved inputs and choices. A voice
-retry keeps the script. Explicit revoicing appends a take; original audio remains available.
+HN uses the official Firebase API: the first 30 IDs from `topstories.json`,
+their story records, and up to two top-level comments per story. Original rank,
+score, comment count, submission text, linked URL and discussion URLs are kept.
+A comment is a community opinion, not verified article content. Linked article
+pages are not fetched. HN's submission time is not the linked article's publication
+date; an old article can be on the front page today.
 
-The first slot opens with a listener welcome, the DJ's name (when configured), and the requested
-show mood before the headlines and weather. Later breaks do not restart the show. This introduction
-is part of the same retained script and voice take.
+Publisher RSS/Atom titles and available excerpts are retained without model editing.
+Missing publication times are null; fetching never invents a publication date.
+All bounded source responses (RSS XML and HN JSON) are retained in the snapshot.
+Collection isolates source failures, logs them, and saves the healthy sources.
+A total source outage publishes nothing and leaves the previous edition available.
+A successful empty collection is an empty edition.
 
-Claude writes selected checked facts, weather and music copy together in one script, followed by
-one ElevenLabs call. Missing editions mean omission, never research. Short music slots
-keep Jev's existing fixed-ID/context/segue choices and contain no news or weather.
+## Storage
 
-Play always loads the saved voice, bed and track. There is no live preflight, expiry gate,
-original-recording toggle, or alternative script. Complete voice reads record the selected story
-in `session_news_exposure`; reservations in `generation` prevent repeats regardless of playback.
-Every model receipt and voice take remains retained.
+`news_entries.articles` contains strict raw headline records: source title/excerpt,
+URLs, timestamps, scope from the configured source, deterministic IDs/revisions,
+and optional HN metadata. It has no generated facts, checked-at timestamp,
+generated topic or per-story expiry. A database constraint prevents those editorial
+fields and requires legacy `options` to be empty whenever `articles` is present.
 
-## Run and verify
+The linked `headline_snapshot` holds the source responses and normalization result;
+its audit is only `{ "version": "raw-news-1" }`. The worker atomically appends both
+rows. Legacy `options` and model audits remain unchanged for historical inspection.
+New readers select only editions with a non-null `articles` column.
+
+Edition timestamps and the existing four-hour edition expiry are collection metadata,
+not editorial judgments. Sessions read the latest saved raw edition, filter disabled
+sources and exact article reservations, and give Jev source times and the current
+time. There is no session-time network research or automatic re-recording of old shows.
+
+## Selection and presentation
+
+Jev receives the bounded collected menu, source material, the listener's show request,
+and reserved story history. Its standing interests are current AI, Dallas/North Texas,
+music, science and interesting discoveries. On a scheduled news segment with
+eligible stories, at least one headline is required. Disabled news, non-news slots
+and exhausted/empty candidate menus skip selection.
+
+The first Choice must select one story; its menu does not include `none`. Only after a story is chosen does a
+second Choice see it and choose a distinct complementary story or `none`. Both
+requests, answers, probabilities and timing are retained. Code obeys the selected
+option; competing probabilities are not treated as independent quality scores.
+Already reserved article/story IDs are removed, and Jev compares related events
+across publishers/history. A second story must earn its airtime.
+
+Claude receives those raw selections in the existing program-writing call. It writes
+roughly one 20-word sentence per selected story, attributed to its source, inside
+the overall music/weather word budget. Titles support only modest attributed
+mentions; HN submissions/comments remain attributed claims/opinions. No facts are
+invented to fill short excerpts. Legacy saved generations retain their original
+checked facts when retried. The original scripts and voice takes remain replayable.
+
+## Scheduling and operations
+
+Railway resources belong to `../pof4-infra/.railway/railway.ts`.
+News runs every three hours (`0 */3 * * *`); weather runs at minutes 10 and 40.
+Both use a per-location advisory lock, a four-minute soft deadline and five-minute
+watchdog, then close the pool and exit. Neither runs a server or queue.
+The next scheduled invocation is the retry; individual source failures do not
+prevent collecting healthy sources.
+
+Weather uses NWS observations, day/night and hourly forecasts, and alerts for Dallas,
+ZIP 75229, KDAL, FWD/87,109. The worker retains 48 forecast hours plus source evidence
+in the existing JSON weather columns; historical editions without hours still parse.
+It is prepared independently and needs only the database URL.
+
+The opening gets fresh observed conditions (or the matching forecast hour when the
+observation is too old), plus the current and next day/night periods. Later breaks
+get only the forecast hour whose start/end interval contains the server generation
+timestamp, with active alerts. This is forecast weather, not a new observation;
+Claude phrases it accordingly. No current temperature is interpolated from daily
+highs/lows. A missing hour omits routine weather rather than repeating stale facts.
+The report and timestamp are retained in generation inputs for retries. Budgets are
+roughly 60 words for opening weather, 30 later, with extra room for active alerts.
 
 ```sh
 pnpm db:plan
@@ -90,61 +97,52 @@ pnpm db:apply
 pnpm prep:news
 pnpm prep:weather
 op run --env-file=.env.op -- node apps/web/scripts/prep-smoke.mts
-# Billed: retains a labeled two-break session; defaults to production web.
+# Billed end-to-end validation: retains a labeled two-break session.
 op run --env-file=.env.op -- node apps/web/scripts/unified-slot-smoke.mts
 ```
 
-Add `--dry-run` to either preparation command to perform the real fetch/review without publishing.
-News needs `DATABASE_URL`, `CLAUDE_KEY`, `CLAUDE_MODEL`; weather needs only `DATABASE_URL`.
-Railway references the existing radio-web Claude variables and the shared database's private address.
-Logs contain edition IDs, dates, counts, freshness and source errors, never credentials.
-
-Apply infra from `../pof4-infra` with `pnpm plan` then `pnpm apply`. Both new services build from the
-radio repository root and start with `pnpm --filter web prep:news` / `prep:weather`. They have no public
-domain or HTTP healthcheck. For a new GitHub-backed service, follow that repository's source-connect
-and redeploy instructions, or deploy the current working tree with an explicit project selector:
+`--dry-run` fetches actual sources without publishing. It does not invoke a model.
+Apply the additive database change before deploying news and web. For deployments
+from an unlinked checkout, always pass the existing pof4 project explicitly:
 
 ```sh
 railway up --project c750bdd5-4be2-4409-a00e-c266a78f5dae --environment production --service radio-news
-railway up --project c750bdd5-4be2-4409-a00e-c266a78f5dae --environment production --service radio-weather
+railway up --project c750bdd5-4be2-4409-a00e-c266a78f5dae --environment production --service radio-web
 ```
 
-Do not omit the project selector from an unlinked checkout: the CLI can create a new project.
+## Failure diagnosed September 23, 2026
 
-## Historical production verification — 2026-09-19
+The previous pipeline called Claude for extraction and again for evidence review.
+The 18:00 UTC run failed with “News evidence review returned no result”; the
+September 24 03:00 UTC run failed parsing an unterminated JSON string. Runs at
+21:00 and 00:00 UTC did publish editions. Old logs did not retain the model stop
+reason, so token exhaustion could not be confirmed. Removing both worker model
+calls removes these failure paths rather than retrying editorial preparation.
 
-Applied the additive schema and deployed both services into the existing pof4 production project.
-An immediate Railway run of each completed successfully and stopped. The news edition contained eight checked options from KXT, KERA News and NPR; weather contained the latest Love Field observation, four forecast periods and zero active alerts. Read-back verification passed date lookup, retained source evidence, used-revision suppression, disabled news, and expired news/weather omission. The infrastructure plan reported no drift. All 385 tests and the web production build passed.
+## Production verification
 
-The initial deployments used the local working tree; no git commit or push was made. Future code changes must be deployed or connected to GitHub after the worker code is pushed. Local DNS for the Railway Postgres public proxy was intermittent; verification used its freshly resolved address without changing saved credentials. Railway workers use private networking.
+On September 23, 2026 (04:50 UTC September 24), the deployed collector ran without
+Claude credentials and saved edition `0ad7537f-7ca0-4d6a-80b9-700dd5c80555`: 30 Hacker
+News submissions, 12 City of Dallas items, 10 KERA items and 10 KXT items. All four
+sources were fresh. Database round-trip, retained source evidence, reservation and
+disabled-news checks passed.
 
-## Unified session verification — 2026-09-19
+The full check passed (526 unit tests and 17 browser tests). Production session
+`7482c2d6-c001-43b3-a1ff-b2036faee9b4` exercised two real breaks: Jev selected raw
+stories, Claude wrote concise mentions, and each break produced one audio take.
+Retries reused retained results, stories did not repeat, and exposure was recorded
+for every selected story. This pre-change test allowed a no-news prompt to select zero; the current policy
+requires one headline whenever the scheduled news segment has eligible stories.
 
-Applied the additive `session_slot.generation` column and deployed the unified web route to production
-(deployment `ab690f96-b53b-45db-a820-7ecb4d55b5b9`). `pnpm check` passed all 384 tests and the web
-production build passed. The old request-time editor, weather fetch and alternate voice generation
-paths are removed; legacy stored takes remain readable.
+Hourly weather verification on September 24: hosted edition
+`30221716-4aab-4ab9-a8a5-b2c85f05f530` retained 48 hours. Session
+`7548ba6c-87a2-4750-bd0e-12616cd8d382` produced a full opening report and a
+one-sentence hourly forecast in its later break. Both produced audio, and retries
+kept their saved reports and takes. All checks passed: 536 unit tests and 17 browser
+tests, plus lint, formatting and types.
 
-The local integration retained session `f71ca92e-537f-439c-834b-1200b7b1929c`, choosing three stories
-and then one different story. Hosted session `bf06bdb0-10d9-4ff1-aca4-ac5c79cb8176` chose one story
-and omitted remaining headlines on the next break. Both included saved structured weather. The
-hosted second break initially exceeded the copy budget; its Jev reservation survived. After tightening
-writing guidance, the same break retried successfully without any new Jev calls (11.84 seconds total).
-Returned scripts rejected by slot validation now retain their input, output and error in attempt history.
-
-The smoke verified one retained take per break, no reused story IDs, exact model receipts, idempotent
-slot requests and all-story exposure acknowledgments. It expired only its own labeled receipt,
-verified live playback suppression and byte-identical original audio, then restored the receipt.
-No git commit or push was made; deployments used the working tree.
-
-The simplified session path supersedes the historical expiry behavior above: latest saved editions,
-at most one unused headline, one saved script/take, and unconditional playback of that production.
-
-## Simplified production verification — 2026-09-19
-
-Deployment `735fcbec-64e1-41ac-8da9-34d5f6a33f45` is live. All 377 tests and the production
-build passed. Session `8911c67e-7c3d-4902-9466-0c8d430cf7a4` verified the opening DJ welcome,
-one selected headline, prepared weather, no repeated headline at the next full break, retained
-model receipts, one take per break, and idempotent retries. A legacy expiry value did not change
-returned copy or audio. The Chrome Play show button started the DJ production while the track
-remained at 0:00; the test was paused and the browser tab closed afterward.
+Broadcast copy goes straight into the story or weather instead of announcing the
+show format. Weather uses connected sentences, with room for a natural opening
+report and one or two sentences later. Eleven v3 voices receive expressive, phrase-level inline
+emotion and delivery tags from Claude, without a numerical tag limit; other models receive plain speech. Delivery tags are
+retained with the script and TTS request and excluded from spoken-word budgets.

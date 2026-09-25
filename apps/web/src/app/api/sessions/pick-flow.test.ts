@@ -11,7 +11,7 @@ import {
 } from "./planning";
 import { NEWS_DEFAULTS } from "../../../lib/news";
 import { ElevenLabsError, type speak, ttsBody } from "../../../lib/elevenlabs";
-import type { PreparedEntry, PreparedHeadline, PreparedWeather } from "../../../lib/prepared";
+import type { PreparedEntry, RawHeadline, PreparedWeather } from "../../../lib/prepared";
 import type { SlotGeneration } from "./generation";
 import type { SlotRow } from "./doc";
 import type { WriteInput, WriterReceipt } from "./write";
@@ -29,7 +29,7 @@ const boundary = vi.hoisted(() => ({
   >(),
   put: vi.fn(),
   speak: vi.fn<typeof speak>(),
-  news: vi.fn<() => Promise<PreparedEntry<PreparedHeadline[]> | null>>(),
+  news: vi.fn<() => Promise<PreparedEntry<RawHeadline[]> | null>>(),
   weather: vi.fn<() => Promise<PreparedEntry<PreparedWeather> | null>>(),
 }));
 vi.mock("@/lib/db", () => ({
@@ -40,7 +40,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/prepared", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../lib/prepared")>()),
-  readPreparedNews: boundary.news,
+  readNews: boundary.news,
   readPreparedWeather: boundary.weather,
 }));
 vi.mock("@/lib/bucket", () => ({ bucket: () => ({ put: boundary.put }) }));
@@ -341,23 +341,19 @@ describe("slot selection has one path", () => {
   });
 });
 
-const headlines = (): PreparedHeadline[] =>
+const headlines = (): RawHeadline[] =>
   ["a", "b", "c", "d"].map((id) => ({
     articleId: id,
     storyId: `story-${id}`,
     revision: "v1",
     title: `Dallas event ${id}`,
-    topic: "music",
     sourceId: "kxt",
     source: "KXT",
     url: `https://kxt.org/${id}`,
     scope: "culture",
     publishedAt: new Date().toISOString(),
     fetchedAt: new Date().toISOString(),
-    checkedAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 3600000).toISOString(),
-    evidence: "A free Dallas concert.",
-    facts: [{ text: "A free Dallas concert.", quote: "A free Dallas concert." }],
+    excerpt: "A free Dallas concert.",
   }));
 const weather: PreparedWeather = {
   location: {
@@ -392,6 +388,7 @@ const weather: PreparedWeather = {
     },
   ],
 };
+weather.hourly = [{ ...weather.periods[0], tempF: 78 }];
 const prepareBreak = (count = "1") => {
   row.seq = 1;
   boundary.plan.mockResolvedValue(planningReceipt("break_dry"));
@@ -413,6 +410,7 @@ const prepareBreak = (count = "1") => {
     if ((typeof url === "string" ? url : url instanceof URL ? url.href : url.url).includes("typesafe.ai")) {
       const req = JSON.parse(init?.body as string) as {
         questions: Record<string, { criteria: Record<string, string> }>;
+        state: { selected: unknown[] };
       };
       return Promise.resolve(
         Response.json({
@@ -423,12 +421,12 @@ const prepareBreak = (count = "1") => {
               id,
               {
                 type: "choice",
-                choice: id === "count" ? count : Object.keys(question.criteria)[0],
+                choice: Number(count) > req.state.selected.length ? "headline_0" : "none",
                 confidence: 1,
                 probabilities: Object.fromEntries(
-                  Object.keys(question.criteria).map((option, index) => [
+                  Object.keys(question.criteria).map((option) => [
                     option,
-                    id === "count" ? Number(option === count) : Number(index === 0),
+                    Number(option === (Number(count) > req.state.selected.length ? "headline_0" : "none")),
                   ]),
                 ),
               },
@@ -458,8 +456,10 @@ describe("prepared news/weather has one production path", () => {
     prepareBreak("2");
     expect((await call()).status).toBe(200);
     expect(boundary.write.mock.calls[0][0].headlines.map((h) => h.articleId)).toEqual(["a", "b"]);
-    expect(boundary.plan.mock.calls[0][0].contentWords).toBe(75);
+    expect(boundary.plan.mock.calls[0][0].contentWords).toBe(110);
     expect(row.generation?.news.selected.map((h) => h.articleId)).toEqual(["a", "b"]);
+    expect(row.generation?.input.weatherReport).toMatchObject({ mode: "full", current: { tempF: 80 } });
+    expect(row.generation?.input.weatherReport?.at).toBe(row.generation?.preparedAt);
     const original = structuredClone(row);
     prior = [original];
     row = {
@@ -505,6 +505,12 @@ describe("prepared news/weather has one production path", () => {
     };
     expect((await call()).status).toBe(200);
     expect(boundary.write.mock.calls[1][0].headlines.map((h) => h.articleId)).toEqual(["b"]);
+    expect(boundary.write.mock.calls[1][0].weatherReport).toMatchObject({
+      mode: "hourly",
+      current: { basis: "forecast", tempF: 78 },
+      outlook: [],
+    });
+    expect(boundary.plan.mock.calls[1][0].contentWords).toBe(55);
   });
   it("retains rejected copy and retries with the same Jev decisions", async () => {
     prepareBreak();

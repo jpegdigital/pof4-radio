@@ -1,3 +1,4 @@
+import { withoutAudioTags } from "../../../lib/voices.ts";
 import type { Written } from "./shapes";
 import type { Chart } from "./doc";
 import type { MixPlan } from "./planning";
@@ -46,7 +47,10 @@ export function checkSlot(
   if ((plan.kind === "break") !== clockSaysBreak) throw new Error("Jev plan violates the slot clock");
   const words = w.words.trim();
   const leadLine = w.leadLine.trim();
-  const count = (text: string) => (text ? text.split(/\s+/u).length : 0);
+  const count = (text: string) => {
+    const spoken = withoutAudioTags(text);
+    return spoken ? spoken.split(/\s+/u).length : 0;
+  };
   if (count(words) > plan.wordsMax || count(leadLine) > plan.leadWordsMax)
     throw new Error(
       `Claude copy exceeds Jev's word budget (words ${count(words)}/${plan.wordsMax}, leadLine ${count(leadLine)}/${plan.leadWordsMax})`,
@@ -55,8 +59,10 @@ export function checkSlot(
     throw new Error("Copy does not match the complete fixed introduction");
   if (plan.wordsMin !== undefined && count(words) < plan.wordsMin)
     throw new Error("Copy is too short for a complete introduction");
-  if (plan.kind !== "segue" && !words) throw new Error("Claude returned empty copy for Jev's spoken plan");
-  if (plan.kind === "break" && !leadLine) throw new Error("Claude returned no lead line for Jev's break");
+  if (plan.kind !== "segue" && !count(words))
+    throw new Error("Claude returned empty copy for Jev's spoken plan");
+  if (plan.kind === "break" && !count(leadLine))
+    throw new Error("Claude returned no lead line for Jev's break");
   return {
     qobuzId: hit.id,
     ...plan.chart,

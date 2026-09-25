@@ -1,7 +1,18 @@
 import { z } from "zod";
 
 export const NEWS_KEY = "station.news";
-export type NewsScope = "local" | "nation" | "world" | "culture";
+export type NewsScope = "local" | "nation" | "world" | "culture" | "tech";
+export const NewsCommunity = z.object({
+  rank: z.number().int().positive(),
+  score: z.number().int().nonnegative(),
+  comments: z.number().int().nonnegative(),
+  url: z.url(),
+  linkedUrl: z.url().optional(),
+  author: z.string().optional(),
+  discussion: z.array(z.object({ author: z.string(), text: z.string(), url: z.url() })).optional(),
+});
+export type NewsCommunity = z.infer<typeof NewsCommunity>;
+
 export interface NewsSource {
   id: string;
   name: string;
@@ -13,6 +24,12 @@ export interface NewsSource {
 
 /** An explicit fetch allowlist. Settings select IDs, never arbitrary network destinations. */
 export const NEWS_SOURCES: readonly NewsSource[] = [
+  {
+    id: "hacker-news",
+    name: "Hacker News",
+    url: "https://hacker-news.firebaseio.com/v0/topstories.json",
+    scope: "tech",
+  },
   {
     id: "kera",
     name: "KERA News",
@@ -82,7 +99,7 @@ export const NEWS_DEFAULTS: NewsConfig = {
   city: "Dallas",
   region: "TX",
   timeZone: "America/Chicago",
-  sources: ["kera", "kxt", "dallas-city", "npr", "google-local", "google-nation", "google-world"],
+  sources: ["hacker-news", "kera", "kxt", "dallas-city"],
   refreshMinutes: 5,
   cultureRefreshMinutes: 15,
   memoryHours: 6,
@@ -92,7 +109,7 @@ export const NEWS_DEFAULTS: NewsConfig = {
 
 /** Public receipt: evidence is kept on the server, these fields explain the spoken choice. */
 export interface NewsReceipt {
-  version?: "prepared-1";
+  version?: "prepared-1" | "raw-news-1";
   stories?: { articleId: string; storyId: string; revision: string; title: string; topic: string }[];
   weather?: { entryId: string; observedAt: string; forecastUpdatedAt: string };
   snapshotId: string;

@@ -65,6 +65,26 @@ const plan = (over: Partial<MixPlan> = {}): MixPlan => ({
 });
 const hit = { id: "jev-picked", durationMs: 200000 };
 describe("checkSlot — preserves Jev's plan", () => {
+  it("retains emotion tags without charging them against spoken word budgets", () => {
+    const words = "[curious] Here comes the sun.";
+    expect(
+      checkSlot(false, plan({ wordsMax: 4, wordsMin: 4 }), { words, leadLine: "" }, hit, null).words,
+    ).toBe(words);
+  });
+  it.each(["[curious]", "[warmly] [thoughtful]"])("rejects tag-only spoken copy %s", (words) => {
+    expect(() => checkSlot(false, plan(), { words, leadLine: "" }, hit, null)).toThrow(/empty/);
+  });
+  it("rejects a tag-only lead line", () => {
+    expect(() =>
+      checkSlot(
+        true,
+        plan({ kind: "break", leadWordsMax: 4 }),
+        { words: "Hello there.", leadLine: "[excited]" },
+        hit,
+        null,
+      ),
+    ).toThrow(/lead line/);
+  });
   it.each(["Panama.", "Adams."])("rejects the fragment %s for a contextual talk-up", (words) => {
     expect(() =>
       checkSlot(false, plan({ copyStyle: "context", wordsMin: 6 }), { words, leadLine: "" }, hit, null),
