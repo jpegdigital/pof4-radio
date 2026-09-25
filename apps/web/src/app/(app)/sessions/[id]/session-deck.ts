@@ -1,4 +1,5 @@
 import { BrowserAudioEngine } from "@/lib/playback/browser-engine";
+import { SongSources } from "@/lib/playback/song-source";
 import { EMPTY, Player, type PlayerSnapshot } from "@/lib/playback/player";
 import { acknowledgeVoice, loadSlot, playbackId } from "./load-slot";
 import type { Cue, Slot } from "./types";
@@ -12,6 +13,7 @@ const INITIAL: Snapshot = { cue: null, playback: EMPTY };
 /** Wire the show's assets and acknowledgments to a player with an explicit mount lifetime. */
 export class SessionDeck {
   private player: Player | null = null;
+  private engine: BrowserAudioEngine | null = null;
   private cue: Cue | null = null;
   private snapshot = INITIAL;
   private listeners = new Set<() => void>();
@@ -32,7 +34,10 @@ export class SessionDeck {
     for (const listener of this.listeners) listener();
   }
   connect = () => {
-    const player = new Player(new BrowserAudioEngine(), (slot) => {
+    const sources = new SongSources();
+    const engine = new BrowserAudioEngine(undefined, sources.resolve.bind(sources));
+    this.engine = engine;
+    const player = new Player(engine, (slot) => {
       if (this.cue && playbackId(this.sessionId, this.cue) === slot.id)
         acknowledgeVoice(this.sessionId, this.cue);
     });
@@ -42,6 +47,7 @@ export class SessionDeck {
       unsubscribe();
       player.dispose();
       this.player = null;
+      this.engine = null;
       this.cue = null;
       this.publish(EMPTY);
     };
@@ -54,6 +60,12 @@ export class SessionDeck {
     );
   };
   unlock = () => this.player?.unlock();
+  preload = (cue: Cue | null) => {
+    this.engine?.preload(
+      cue ? `/api/sessions/${this.sessionId}/slots/${cue.seq}/track?playback=1` : null,
+      cue?.pick.durationMs,
+    );
+  };
   play = () => {
     const s = this.player?.getSnapshot();
     if (s?.phase === "failed" && !s.slot && this.cue) this.load(this.cue);

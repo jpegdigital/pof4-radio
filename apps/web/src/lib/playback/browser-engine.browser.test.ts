@@ -6,6 +6,7 @@ import { Player } from "./player";
 import { planSlot } from "./plan";
 import type { PreparedSlot } from "./mix";
 import type { EngineEvent } from "./engine";
+import { SongSources } from "./song-source";
 
 const urls: string[] = [];
 const engines: BrowserAudioEngine[] = [];
@@ -17,8 +18,9 @@ function tone(seconds: number) {
 async function setup(delayedSong = false) {
   let song!: HTMLAudioElement;
   const engine = new BrowserAudioEngine(() => {
-    song = new Audio();
-    return song;
+    const media = new Audio();
+    song ??= media;
+    return media;
   });
   engines.push(engine);
   const unlock = document.createElement("button");
@@ -47,6 +49,56 @@ afterEach(() => {
 });
 
 describe("native browser audio contract", () => {
+  it("adopts the buffered next element and renews its URL on a paused seek after expiry", async () => {
+    const media: HTMLAudioElement[] = [];
+    const sources = new SongSources();
+    const engine = new BrowserAudioEngine(() => {
+      const audio = new Audio();
+      media.push(audio);
+      return audio;
+    }, sources.resolve.bind(sources));
+    engines.push(engine);
+    const first = tone(6);
+    const refreshed = tone(6);
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const nativeFetch = globalThis.fetch.bind(globalThis);
+    const signing = vi
+      .fn<() => Promise<Response>>()
+      .mockImplementationOnce(() =>
+        Promise.resolve(Response.json({ url: first, expiresAt: now + 3_600_000 })),
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(Response.json({ url: refreshed, expiresAt: now + 3_600_000 })),
+      );
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, init) =>
+      url === "/signed-track" ? signing() : nativeFetch(url, init),
+    );
+    engine.preload("/signed-track", 6000);
+    await expect.poll(() => media[1]?.readyState).toBeGreaterThanOrEqual(3);
+    const reload = vi.spyOn(media[1], "load");
+    const slot: PreparedSlot = {
+      id: "signed",
+      songUrl: "/signed-track",
+      songDurationMs: 6000,
+      voiceUrl: null,
+      bedUrl: null,
+      plan: planSlot({ kind: "segue", clipMs: null, legalIdChars: 0 }),
+    };
+    await engine.set(slot, 1500, false, new AbortController().signal, () => {});
+    expect(reload).not.toHaveBeenCalled();
+    expect(media[1].currentTime).toBeCloseTo(1.5, 2);
+    expect(media[1].crossOrigin).toBe("anonymous");
+    expect(signing).toHaveBeenCalledOnce();
+    now += 3_600_001;
+    await engine.set(slot, 2500, false, new AbortController().signal, () => {});
+    expect(media[1].src).toBe(refreshed);
+    expect(media[1].currentTime).toBeCloseTo(2.5, 2);
+    expect(signing).toHaveBeenCalledTimes(2);
+    engine.preload("/signed-track", 6000);
+    expect(media).toHaveLength(2);
+  });
+
   it("waits for first-play voice decoding before scheduling the mix", async () => {
     const { engine, slot } = await setup();
     const nativeFetch = globalThis.fetch.bind(globalThis);

@@ -73,6 +73,8 @@ it("uses the real hook through StrictMode, paused seeks, resume, lock-screen upd
   const fixture = await nativeFetch(url);
   const blob = await fixture.blob();
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    if (typeof input === "string" && input.endsWith("/track?playback=1"))
+      return Promise.resolve(Response.json({ url, expiresAt: Date.now() + 3_600_000 }));
     if (typeof input === "string" && input.startsWith("/api/sessions/browser-fixture/"))
       return Promise.resolve(new Response(blob, { headers: { "Content-Type": "audio/wav" } }));
     return nativeFetch(input, init);

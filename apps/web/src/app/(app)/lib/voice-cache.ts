@@ -1,8 +1,7 @@
 /**
- * The clips and the tracks, once per URL for the life of the page: each fetched as a blob,
- * measured, and kept as an object URL its element plays (a rewind is instant; a resumed show's
- * past slots are ready the moment they are fetched; a track pulled while the last one played
- * starts on time). A failed fetch is remembered as such and retried on the next ask.
+ * Short voice clips, once per URL for the life of the page: each fetched as a blob,
+ * measured, and kept as an object URL for Web Audio decoding and precise scheduling. Songs use
+ * native progressive playback instead. A failed fetch is retried on the next ask.
  */
 
 export type ClipEntry = { url: string; durationMs: number } | { error: string };

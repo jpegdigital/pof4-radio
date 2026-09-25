@@ -23,14 +23,14 @@ export async function loadSlot(
       signal.throwIfAborted();
       onSlot({ ...cue, held: true });
     }
-    return getClip(url);
+    // Version the URL so an old immutable MP3 response cannot satisfy the metadata request.
+    return `${url}?playback=1`;
   };
   const voice = cue.clipKey
     ? getClip(`/api/sessions/${sessionId}/slots/${cue.seq}/clip?take=${encodeURIComponent(cue.clipKey)}`)
     : Promise.resolve(null);
   const [rec, mic] = await Promise.all([song(), voice]);
   signal.throwIfAborted();
-  if ("error" in rec) throw new Error(rec.error);
   if (mic && "error" in mic) throw new Error(mic.error);
   const plan = planSlot({
     kind: cue.kind,
@@ -44,8 +44,8 @@ export async function loadSlot(
   return {
     id: playbackId(sessionId, cue),
     plan,
-    songUrl: rec.url,
-    songDurationMs: rec.durationMs,
+    songUrl: rec,
+    songDurationMs: cue.pick.durationMs,
     voiceUrl: mic?.url ?? null,
     bedUrl: plan.bed ? "/bed.mp3" : null,
   };

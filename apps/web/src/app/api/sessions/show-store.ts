@@ -167,7 +167,7 @@ export async function lockShow(id: string) {
           storyId: h.storyId,
           revision: h.revision,
           title: h.title,
-          topic: h.topic,
+          topic: "topic" in h ? h.topic : h.title,
         })),
       );
     },
@@ -413,10 +413,15 @@ export async function keepTrack(pick: Tags, bytes: Uint8Array, mimeType: string)
   await insertTrack(pick, key, bytes.byteLength);
 }
 
-export async function openTrack(trackId: string) {
-  const { rows } = await pool().query<{ audio_key: string }>("select audio_key from track where id = $1", [
-    trackId,
-  ]);
-  const key = rows[0]?.audio_key;
-  return key ? bucket().open(key) : null;
+/** One lookup proves the slot's pick and finds its held media. Signing does no bucket I/O. */
+export async function trackPlayback(id: string, seq: number) {
+  const { rows } = await pool().query<{ audio_key: string; duration_ms: number }>(
+    `select t.audio_key, t.duration_ms from session_slot s
+     join track t on t.id = s.qobuz_id
+     where s.session_id = $1 and s.seq = $2
+       and exists (select 1 from jsonb_array_elements(s.hits) h where h->>'id' = s.qobuz_id)`,
+    [id, seq],
+  );
+  const track = rows[0];
+  return track ? bucket().playback(track.audio_key, track.duration_ms) : null;
 }

@@ -135,6 +135,16 @@ export function SessionView({ id }: { id: string }) {
   const deck = useDeck({ sessionId: id, onSlot });
   const cueSeq = deck.cue?.seq ?? null;
   const waiting = deck.ended;
+  const upcoming =
+    state.phase === "ready" && cueSeq !== null
+      ? state.session.slots.find((slot) => slot.seq === cueSeq + 1)
+      : undefined;
+  const preloading = deck.phase === "playing" || deck.phase === "paused";
+  const preload = deck.preload;
+  useEffect(() => {
+    // During a transition leave the prepared element available for the engine to adopt.
+    if (preloading) preload(upcoming?.held && isCue(upcoming) ? upcoming : null);
+  }, [preloading, upcoming, preload]);
 
   // The machine's one move: what the frontier asks for, once until an explicit retry.
   useEffect(() => {

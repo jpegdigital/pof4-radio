@@ -2,7 +2,7 @@ import { z } from "zod";
 import { env } from "@/lib/env";
 import type { Tags } from "../../../../doc";
 import { qobuz, QobuzError } from "../../../../qobuz";
-import { adoptTrack, keepTrack, openTrack, pickedOf, trackHeld } from "../../../../show-store";
+import { adoptTrack, keepTrack, pickedOf, trackHeld, trackPlayback } from "../../../../show-store";
 
 /**
  * POST /api/sessions/:id/slots/:seq/track — the slot's pick, held: the track is addressed through
@@ -15,8 +15,9 @@ import { adoptTrack, keepTrack, openTrack, pickedOf, trackHeld } from "../../../
  * the moment the pick is known while the slot rung is still voicing; two pulls of the same track
  * at once cost one duplicate download and land the same bytes under the same key. No body.
  *
- * GET — the track's bytes, streamed from the bucket. A key is written once, so the answer is
- * immutable and the browser caches it for good. Playback never touches Qobuz.
+ * GET ?playback=1 — an expiring URL for native, range-capable playback straight from storage.
+ * Without the query, redirect for direct links. Signed answers must never be cached.
+ * Playback never touches Qobuz.
  */
 
 type Route = RouteContext<"/api/sessions/[id]/slots/[seq]/track">;
@@ -75,14 +76,9 @@ export async function POST(_req: Request, ctx: Route) {
 export async function GET(_req: Request, ctx: Route) {
   const w = await where(ctx);
   if (!w.ok) return Response.json({ error: "no such track" }, { status: 404 });
-  const pick = await pickOf(w.id, w.seq);
-  if ("error" in pick) return Response.json({ error: "no such track" }, { status: 404 });
-  const obj = await openTrack(pick.id);
-  if (!obj) return Response.json({ error: "no such track" }, { status: 404 });
-  const headers: Record<string, string> = {
-    "Content-Type": "audio/mpeg",
-    "Cache-Control": "public, max-age=31536000, immutable",
-  };
-  if (obj.contentLength !== null) headers["Content-Length"] = String(obj.contentLength);
-  return new Response(obj.body, { headers });
+  const source = await trackPlayback(w.id, w.seq);
+  const headers = { "Cache-Control": "private, no-store" };
+  if (!source) return Response.json({ error: "no such track" }, { status: 404, headers });
+  if (new URL(_req.url).searchParams.get("playback") === "1") return Response.json(source, { headers });
+  return new Response(null, { status: 307, headers: { ...headers, Location: source.url } });
 }

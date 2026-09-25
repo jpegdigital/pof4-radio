@@ -11,6 +11,7 @@ import {
 export interface PreparedSlot {
   id: string;
   plan: Plan;
+  /** Media URL, or a stable playback endpoint interpreted by the engine's song resolver. */
   songUrl: string;
   voiceUrl: string | null;
   bedUrl: string | null;

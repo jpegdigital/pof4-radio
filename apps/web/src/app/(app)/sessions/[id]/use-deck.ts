@@ -20,6 +20,7 @@ export interface Deck {
   playbackId: string;
   unlock: () => void;
   load: (cue: Cue) => void;
+  preload: (cue: Cue | null) => void;
   toggle: () => void;
   play: () => void;
   pause: () => void;
@@ -70,6 +71,7 @@ export function useDeck({ sessionId, onSlot }: { sessionId: string; onSlot: (slo
       : null,
     unlock: deck.unlock,
     load: deck.load,
+    preload: deck.preload,
     toggle: deck.toggle,
     play: deck.play,
     pause: deck.pause,

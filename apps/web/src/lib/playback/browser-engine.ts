@@ -9,6 +9,7 @@ type AudioNavigator = Navigator & { audioSession?: { type: string } };
 interface Graph {
   ctx: AudioContext;
   song: HTMLAudioElement;
+  spare: HTMLAudioElement;
   voiceGain: GainNode;
   bedGain: GainNode;
   songGain: GainNode;
@@ -16,6 +17,7 @@ interface Graph {
 }
 interface Run {
   slot: PreparedSlot;
+  songUrl: string;
   signal: AbortSignal;
   emit: (event: EngineEvent) => void;
   phase: "preparing" | "running" | "paused" | "held";
@@ -38,8 +40,18 @@ export class BrowserAudioEngine implements AudioEngine {
   private graph: Graph | null = null;
   private run: Run | null = null;
   private buffers = new Map<string, Promise<AudioBuffer>>();
+  private upcoming: {
+    endpoint: string;
+    url: string;
+    media: HTMLAudioElement;
+    controller: AbortController;
+  } | null = null;
 
-  constructor(private createAudio: () => HTMLAudioElement = () => new Audio()) {}
+  constructor(
+    private createAudio: () => HTMLAudioElement = () => new Audio(),
+    private resolveSong: (url: string, durationMs: number, signal: AbortSignal) => Promise<string> = (url) =>
+      Promise.resolve(url),
+  ) {}
 
   private ensureGraph(): Graph {
     if (this.graph) return this.graph;
@@ -47,7 +59,11 @@ export class BrowserAudioEngine implements AudioEngine {
     if (session) session.type = "playback";
     const ctx = new AudioContext();
     const song = this.createAudio();
-    song.preload = "auto";
+    const spare = this.createAudio();
+    for (const media of [song, spare]) {
+      media.crossOrigin = "anonymous";
+      media.preload = "auto";
+    }
     const voiceGain = ctx.createGain();
     const bedGain = ctx.createGain();
     const songGain = ctx.createGain();
@@ -55,14 +71,20 @@ export class BrowserAudioEngine implements AudioEngine {
       node.gain.value = 0;
       node.connect(ctx.destination);
     }
-    ctx.createMediaElementSource(song).connect(songGain);
-    this.graph = { ctx, song, voiceGain, bedGain, songGain, primed: false };
+    for (const media of [song, spare]) ctx.createMediaElementSource(media).connect(songGain);
+    this.graph = { ctx, song, spare, voiceGain, bedGain, songGain, primed: false };
     ctx.onstatechange = () => {
       const r = this.run;
       if (!r) return;
       if (ctx.state === "running") this.recover(r);
       else if (r.phase === "running") this.hold(r);
     };
+    this.bindSong(song);
+    document.addEventListener("visibilitychange", this.visible);
+    return this.graph;
+  }
+
+  private bindSong(song: HTMLAudioElement) {
     song.onwaiting = () => {
       const r = this.run;
       if (r?.phase === "running" && r.songStarted && song.readyState < 3 && !song.seeking) this.hold(r);
@@ -82,17 +104,44 @@ export class BrowserAudioEngine implements AudioEngine {
         r.songStarted &&
         song.ended &&
         !song.seeking &&
-        song.getAttribute("src") === r.slot.songUrl
+        song.getAttribute("src") === r.songUrl
       )
         this.finish(r);
     };
     song.onerror = () => {
       const r = this.run;
-      if (r && song.error && song.getAttribute("src") === r.slot.songUrl)
+      if (r && r.phase !== "preparing" && song.error && song.getAttribute("src") === r.songUrl)
         r.emit({ type: "failed", error: new Error(song.error.message || "Song playback failed") });
     };
-    document.addEventListener("visibilitychange", this.visible);
-    return this.graph;
+  }
+
+  /** Buffer only the next held record, and reuse that actual element when it is cued. */
+  preload(endpoint: string | null, durationMs = 0) {
+    if (this.upcoming?.endpoint === endpoint) return;
+    this.clearUpcoming();
+    if (!endpoint) return;
+    const media = this.ensureGraph().spare;
+    const next = { endpoint, url: "", media, controller: new AbortController() };
+    this.upcoming = next;
+    void this.resolveSong(endpoint, durationMs, next.controller.signal)
+      .then((url) => {
+        if (this.upcoming !== next || next.controller.signal.aborted) return;
+        next.url = url;
+        media.src = url;
+        media.load();
+      })
+      .catch(() => {
+        if (this.upcoming === next) this.clearUpcoming(); // Playback itself can retry.
+      });
+  }
+
+  private clearUpcoming() {
+    const next = this.upcoming;
+    this.upcoming = null;
+    if (!next) return;
+    next.controller.abort();
+    next.media.removeAttribute("src");
+    next.media.load();
   }
 
   unlock() {
@@ -100,13 +149,16 @@ export class BrowserAudioEngine implements AudioEngine {
     void g.ctx.resume().catch(() => {});
     if (g.primed) return;
     g.primed = true;
-    g.song.src = SILENCE;
-    void g.song.play().then(
-      () => {
-        if (g.song.getAttribute("src") === SILENCE) g.song.pause();
-      },
-      () => {},
-    );
+    // Both persistent elements receive the user gesture, including the one used to preload.
+    for (const media of [g.song, g.spare]) {
+      media.src = SILENCE;
+      void media.play().then(
+        () => {
+          if (media.getAttribute("src") === SILENCE) media.pause();
+        },
+        () => {},
+      );
+    }
   }
 
   private decode(url: string): Promise<AudioBuffer> {
@@ -137,6 +189,7 @@ export class BrowserAudioEngine implements AudioEngine {
     const g = this.ensureGraph();
     const r: Run = {
       slot,
+      songUrl: "",
       signal,
       emit,
       phase: "preparing",
@@ -164,7 +217,7 @@ export class BrowserAudioEngine implements AudioEngine {
     [r.voice, r.bed] = await Promise.all([
       slot.voiceUrl && mix.voice.phase !== "ended" ? this.decode(slot.voiceUrl) : Promise.resolve(null),
       slot.bedUrl && mix.bed.phase !== "ended" ? this.decode(slot.bedUrl) : Promise.resolve(null),
-      prepareMedia(g.song, slot.songUrl, mix.song.offsetMs, signal),
+      this.prepareSong(r, mix.song.offsetMs),
     ]);
     if (!this.active(r)) return;
     if (!playing) {
@@ -186,6 +239,30 @@ export class BrowserAudioEngine implements AudioEngine {
 
   private active(r: Run) {
     return this.run === r && !r.signal.aborted;
+  }
+
+  private async prepareSong(r: Run, positionMs: number) {
+    const url = await this.resolveSong(r.slot.songUrl, r.slot.songDurationMs, r.signal);
+    r.signal.throwIfAborted();
+    if (!this.active(r)) return;
+    r.songUrl = url;
+    const g = this.ensureGraph();
+    const next = this.upcoming;
+    if (next?.endpoint === r.slot.songUrl) {
+      if (next.url === url && !next.media.error) {
+        this.upcoming = null;
+        next.controller.abort();
+        g.song.onwaiting = g.song.onpause = g.song.oncanplay = g.song.onended = g.song.onerror = null;
+        g.song.removeAttribute("src");
+        g.song.load();
+        g.spare = g.song;
+        g.song = next.media;
+        this.bindSong(g.song);
+      } else this.clearUpcoming();
+    }
+    await prepareMedia(g.song, url, positionMs, r.signal);
+    // The catalog is rounded to seconds. Use the media's actual duration for mix completion.
+    if (this.active(r) && Number.isFinite(g.song.duration)) r.slot.songDurationMs = g.song.duration * 1000;
   }
 
   readPosition(): number {
@@ -290,7 +367,7 @@ export class BrowserAudioEngine implements AudioEngine {
     this.clearSchedule(r);
     r.phase = "preparing";
     r.positionMs = at;
-    await prepareMedia(g.song, r.slot.songUrl, at - r.slot.plan.music.atMs, r.signal);
+    await this.prepareSong(r, at - r.slot.plan.music.atMs);
     if (!this.active(r)) return;
     await g.song.play();
     if (!this.active(r)) return;
@@ -392,6 +469,7 @@ export class BrowserAudioEngine implements AudioEngine {
   }
   dispose() {
     this.stop();
+    this.clearUpcoming();
     document.removeEventListener("visibilitychange", this.visible);
     const g = this.graph;
     this.graph = null;
@@ -401,6 +479,9 @@ export class BrowserAudioEngine implements AudioEngine {
     g.song.onwaiting = g.song.onpause = g.song.oncanplay = g.song.onended = g.song.onerror = null;
     g.song.removeAttribute("src");
     g.song.load();
+    g.spare.pause();
+    g.spare.removeAttribute("src");
+    g.spare.load();
     void g.ctx.close().catch(() => {});
   }
 }
