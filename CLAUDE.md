@@ -91,7 +91,7 @@ how the pieces talk; keep them current. `docs/slot-first.md` is why the show is 
 API with the listener's token (`QOBUZ_TOKEN`, their own from play.qobuz.com — a personal player, one
 account) and the app id + secret the player ships in its bundle (`QOBUZ_APP_ID` / `QOBUZ_SECRET`
 pinned; when the pair stops signing, the bundle is scraped and checked against a known track). Search
-finds each proposal's versions, streamable hits only, up to three. A track is pulled **once**, MP3
+finds each proposal's versions, streamable hits only. A track is pulled **once**, MP3
 320, into the bucket at `tracks/<qobuz id>.mp3` with a `track` row carrying Qobuz's own tags — bucket
 first, row second, so a row always means the bytes exist (and a `HEAD` rebuilds a missing row without
 a download) — and is shared by every session after. Playback streams from the bucket through the

@@ -27,7 +27,7 @@ const results = await Promise.allSettled(
       " by " +
       proposal.artist +
       ", original studio version, with a brief radio introduction when it suits the track.";
-    const hits = await q.search(proposal.artist + " " + proposal.title, 3);
+    const hits = await q.search(proposal.artist + " " + proposal.title);
     const selection = await producePick(
       { prompt, proposal: { ...proposal, why: "planning evaluation" }, hits },
       config,

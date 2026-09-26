@@ -390,7 +390,7 @@ export function qobuz(cfg: QobuzConfig) {
       };
     },
 
-    /** `catalog/search?type=tracks`, streamable hits only. */
+    /** `catalog/search?type=tracks`, streamable hits only; the default limit is how many versions of a proposal Jev chooses among. */
     async search(q: string, limit = 10): Promise<Track[]> {
       const r = await call<{ tracks: { items: RawTrack[] } }>(
         "catalog/search",

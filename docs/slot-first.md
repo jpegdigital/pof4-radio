@@ -92,7 +92,7 @@ the track, and the writer is told so.
 | Where the break falls | Slot 1, and every `breakEvery` slots after. A setting. |
 | How many songs a fill adds, and when the next fill fires | Settings: `fill` and `lowWater`. |
 | Does the proposer see what has played | Yes, played and pending titles both, so it never repeats. |
-| How many versions per song | Up to three streamable hits; the writer picks. |
+| How many versions per song | What Qobuz search returns, streamable only; Jev picks. |
 | Write and voice, one rung or two | One. `{ again: true }` re-voices only. |
 | Who fires the pull | The browser, on the slot response. |
 | Does the chart get cached | Not as a table. Prior slots are offered in the brief, read-only. |

@@ -12,8 +12,8 @@ if (!prompt || !artist || !title)
 const e = process.env;
 if (!e.QOBUZ_TOKEN || !e.TYPESAFE_API_KEY) throw new Error("QOBUZ_TOKEN and TYPESAFE_API_KEY required");
 const q = qobuz({ token: e.QOBUZ_TOKEN, appId: e.QOBUZ_APP_ID, secret: e.QOBUZ_SECRET });
-// Match the fill's three-hit search. This script deliberately has no Claude imports.
-const hits = await q.search(`${artist} ${title}`, 3);
+// The fill's search, same default limit. This script deliberately has no Claude imports.
+const hits = await q.search(`${artist} ${title}`);
 const receipt = await producePick(
   {
     prompt,

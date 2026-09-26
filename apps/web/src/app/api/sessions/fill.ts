@@ -15,15 +15,13 @@ export type { FillInput, Taken } from "../../../lib/prompts/fill.ts";
  * two tools, `search` (albums, tracks, artists, playlists by name) and `album` (a record's tracks
  * in order), so a record it has never heard of — released after its training, or just obscure —
  * is a lookup, not a guess (`catalogTools`). A proposal already in the show is dropped
- * (`dedupe`); Qobuz search finds up to HITS_PER_PROPOSAL streamable versions of each
+ * (`dedupe`); Qobuz search finds the streamable versions of each
  * (`searchQuery`); a proposal with at least one hit becomes a slot, in the proposer's order,
  * until `count` are made. Jev picks among the hits later, one slot at a time, before Claude writes.
  * Pure production: no database in here; the caller owns the rows. Nothing made throws
  * FillError with the receipts.
  */
 
-/** How many recordings of a song Jev gets to choose from. */
-export const HITS_PER_PROPOSAL = 3;
 /** The proposer names this many more than the fill wants: a dropped proposal costs nothing now. */
 export const PROPOSE_OVER = 2;
 /** How many lookups the proposer may make before it must answer; each is one more model call. */
@@ -137,9 +135,7 @@ export async function produceFill(
   const { kept, dropped } = dedupe(list(proposed), [...input.played, ...input.pending]);
 
   // 2. SEARCH — dumb, in parallel; a failed search is an empty hand, logged.
-  const settled = await Promise.allSettled(
-    kept.map((p) => q.search(searchQuery(p.artist, p.title), HITS_PER_PROPOSAL)),
-  );
+  const settled = await Promise.allSettled(kept.map((p) => q.search(searchQuery(p.artist, p.title))));
   const slots: NewSlot[] = [];
   settled.forEach((s, i) => {
     const p = kept[i];

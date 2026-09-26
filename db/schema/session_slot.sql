@@ -17,7 +17,7 @@ create table session_slot (
   title           text not null,                       -- the song as the proposer named it
   artist          text not null,
   why             text not null,                       -- the proposer's line
-  hits            jsonb not null,                      -- Hit[] — the streamable versions Qobuz found, up to 3
+  hits            jsonb not null,                      -- Hit[] — the streamable versions Qobuz found
 
   -- Jev picks/charts/plans; Claude writes prose. One update lands all receipts.
   generation      jsonb,                               -- immutable prepared inputs, Jev choices, exact Claude request/response

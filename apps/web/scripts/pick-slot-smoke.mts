@@ -30,7 +30,7 @@ try {
   const voices = z.array(z.object({ id: z.string() })).parse(JSON.parse(rows[0]?.value ?? "[]"));
   assert(voices[0], "Need a configured voice");
   const q = qobuz({ token: e.QOBUZ_TOKEN, appId: e.QOBUZ_APP_ID, secret: e.QOBUZ_SECRET });
-  const hits = await q.search("Fleetwood Mac Dreams", 3);
+  const hits = await q.search("Fleetwood Mac Dreams");
   assert(hits.length, "Need real Qobuz recordings");
   const { sessionId } = z.object({ sessionId: z.uuid() }).parse(
     await post("/api/sessions", {

@@ -1,6 +1,6 @@
 # Jev recording selection
 
-Claude proposes tracks and their order; Qobuz finds up to three streamable recordings
+Claude proposes tracks and their order; Qobuz finds the streamable recordings
 for each proposal. Before writing a slot, Jev selects one supplied recording. Claude
 gets that fixed recording plus Jev's chart and mixer plan, and writes only the spoken
 copy. See [Jev planning](jev-planning.md). Its schema has no recording ID or mixer decisions. There are no modes, alternate pickers, confidence gates, or automatic
