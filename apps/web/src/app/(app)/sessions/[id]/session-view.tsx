@@ -434,24 +434,26 @@ export function SessionView({ id }: { id: string }) {
         <Link href="/" className={"station-wordmark " + focusRing}>
           <LogoMark /> Claude<span>Radio</span>
         </Link>
-        <Link href="/settings" aria-label="Control room" className={"station-icon " + focusRing}>
-          <Settings2 className="size-5" aria-hidden="true" />
-        </Link>
+        <div className="station-actions">
+          <button
+            type="button"
+            aria-label="Listening view"
+            title={listening ? "Show program" : "Listening view"}
+            className={`station-icon listening-toggle ${focusRing}`}
+            aria-pressed={listening}
+            onClick={() => setListening((value) => !value)}
+          >
+            {listening ? (
+              <ListMusic className="size-5" aria-hidden="true" />
+            ) : (
+              <Maximize2 className="size-5" aria-hidden="true" />
+            )}
+          </button>
+          <Link href="/settings" aria-label="Control room" className={"station-icon " + focusRing}>
+            <Settings2 className="size-5" aria-hidden="true" />
+          </Link>
+        </div>
       </header>
-      <div className="listening-toolbar">
-        <span className="station-eyebrow">
-          Your own frequency <span aria-hidden="true"> / </span> A show that keeps unfolding
-        </span>
-        <button
-          type="button"
-          className={`listening-toggle ${focusRing}`}
-          aria-pressed={listening}
-          onClick={() => setListening((value) => !value)}
-        >
-          {listening ? <ListMusic aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
-          {listening ? "Show program" : "Listening view"}
-        </button>
-      </div>
       <div className="session-content">
         <div className="min-w-0">
           {state.phase === "error" && (
