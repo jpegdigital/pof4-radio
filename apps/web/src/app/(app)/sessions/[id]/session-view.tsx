@@ -1,7 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Headphones, ListMusic, MessageSquareText, Radio, Settings2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Headphones,
+  ListMusic,
+  MessageSquareText,
+  Radio,
+  Settings2,
+  Pause,
+  Play,
+  Maximize2,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LogoMark } from "../../lib/logo-mark";
 import { focusRing, Label } from "../../lib/ui";
@@ -15,6 +25,7 @@ import { Rundown } from "./rundown";
 import { onMic, prevTarget, RESTART_AFTER_MS } from "./transport";
 import { type Cue, clockMsNow, cueKey, isCue, type SessionDoc, type Slot } from "./types";
 import { trackUrlOf, useDeck } from "./use-deck";
+import { navigateRemote } from "@/components/remote-navigation";
 
 /**
  * A session's home, on one page: the desk (the lamp, the request), the player, the show. The
@@ -52,6 +63,30 @@ const NO_SLOTS: Slot[] = [];
 type SlotAnswer = (Slot & { error?: undefined }) | { error?: string; slot?: Slot } | null;
 
 export function SessionView({ id }: { id: string }) {
+  const screen = useRef<HTMLElement>(null);
+  const playerRegion = useRef<HTMLElement>(null);
+  const [listening, setListening] = useState(false);
+  const [playerVisible, setPlayerVisible] = useState(true);
+  useEffect(() => {
+    const region = playerRegion.current;
+    if (!region) return;
+    const observer = new IntersectionObserver(([entry]) => setPlayerVisible(entry.isIntersecting));
+    observer.observe(region);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if ((event.key === "Escape" || event.key === "BrowserBack" || event.keyCode === 10009) && listening) {
+        event.preventDefault();
+        setListening(false);
+        screen.current?.querySelector<HTMLButtonElement>(".listening-toggle")?.focus();
+      } else if (screen.current && window.matchMedia("(min-width: 1000px)").matches) {
+        navigateRemote(event, screen.current);
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [listening]);
   const [state, setState] = useState<State>({ phase: "loading" });
   const attempted = useRef(new Set<string>());
   const [pullErrors, setPullErrors] = useState<Record<number, string>>({});
@@ -391,7 +426,7 @@ export function SessionView({ id }: { id: string }) {
   })();
 
   return (
-    <main className="station-shell session-screen">
+    <main ref={screen} className={`station-shell session-screen ${listening ? "is-listening" : ""}`}>
       <header className="station-header">
         <Link href="/" aria-label="All shows" className={"station-icon " + focusRing}>
           <ArrowLeft className="size-5" aria-hidden="true" />
@@ -403,6 +438,20 @@ export function SessionView({ id }: { id: string }) {
           <Settings2 className="size-5" aria-hidden="true" />
         </Link>
       </header>
+      <div className="listening-toolbar">
+        <span className="station-eyebrow">
+          Your own frequency <span aria-hidden="true"> / </span> A show that keeps unfolding
+        </span>
+        <button
+          type="button"
+          className={`listening-toggle ${focusRing}`}
+          aria-pressed={listening}
+          onClick={() => setListening((value) => !value)}
+        >
+          {listening ? <ListMusic aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+          {listening ? "Show program" : "Listening view"}
+        </button>
+      </div>
       <div className="session-content">
         <div className="min-w-0">
           {state.phase === "error" && (
@@ -446,7 +495,7 @@ export function SessionView({ id }: { id: string }) {
           )}
 
           {/* the player: mounted from the first written slot on, never unmounts */}
-          <section id="player" aria-label="Player" className="listening-player">
+          <section ref={playerRegion} id="player" aria-label="Player" className="listening-player">
             <div className="mb-4 flex items-center justify-between gap-3">
               <span className="font-display text-xs uppercase tracking-[0.2em] text-zinc-400">
                 {running ? "Now playing" : "Your station"}
@@ -554,6 +603,30 @@ export function SessionView({ id }: { id: string }) {
           )}
         </aside>
       </div>
+      {cue && !playerVisible && (
+        <div className="mini-player">
+          <a href="#player" className={focusRing} aria-label={`Open player: ${cue.pick.title}`}>
+            <Headphones aria-hidden="true" />
+            <span>
+              <strong>{cue.pick.title}</strong>
+              <small>{talking ? "Your DJ is on the mic" : cue.pick.artists.join(", ")}</small>
+            </span>
+          </a>
+          <button
+            type="button"
+            onClick={toggle}
+            disabled={!prep.ready || phase === "loading"}
+            aria-label={deck.intent === "play" && phase !== "idle" ? "Pause" : "Play"}
+            className={focusRing}
+          >
+            {deck.intent === "play" && phase !== "idle" ? (
+              <Pause aria-hidden="true" />
+            ) : (
+              <Play aria-hidden="true" />
+            )}
+          </button>
+        </div>
+      )}
       <nav className="session-nav" aria-label="In this show">
         <a href="#player" className={focusRing}>
           <Headphones aria-hidden="true" />

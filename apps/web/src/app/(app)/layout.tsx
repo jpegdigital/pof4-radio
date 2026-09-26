@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** The listening app stays phone-sized, including on a desktop. */
+/** A compact home desk and a listening surface that expands with the screen. */
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="radio-world">

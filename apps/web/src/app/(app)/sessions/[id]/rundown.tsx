@@ -164,6 +164,9 @@ function Row({
               className={`mt-1 block text-[11px] ${error ? "text-amber-300" : tone === "on" ? "text-lamp" : "text-zinc-500"}`}
             >
               {marker}
+              {cue.words && (
+                <span className="ml-2 text-zinc-400">· DJ {cue.kind === "break" ? "break" : "intro"}</span>
+              )}
             </span>
           </span>
           <span className="font-mono text-xs tabular-nums opacity-50">{clock(pick.durationMs)}</span>

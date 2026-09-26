@@ -70,15 +70,15 @@ export function Player({
   const { pick } = cue;
   const making = phase === "loading" || !preparation.ready;
   const running = phase === "playing" || phase === "paused" || phase === "held" || phase === "seeking";
-  const talking = plan !== null && running && onMic(plan, headMs);
+  const talking = plan !== null && phase === "playing" && onMic(plan, headMs);
   const paused = intent === "pause" || phase === "idle" || phase === "error";
   const scrub = { cueId: playbackId, operationId, seeking: phase === "seeking" };
   const rec = track ?? { positionMs: 0, durationMs: pick.durationMs, playing: false };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="player-body">
       {making && startup}
-      <div className="flex flex-col items-center gap-4 text-center">
+      <div className="player-stage">
         <div className="player-art">
           {pick.image ? (
             // eslint-disable-next-line @next/next/no-img-element -- album art is a remote Qobuz CDN url
@@ -98,44 +98,77 @@ export function Player({
             </span>
           )}
         </div>
-        <div className="w-full min-w-0">
+        <div className="player-information">
+          <p className="station-eyebrow player-kicker">
+            {phase === "playing" ? "On the turntable" : "On your turntable"}
+          </p>
           <h1 className="player-title">{pick.title}</h1>
-          <p className="mt-1.5 text-sm text-zinc-300">{pick.artists.join(", ")}</p>
+          <p className="player-artist mt-1.5 text-sm text-zinc-300">{pick.artists.join(", ")}</p>
           <p className="player-album mt-1">{pick.album}</p>
+          <section className="dj-presence" aria-label="Your DJ" data-speaking={talking}>
+            <div className="dj-heading">
+              <Mic aria-hidden="true" />
+              <span>Your DJ</span>
+              <span className="dj-state">
+                {talking ? "On the mic" : phase === "paused" ? "Paused" : "Behind the mix"}
+              </span>
+            </div>
+            <p className="dj-excerpt">
+              {cue.words || cue.leadLine || cue.why || "Let the music take it from here."}
+            </p>
+            {(cue.words || cue.leadLine) && (
+              <details className="dj-transcript">
+                <summary className={focusRing}>Read the DJ script</summary>
+                <div className="whitespace-pre-line">
+                  {cue.legalId && <p>{cue.legalId}</p>}
+                  {cue.words && <p>{cue.words}</p>}
+                  {cue.leadLine && <p>{cue.leadLine}</p>}
+                </div>
+              </details>
+            )}
+          </section>
         </div>
       </div>
 
-      {(!startup || !making) &&
-        (making ? (
-          phase === "loading" || preparation.busy ? (
-            <Loading label={phase === "loading" ? "Loading audio…" : preparation.label} />
+      <div className="player-controls">
+        {(!startup || !making) &&
+          (making ? (
+            phase === "loading" || preparation.busy ? (
+              <Loading label={phase === "loading" ? "Loading audio…" : preparation.label} />
+            ) : (
+              <p className="text-center text-sm text-amber-200">{preparation.label}</p>
+            )
           ) : (
-            <p className="text-center text-sm text-amber-200">{preparation.label}</p>
-          )
-        ) : (
-          <Progress clock={rec} scrub={scrub} onSeek={track && running ? onSeekTrack : null} />
-        ))}
+            <Progress clock={rec} scrub={scrub} onSeek={track && running ? onSeekTrack : null} />
+          ))}
 
-      <div className="player-transport">
-        <button type="button" onClick={onPrev} disabled={!canPrev} aria-label="Previous" className={iconBtn}>
-          <SkipBack className="size-6" fill="currentColor" strokeWidth={0} />
-        </button>
-        <button
-          type="button"
-          onClick={onToggle}
-          disabled={making}
-          aria-label={phase === "idle" ? "Play show" : paused ? "Play" : "Pause"}
-          className={`player-play flex items-center justify-center gap-2 rounded-full px-5 text-zinc-950 transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 ${focusRing}`}
-        >
-          {paused ? (
-            <Play className="ml-0.5 size-6" fill="currentColor" strokeWidth={0} />
-          ) : (
-            <Pause className="size-6" fill="currentColor" strokeWidth={0} />
-          )}
-        </button>
-        <button type="button" onClick={onNext} disabled={!canNext} aria-label="Next" className={iconBtn}>
-          <SkipForward className="size-6" fill="currentColor" strokeWidth={0} />
-        </button>
+        <div className="player-transport">
+          <button
+            type="button"
+            onClick={onPrev}
+            disabled={!canPrev}
+            aria-label="Previous"
+            className={iconBtn}
+          >
+            <SkipBack className="size-6" fill="currentColor" strokeWidth={0} />
+          </button>
+          <button
+            type="button"
+            onClick={onToggle}
+            disabled={making}
+            aria-label={phase === "idle" ? "Play show" : paused ? "Play" : "Pause"}
+            className={`player-play flex items-center justify-center gap-2 rounded-full px-5 text-zinc-950 transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 ${focusRing}`}
+          >
+            {paused ? (
+              <Play className="ml-0.5 size-6" fill="currentColor" strokeWidth={0} />
+            ) : (
+              <Pause className="size-6" fill="currentColor" strokeWidth={0} />
+            )}
+          </button>
+          <button type="button" onClick={onNext} disabled={!canNext} aria-label="Next" className={iconBtn}>
+            <SkipForward className="size-6" fill="currentColor" strokeWidth={0} />
+          </button>
+        </div>
       </div>
       <section className="mixer-panel" aria-label="Live mixer">
         <div className="mixer-heading">
@@ -164,7 +197,7 @@ export function Player({
         )}
         <p className="mixer-caption">
           {plan
-            ? "Voice, bed & music · Drag the timeline to hear the mix."
+            ? "Voice, bed & music · Drag or use ← → to explore the mix."
             : "Your voice, bed & music timeline appears when you press play."}
         </p>
       </section>
