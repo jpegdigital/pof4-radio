@@ -19,6 +19,7 @@ export interface Deck {
   intent: "play" | "pause";
   playbackId: string;
   unlock: () => void;
+  analyser: () => AnalyserNode | null;
   load: (cue: Cue) => void;
   preload: (cue: Cue | null) => void;
   toggle: () => void;
@@ -70,6 +71,7 @@ export function useDeck({ sessionId, onSlot }: { sessionId: string; onSlot: (slo
         }
       : null,
     unlock: deck.unlock,
+    analyser: deck.analyser,
     load: deck.load,
     preload: deck.preload,
     toggle: deck.toggle,

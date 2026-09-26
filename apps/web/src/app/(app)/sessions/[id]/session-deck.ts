@@ -60,6 +60,8 @@ export class SessionDeck {
     );
   };
   unlock = () => this.player?.unlock();
+  /** The mix to watch, once the graph exists (after the first unlock). */
+  analyser = () => this.engine?.analyser() ?? null;
   preload = (cue: Cue | null) => {
     this.engine?.preload(
       cue ? `/api/sessions/${this.sessionId}/slots/${cue.seq}/track?playback=1` : null,

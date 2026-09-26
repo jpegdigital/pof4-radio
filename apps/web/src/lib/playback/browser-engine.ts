@@ -14,6 +14,8 @@ interface Graph {
   bedGain: GainNode;
   songGain: GainNode;
   primed: boolean;
+  /** A listening tap on the three lanes, made only when a view asks for one; never in the output path. */
+  analyser: AnalyserNode | null;
 }
 interface Run {
   slot: PreparedSlot;
@@ -72,7 +74,7 @@ export class BrowserAudioEngine implements AudioEngine {
       node.connect(ctx.destination);
     }
     for (const media of [song, spare]) ctx.createMediaElementSource(media).connect(songGain);
-    this.graph = { ctx, song, spare, voiceGain, bedGain, songGain, primed: false };
+    this.graph = { ctx, song, spare, voiceGain, bedGain, songGain, primed: false, analyser: null };
     ctx.onstatechange = () => {
       const r = this.run;
       if (!r) return;
@@ -142,6 +144,19 @@ export class BrowserAudioEngine implements AudioEngine {
     next.controller.abort();
     next.media.removeAttribute("src");
     next.media.load();
+  }
+
+  /** The mix as it sounds, for a view to watch: a fan-out from the lanes, so output is unchanged. */
+  analyser(): AnalyserNode | null {
+    const g = this.graph;
+    if (!g) return null;
+    if (!g.analyser) {
+      g.analyser = g.ctx.createAnalyser();
+      g.analyser.fftSize = 1024;
+      g.analyser.smoothingTimeConstant = 0.6;
+      for (const node of [g.voiceGain, g.bedGain, g.songGain]) node.connect(g.analyser);
+    }
+    return g.analyser;
   }
 
   unlock() {

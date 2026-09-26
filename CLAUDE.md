@@ -73,6 +73,11 @@ Three places, each owning what it alone needs:
   page (`sessions/[id]/`: `session-view` (the loop), `loop` (pure: `nextMove`), `player`, `rundown`,
   `use-deck`, `plan`, `transport`, `types`), and `lib/` for what those share (`voice-cache` — clips
   and tracks fetched once as blobs, `voice-store`, `dj-picker`, `ui`).
+- **`apps/web/src/app/(booth)/`** — the booth (`/booth/:id`), the same show played as a full-screen
+  pixel-art DJ set: `use-show` (the session page's machine, a second copy by the WET rule — a
+  third view extracts it), `scene` (one low-res canvas: skyline, lasers, the duo, the decks, the
+  crowd, driven by the engine's `analyser()` tap), `rhythm` (pure: beats, tempo, sprite frames,
+  world size), `booth-view` (the HUD). Sprites are PixelLab output in `public/booth/`.
 - **`apps/web/src/app/(settings)/`** — the control room, desktop-wide: the identity, the clock and the
   voice roster and news desk, every row in the `settings` table. `/api/tts/preview` is its "hear it";
   `/settings?news=1` previews collected headlines through the shared Jev selector at `/api/news/preview` without writing or TTS.

@@ -1,0 +1,680 @@
+/*
+  The booth: a full-screen scene with a thin HUD over it. Two faces (layout.tsx): the arcade
+  marquee for labels, the terminal for what is read. Two neons from the scene — magenta and
+  cyan — and the gold of the DJ's helmet for the one thing that is live: the open mic.
+*/
+.booth {
+  --booth-magenta: #ff2bd6;
+  --booth-cyan: #3cf0ff;
+  --booth-gold: #ffc53d;
+  --booth-ink: #f6ecff;
+  --booth-dim: #a58fc9;
+  --booth-panel: rgb(10 2 26 / 0.72);
+  --booth-edge: rgb(255 255 255 / 0.12);
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #0a0120;
+  color: var(--booth-ink);
+  font-family: var(--font-terminal), ui-monospace, monospace;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.booth.is-resting {
+  cursor: none;
+}
+
+.booth-scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 100%;
+  image-rendering: pixelated;
+}
+
+/* The glass of an old monitor: scanlines, a vignette, a faint roll. */
+.booth-crt {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.16) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at 50% 45%, transparent 55%, rgb(4 0 12 / 0.7) 100%);
+  mix-blend-mode: multiply;
+}
+.booth-crt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent, rgb(255 255 255 / 0.035) 50%, transparent);
+  height: 30%;
+  animation: booth-roll 9s linear infinite;
+}
+@keyframes booth-roll {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(400%);
+  }
+}
+
+/* The HUD rests with the pointer; the ticker and the lamp never do. */
+.booth-top,
+.booth-panel,
+.booth-title,
+.booth-alert {
+  transition:
+    opacity 700ms ease,
+    transform 700ms ease;
+}
+.booth.is-resting .booth-top {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+.booth.is-resting .booth-panel {
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+}
+.booth.is-resting .booth-top :is(a, button) {
+  pointer-events: none;
+}
+
+.booth button,
+.booth a {
+  cursor: pointer;
+  color: inherit;
+  outline: none;
+}
+.booth :is(button, a):focus-visible {
+  box-shadow:
+    0 0 0 2px #0a0120,
+    0 0 0 4px var(--booth-cyan);
+}
+
+/* ——— top bar ——— */
+.booth-top {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0
+    max(16px, env(safe-area-inset-left));
+}
+.booth-brand,
+.booth-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.booth-chip {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  background: var(--booth-panel);
+  border: 2px solid var(--booth-edge);
+  backdrop-filter: blur(6px);
+  transition:
+    border-color 150ms,
+    color 150ms;
+}
+.booth-chip:hover {
+  border-color: var(--booth-cyan);
+  color: var(--booth-cyan);
+}
+.booth-chip svg {
+  width: 18px;
+  height: 18px;
+}
+.booth-logo {
+  position: relative;
+  font-family: var(--font-arcade), monospace;
+  font-size: clamp(12px, 1.6vw, 20px);
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  background: linear-gradient(180deg, #ffffff 0%, #d9e6ff 38%, #6b5a9e 50%, #ffd6f5 62%, #ffffff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 6px rgb(255 43 214 / 0.8)) drop-shadow(0 2px 0 #3a0a4f);
+}
+.booth-kicker {
+  margin-top: 6px;
+  font-family: var(--font-arcade), monospace;
+  font-size: 8px;
+  letter-spacing: 0.3em;
+  color: var(--booth-cyan);
+  text-shadow: 0 0 8px rgb(60 240 255 / 0.8);
+}
+.booth-onair {
+  white-space: nowrap;
+  padding: 8px 10px 7px;
+  font-family: var(--font-arcade), monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: #5b2a3a;
+  background: #1a0610;
+  border: 2px solid #3d1422;
+  transition: all 200ms;
+}
+.booth-onair.on {
+  color: #fff4e0;
+  background: #d8182f;
+  border-color: #ff8a8a;
+  text-shadow: 0 0 6px #fff;
+  box-shadow:
+    0 0 18px rgb(255 30 60 / 0.9),
+    0 0 48px rgb(255 30 60 / 0.5);
+  animation: booth-flicker 3s infinite;
+}
+@keyframes booth-flicker {
+  0%,
+  92%,
+  100% {
+    opacity: 1;
+  }
+  93% {
+    opacity: 0.7;
+  }
+  95% {
+    opacity: 1;
+  }
+  96% {
+    opacity: 0.8;
+  }
+}
+.booth-clock {
+  font-size: 26px;
+  line-height: 1;
+  color: var(--booth-cyan);
+  text-shadow: 0 0 10px rgb(60 240 255 / 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ——— the title card: before the first record ——— */
+.booth-title {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  width: min(92vw, 720px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  text-align: center;
+}
+.booth-request {
+  max-width: 60ch;
+  font-size: clamp(20px, 2.4vw, 28px);
+  line-height: 1.15;
+  color: var(--booth-ink);
+  text-shadow:
+    0 0 12px rgb(255 43 214 / 0.8),
+    0 2px 0 #000;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.booth-start {
+  padding: 18px 28px 16px;
+  font-family: var(--font-arcade), monospace;
+  font-size: clamp(14px, 2vw, 22px);
+  letter-spacing: 0.12em;
+  color: #0a0120;
+  background: linear-gradient(180deg, #fff6c9, var(--booth-gold) 55%, #d07a12);
+  border: none;
+  box-shadow:
+    0 0 0 3px #0a0120,
+    0 0 0 6px var(--booth-gold),
+    0 6px 0 6px #7a3f06,
+    0 0 50px rgb(255 197 61 / 0.6);
+  animation: booth-blink 1.1s steps(1) infinite;
+  transition: transform 90ms;
+}
+.booth-start:hover {
+  animation: none;
+}
+.booth-start:active {
+  transform: translateY(4px);
+}
+.booth-start:disabled {
+  animation: none;
+  opacity: 0.7;
+}
+@keyframes booth-blink {
+  50% {
+    filter: brightness(0.55);
+  }
+}
+.booth-warmup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-arcade), monospace;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--booth-cyan);
+  text-shadow: 0 0 8px rgb(60 240 255 / 0.8);
+}
+.booth-warmup small {
+  font-family: var(--font-terminal), monospace;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  color: var(--booth-dim);
+  text-shadow: none;
+}
+.booth-loader {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border: 2px solid var(--booth-edge);
+  background: var(--booth-panel);
+}
+.booth-loader i {
+  width: 10px;
+  height: 14px;
+  background: #2a1450;
+}
+.booth-loader.busy i {
+  animation: booth-chase 1.12s steps(1) infinite;
+}
+@keyframes booth-chase {
+  0% {
+    background: var(--booth-magenta);
+    box-shadow: 0 0 8px var(--booth-magenta);
+  }
+  12% {
+    background: #7a1f6b;
+    box-shadow: none;
+  }
+  25% {
+    background: #2a1450;
+  }
+}
+
+/* ——— the alert: a dialog box from an old game ——— */
+.booth-alert {
+  position: absolute;
+  left: 50%;
+  top: max(84px, calc(env(safe-area-inset-top) + 72px));
+  transform: translateX(-50%);
+  width: min(92vw, 560px);
+  padding: 14px 16px;
+  font-size: 20px;
+  line-height: 1.15;
+  background: rgb(26 4 20 / 0.92);
+  border: 3px solid var(--booth-magenta);
+  box-shadow:
+    0 0 0 3px #0a0120,
+    0 0 30px rgb(255 43 214 / 0.4);
+  z-index: 2;
+}
+.booth-alert-title {
+  margin-bottom: 8px;
+  font-family: var(--font-arcade), monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--booth-magenta);
+}
+.booth-alert button {
+  margin-top: 10px;
+  margin-right: 8px;
+  padding: 9px 12px 8px;
+  font-family: var(--font-arcade), monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: #0a0120;
+  background: var(--booth-cyan);
+  border: none;
+}
+.booth-alert button:disabled {
+  opacity: 0.5;
+}
+
+/* ——— the deck: the record now, the transport, the ticker ——— */
+.booth-deck {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 max(12px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+.booth-deck > * {
+  pointer-events: auto;
+}
+
+.booth-ticker {
+  display: flex;
+  align-items: stretch;
+  width: min(100%, 860px);
+  background: rgb(8 12 6 / 0.9);
+  border: 2px solid #3a2a08;
+  box-shadow:
+    0 0 24px rgb(255 197 61 / 0.25),
+    inset 0 0 18px rgb(0 0 0 / 0.8);
+  animation: booth-in 400ms steps(4) both;
+}
+@keyframes booth-in {
+  from {
+    clip-path: inset(0 50% 0 50%);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.booth-ticker-tag {
+  display: grid;
+  place-items: center;
+  padding: 0 10px;
+  font-family: var(--font-arcade), monospace;
+  font-size: 10px;
+  color: #0a0120;
+  background: var(--booth-gold);
+}
+.booth-ticker-window {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  height: 38px;
+  mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+}
+.booth-ticker-window p {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  white-space: nowrap;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--booth-gold);
+  text-shadow:
+    0 0 8px rgb(255 197 61 / 0.85),
+    0 0 1px #fff;
+  animation-name: booth-crawl;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes booth-crawl {
+  from {
+    transform: translate(100cqw, -50%);
+  }
+  to {
+    transform: translate(-100%, -50%);
+  }
+}
+.booth-ticker-window {
+  container-type: inline-size;
+}
+
+.booth-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  width: min(100%, 860px);
+  padding: 12px 14px;
+  background: var(--booth-panel);
+  border: 2px solid var(--booth-edge);
+  backdrop-filter: blur(10px) saturate(1.3);
+  box-shadow:
+    0 0 0 2px rgb(10 1 32 / 0.8),
+    0 20px 60px rgb(0 0 0 / 0.5);
+  position: relative;
+}
+/* A neon edge across the top that glows while the record plays. */
+.booth-panel::before {
+  content: "";
+  position: absolute;
+  inset: -2px -2px auto;
+  height: 2px;
+  background: linear-gradient(90deg, var(--booth-magenta), var(--booth-cyan));
+  box-shadow: 0 0 14px var(--booth-magenta);
+}
+.booth-cover {
+  width: 84px;
+  height: 84px;
+  image-rendering: pixelated;
+  border: 2px solid rgb(255 255 255 / 0.2);
+  box-shadow: 0 0 20px rgb(255 43 214 / 0.35);
+}
+.booth-meta {
+  min-width: 0;
+}
+.booth-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-arcade), monospace;
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: var(--booth-cyan);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.booth-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: #3b2a55;
+}
+.booth-dot.on {
+  background: var(--booth-magenta);
+  box-shadow: 0 0 8px var(--booth-magenta);
+  animation: booth-blink 1s steps(1) infinite;
+}
+.booth.is-talking .booth-dot.on {
+  background: var(--booth-gold);
+  box-shadow: 0 0 8px var(--booth-gold);
+}
+.booth-track {
+  margin-top: 6px;
+  font-size: clamp(26px, 3vw, 36px);
+  font-weight: 400;
+  line-height: 0.95;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 14px rgb(255 43 214 / 0.55);
+}
+.booth-artist {
+  font-size: 22px;
+  line-height: 1.05;
+  color: var(--booth-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.booth-progress {
+  display: grid;
+  grid-template-columns: repeat(40, 1fr);
+  gap: 2px;
+  margin-top: 8px;
+}
+.booth-progress i {
+  height: 6px;
+  background: #251245;
+}
+.booth-progress i.on {
+  background: linear-gradient(180deg, #ffffff, var(--booth-cyan));
+  box-shadow: 0 0 6px rgb(60 240 255 / 0.8);
+}
+.booth-progress i.on:nth-child(n + 28) {
+  background: linear-gradient(180deg, #ffffff, var(--booth-magenta));
+  box-shadow: 0 0 6px rgb(255 43 214 / 0.8);
+}
+.booth-times {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--booth-dim);
+  font-variant-numeric: tabular-nums;
+}
+.booth-next {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgb(165 143 201 / 0.8);
+}
+
+.booth-transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.booth-transport button {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  background: #1a0b33;
+  border: 2px solid rgb(255 255 255 / 0.14);
+  box-shadow: 0 4px 0 #07010f;
+  transition:
+    transform 80ms,
+    box-shadow 80ms,
+    color 150ms,
+    border-color 150ms;
+}
+.booth-transport button svg {
+  width: 20px;
+  height: 20px;
+}
+.booth-transport button:hover:not(:disabled) {
+  color: var(--booth-cyan);
+  border-color: var(--booth-cyan);
+}
+.booth-transport button:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 #07010f;
+}
+.booth-transport button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.booth-transport .booth-play {
+  width: 60px;
+  height: 60px;
+  color: #0a0120;
+  background: linear-gradient(180deg, #ffffff, var(--booth-cyan));
+  border-color: #b8fbff;
+  box-shadow:
+    0 5px 0 #0a6a78,
+    0 0 26px rgb(60 240 255 / 0.55);
+}
+.booth-transport .booth-play:hover:not(:disabled) {
+  color: #0a0120;
+}
+.booth-transport .booth-play:active:not(:disabled) {
+  box-shadow:
+    0 0 0 #0a6a78,
+    0 0 26px rgb(60 240 255 / 0.55);
+}
+.booth-transport .booth-play svg {
+  width: 26px;
+  height: 26px;
+}
+
+/* A phone: the panel stacks, the transport gets the whole row. */
+@media (max-width: 640px) and (min-height: 521px) {
+  .booth-kicker,
+  .booth-clock {
+    display: none;
+  }
+  .booth-panel {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
+  }
+  .booth-cover {
+    width: 64px;
+    height: 64px;
+  }
+  .booth-transport {
+    grid-column: 1 / -1;
+    justify-content: center;
+    gap: 18px;
+  }
+  .booth-next {
+    display: none;
+  }
+  .booth-logo {
+    font-size: 11px;
+  }
+  .booth-onair {
+    padding: 6px 7px 5px;
+    font-size: 8px;
+  }
+  .booth-title {
+    top: 30%;
+  }
+}
+
+/* A short screen (a phone on its side, a small window): the stage needs the height. */
+@media (max-height: 520px) {
+  .booth-title {
+    top: 46%;
+    gap: 12px;
+  }
+  .booth-request {
+    display: none;
+  }
+  .booth-panel {
+    padding: 8px 10px;
+    gap: 12px;
+  }
+  .booth-cover {
+    width: 52px;
+    height: 52px;
+  }
+  .booth-track {
+    font-size: 24px;
+  }
+  .booth-artist {
+    font-size: 18px;
+  }
+  .booth-progress {
+    margin-top: 4px;
+  }
+  .booth-transport {
+    grid-column: auto;
+  }
+  .booth-transport button {
+    width: 38px;
+    height: 38px;
+  }
+  .booth-transport .booth-play {
+    width: 46px;
+    height: 46px;
+  }
+  .booth-ticker-window {
+    height: 30px;
+  }
+  .booth-ticker-window p {
+    font-size: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .booth-crt::after,
+  .booth-start,
+  .booth-onair.on,
+  .booth-dot.on {
+    animation: none;
+  }
+}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   ArrowLeft,
+  Disc3,
   Headphones,
   ListMusic,
   MessageSquareText,
@@ -449,6 +450,14 @@ export function SessionView({ id }: { id: string }) {
               <Maximize2 className="size-5" aria-hidden="true" />
             )}
           </button>
+          <Link
+            href={`/booth/${id}`}
+            aria-label="DJ booth"
+            title="DJ booth"
+            className={"station-icon " + focusRing}
+          >
+            <Disc3 className="size-5" aria-hidden="true" />
+          </Link>
           <Link href="/settings" aria-label="Control room" className={"station-icon " + focusRing}>
             <Settings2 className="size-5" aria-hidden="true" />
           </Link>
