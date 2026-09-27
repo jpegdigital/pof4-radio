@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
+import type { Tap } from "@/lib/playback/browser-engine";
 import type { PlayerSnapshot } from "@/lib/playback/player";
 import { clamp } from "@/lib/playback/mix";
 import type { Plan } from "@/lib/playback/plan";
@@ -19,7 +20,7 @@ export interface Deck {
   intent: "play" | "pause";
   playbackId: string;
   unlock: () => void;
-  analyser: () => AnalyserNode | null;
+  analyser: (tap?: Tap) => AnalyserNode | null;
   load: (cue: Cue) => void;
   preload: (cue: Cue | null) => void;
   toggle: () => void;

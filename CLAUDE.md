@@ -76,8 +76,13 @@ Three places, each owning what it alone needs:
 - **`apps/web/src/app/(booth)/`** — the booth (`/booth/:id`), the same show played as a full-screen
   pixel-art DJ set: `use-show` (the session page's machine, a second copy by the WET rule — a
   third view extracts it), `scene` (one low-res canvas: skyline, lasers, the duo, the decks, the
-  crowd, driven by the engine's `analyser()` tap), `rhythm` (pure: beats, tempo, sprite frames,
-  world size), `booth-view` (the HUD). Sprites are PixelLab output in `public/booth/`.
+  crowd, the rig — truss and moving heads, the LED pyramid, laser sheet, blinders, strobe, flame and
+  CO2 jets, confetti — driven by the engine's `analyser()` taps — the mix, and the voice alone),
+  `lights` (pure: the lighting desk — breakdowns and drops read from the bass, and a cue per frame
+  from the beat, the section and the mic), `dance` (pure:
+  the duo's choreography — each sprite cut into head, torso and planted hands, posed per frame from
+  a book of beat-locked moves, a talk pose driven by the voice's syllables and phrases), `rhythm`
+  (pure: beats and the beat clock, syllables, tempo, the mic frames, world size), `booth-view` (the HUD). Sprites are PixelLab output in `public/booth/`.
 - **`apps/web/src/app/(settings)/`** — the control room, desktop-wide: the identity, the clock and the
   voice roster and news desk, every row in the `settings` table. `/api/tts/preview` is its "hear it";
   `/settings?news=1` previews collected headlines through the shared Jev selector at `/api/news/preview` without writing or TTS.

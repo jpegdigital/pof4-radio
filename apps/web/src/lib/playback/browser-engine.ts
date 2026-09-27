@@ -5,6 +5,7 @@ import { mixEnd } from "./plan";
 
 const SILENCE =
   "data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YZABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+export type Tap = "mix" | "voice";
 type AudioNavigator = Navigator & { audioSession?: { type: string } };
 interface Graph {
   ctx: AudioContext;
@@ -14,8 +15,8 @@ interface Graph {
   bedGain: GainNode;
   songGain: GainNode;
   primed: boolean;
-  /** A listening tap on the three lanes, made only when a view asks for one; never in the output path. */
-  analyser: AnalyserNode | null;
+  /** Listening taps — the three lanes, or the voice alone — made only when a view asks; never in the output path. */
+  taps: Partial<Record<Tap, AnalyserNode>>;
 }
 interface Run {
   slot: PreparedSlot;
@@ -74,7 +75,7 @@ export class BrowserAudioEngine implements AudioEngine {
       node.connect(ctx.destination);
     }
     for (const media of [song, spare]) ctx.createMediaElementSource(media).connect(songGain);
-    this.graph = { ctx, song, spare, voiceGain, bedGain, songGain, primed: false, analyser: null };
+    this.graph = { ctx, song, spare, voiceGain, bedGain, songGain, primed: false, taps: {} };
     ctx.onstatechange = () => {
       const r = this.run;
       if (!r) return;
@@ -146,17 +147,20 @@ export class BrowserAudioEngine implements AudioEngine {
     next.media.load();
   }
 
-  /** The mix as it sounds, for a view to watch: a fan-out from the lanes, so output is unchanged. */
-  analyser(): AnalyserNode | null {
+  /** The mix as it sounds, or the voice alone, for a view to watch: a fan-out, so output is unchanged. */
+  analyser(tap: Tap = "mix"): AnalyserNode | null {
     const g = this.graph;
     if (!g) return null;
-    if (!g.analyser) {
-      g.analyser = g.ctx.createAnalyser();
-      g.analyser.fftSize = 1024;
-      g.analyser.smoothingTimeConstant = 0.6;
-      for (const node of [g.voiceGain, g.bedGain, g.songGain]) node.connect(g.analyser);
+    let node = g.taps[tap];
+    if (!node) {
+      node = g.ctx.createAnalyser();
+      node.fftSize = 1024;
+      node.smoothingTimeConstant = 0.6;
+      for (const lane of tap === "voice" ? [g.voiceGain] : [g.voiceGain, g.bedGain, g.songGain])
+        lane.connect(node);
+      g.taps[tap] = node;
     }
-    return g.analyser;
+    return node;
   }
 
   unlock() {

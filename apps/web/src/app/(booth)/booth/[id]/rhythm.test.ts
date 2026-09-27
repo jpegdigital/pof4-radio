@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { BEAT_FLOOR, GOLD_MIC, beatStep, grooveFrame, micFrame, newBeat, sceneSize, tempoOf } from "./rhythm";
+import {
+  BEAT_FLOOR,
+  GOLD_MIC,
+  beatStep,
+  lockBeats,
+  micFrame,
+  newBeat,
+  newSpeech,
+  SPEECH_FLOOR,
+  sceneSize,
+  speechStep,
+  tempoOf,
+} from "./rhythm";
 
 describe("tempoOf", () => {
   it.each([
@@ -10,20 +22,6 @@ describe("tempoOf", () => {
     { give: undefined, want: 118, id: "no chart" },
   ])("$id", ({ give, want }) => {
     expect(tempoOf(give)).toBe(want);
-  });
-});
-
-describe("grooveFrame", () => {
-  it.each([
-    { give: { ms: 0, bpm: 120 }, want: 0, id: "starts on the first frame" },
-    { give: { ms: 124, bpm: 120 }, want: 0, id: "holds until an eighth of the loop" },
-    { give: { ms: 125, bpm: 120 }, want: 1, id: "eight frames over two beats at 120 bpm" },
-    { give: { ms: 999, bpm: 120 }, want: 7, id: "last frame before the loop turns" },
-    { give: { ms: 1000, bpm: 120 }, want: 0, id: "loops after two beats" },
-    { give: { ms: 250, bpm: 60 }, want: 1, id: "slower tempo, slower frames" },
-    { give: { ms: -50, bpm: 120 }, want: 0, id: "a negative clock clamps" },
-  ])("$id", ({ give, want }) => {
-    expect(grooveFrame(give.ms, give.bpm, 8)).toBe(want);
   });
 });
 
@@ -99,5 +97,59 @@ describe("sceneSize", () => {
     { give: { w: 0, h: 0 }, want: { width: 800, height: 450 }, id: "unmeasured falls back to 16:9" },
   ])("$id", ({ give, want }) => {
     expect(sceneSize(give.w, give.h)).toEqual(want);
+  });
+});
+
+describe("lockBeats", () => {
+  it.each([
+    { give: { beats: 0, dtMs: 500, bpm: 120, hit: false }, want: 1, id: "a beat per half second at 120" },
+    { give: { beats: 2, dtMs: 250, bpm: 60, hit: false }, want: 2.25, id: "a quarter beat at 60" },
+    {
+      give: { beats: 3.8, dtMs: 0, bpm: 120, hit: true },
+      want: 3.9,
+      id: "a hit early pulls the count halfway up to the beat",
+    },
+    { give: { beats: 4.2, dtMs: 0, bpm: 120, hit: true }, want: 4.1, id: "a hit late pulls it halfway back" },
+    { give: { beats: 5, dtMs: 0, bpm: 120, hit: true }, want: 5, id: "a hit on the beat leaves it" },
+    { give: { beats: 3.8, dtMs: 0, bpm: 120, hit: false }, want: 3.8, id: "no hit, no pull" },
+  ])("$id", ({ give, want }) => {
+    expect(lockBeats(give.beats, give.dtMs, give.bpm, give.hit)).toBeCloseTo(want, 5);
+  });
+});
+
+describe("speechStep", () => {
+  const run = (levels: [number, number][], from = newSpeech()) => {
+    let s = from;
+    const onsets: number[] = [];
+    for (const [ms, level] of levels) {
+      const step = speechStep(s, level, ms);
+      if (step.onset) onsets.push(ms);
+      s = step.state;
+    }
+    return { s, onsets };
+  };
+  const hold = (from: number, to: number, level: number): [number, number][] =>
+    Array.from({ length: Math.floor((to - from) / 16) }, (_, i) => [from + i * 16, level]);
+
+  it("hears a syllable when the voice jumps", () => {
+    const { onsets, s } = run([...hold(0, 300, 0), ...hold(300, 500, 0.4)]);
+    expect(onsets).toEqual([300]);
+    expect(s.syllables).toBe(1);
+  });
+
+  it("a steady voice is one syllable, not sixty", () => {
+    expect(run([...hold(0, 100, 0), ...hold(100, 1100, 0.4)]).onsets).toHaveLength(1);
+  });
+
+  it("stays quiet under the floor", () => {
+    expect(run([...hold(0, 100, 0), ...hold(100, 400, SPEECH_FLOOR * 0.8)]).onsets).toHaveLength(0);
+  });
+
+  it("a pause starts a new phrase; a breath does not", () => {
+    const talk = (at: number) => hold(at, at + 200, 0.4);
+    const breath = run([...talk(0), ...hold(200, 300, 0), ...talk(300)]);
+    expect(breath.s.phrase).toBe(0);
+    const pause = run([...talk(0), ...hold(200, 800, 0), ...talk(800)]);
+    expect(pause.s.phrase).toBe(1);
   });
 });

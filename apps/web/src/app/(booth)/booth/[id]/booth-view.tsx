@@ -4,19 +4,30 @@ import Link from "next/link";
 import { ArrowLeft, Expand, ListMusic, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { clock } from "../../../(app)/sessions/[id]/types";
-import { beatStep, newBeat, sceneSize, tempoOf } from "./rhythm";
+import {
+  beatStep,
+  lockBeats,
+  newBeat,
+  newSpeech,
+  SPEECH_FULL,
+  sceneSize,
+  speechStep,
+  tempoOf,
+} from "./rhythm";
+import { energyStep, inBreakdown, newEnergy } from "./lights";
 import { BoothScene } from "./scene";
 import { useShow } from "./use-show";
 
 /**
  * The booth: the same show as the session page, played as a DJ set. The whole screen is the
- * scene (scene.ts) — the duo behind the decks, the crowd, the lasers — moving to what the
+ * scene (scene.ts) — the duo behind the decks, the rig, the crowd — moving to what the
  * analyser hears; over it a thin HUD: the station, the ON AIR lamp, the record on the decks with
  * its LED progress, ⏮ ⏯ ⏭, what is up next, and while the mic is open the DJ's words crawling
  * across a ticker. The HUD steps back when the pointer rests; any touch or key brings it back.
  */
 
 const PULSE_DECAY = 0.9;
+const SYLLABLE_DECAY = 0.82;
 const IDLE_MS = 4500;
 const BANDS = 10;
 const SEGMENTS = 40;
@@ -53,8 +64,14 @@ export function BoothView({ id }: { id: string }) {
     if (!el) return;
     const scene = new BoothScene(el);
     let beat = newBeat();
+    let energy = newEnergy();
     let pulse = 0;
+    let beats = 0;
+    let lastMs: number | null = null;
+    let speech = newSpeech();
+    let syllable = 0;
     let bins: Uint8Array<ArrayBuffer> | null = null;
+    let wave: Uint8Array<ArrayBuffer> | null = null;
     let coverImg: HTMLImageElement | null = null;
     let frame = 0;
     const tick = (ms: number) => {
@@ -90,6 +107,24 @@ export function BoothView({ id }: { id: string }) {
       const step = beatStep(beat, bass, ms);
       beat = step.state;
       pulse = step.beat ? 1 : pulse * PULSE_DECAY;
+      const bpm = beat.bpm ?? tempoOf(l.chart?.tempo);
+      beats = lockBeats(beats, lastMs === null ? 0 : ms - lastMs, bpm, step.beat);
+      lastMs = ms;
+      // The desk's reading of the room: breakdowns, and the drops that end them.
+      energy = energyStep(energy, bass, ms);
+      // The voice alone, as a level: its syllables and pauses move the DJ.
+      const voiceNode = l.running ? l.analyser("voice") : null;
+      let rms = 0;
+      if (voiceNode) {
+        if (!wave || wave.length !== voiceNode.fftSize) wave = new Uint8Array(voiceNode.fftSize);
+        voiceNode.getByteTimeDomainData(wave);
+        let sum = 0;
+        for (const v of wave) sum += ((v - 128) / 128) ** 2;
+        rms = Math.sqrt(sum / wave.length);
+      }
+      const said = speechStep(speech, rms, ms);
+      speech = said.state;
+      syllable = said.onset ? 1 : syllable * SYLLABLE_DECAY;
       const { width, height } = sceneSize(window.innerWidth, window.innerHeight);
       // Portrait: raise the stage clear of the deck panel (most of it; the crowd may tuck under).
       const panel = hud.current?.offsetHeight ?? 0;
@@ -101,8 +136,15 @@ export function BoothView({ id }: { id: string }) {
         lift,
         playing: l.running,
         talking: l.talking,
-        bpm: beat.bpm ?? tempoOf(l.chart?.tempo),
+        bpm,
+        beats,
         pulse,
+        voice: Math.min(1, speech.level / SPEECH_FULL),
+        syllable,
+        syllables: speech.syllables,
+        phrase: speech.phrase,
+        breakdown: inBreakdown(energy, ms),
+        dropMs: energy.dropAt === null ? Number.POSITIVE_INFINITY : ms - energy.dropAt,
         bass,
         mid,
         high,

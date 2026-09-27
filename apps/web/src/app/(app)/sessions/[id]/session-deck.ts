@@ -1,4 +1,4 @@
-import { BrowserAudioEngine } from "@/lib/playback/browser-engine";
+import { BrowserAudioEngine, type Tap } from "@/lib/playback/browser-engine";
 import { SongSources } from "@/lib/playback/song-source";
 import { EMPTY, Player, type PlayerSnapshot } from "@/lib/playback/player";
 import { acknowledgeVoice, loadSlot, playbackId } from "./load-slot";
@@ -60,8 +60,8 @@ export class SessionDeck {
     );
   };
   unlock = () => this.player?.unlock();
-  /** The mix to watch, once the graph exists (after the first unlock). */
-  analyser = () => this.engine?.analyser() ?? null;
+  /** The mix (or the voice alone) to watch, once the graph exists (after the first unlock). */
+  analyser = (tap?: Tap) => this.engine?.analyser(tap) ?? null;
   preload = (cue: Cue | null) => {
     this.engine?.preload(
       cue ? `/api/sessions/${this.sessionId}/slots/${cue.seq}/track?playback=1` : null,
